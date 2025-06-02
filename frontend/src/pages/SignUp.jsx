@@ -48,10 +48,10 @@ function SignUp() {
     return (
         <div className="d-flex justify-content-center align-items-center vh-100" style={{ backgroundColor: '#8AB2A6' }}>
             <div className="bg-white p-5 rounded-4" style={{ width: '40%' }}>
-                <h2 className="text-center fw-bold display fs-2 mb-3">Signup</h2>
+                <h2 className="text-center fw-bold display fs-2 mb-5">Signup</h2>
                 <form onSubmit={handleSubmit}>
-                    <div className="mb-3">
-                        <label htmlFor="name">Name</label>
+                    <div className="font-fredoka mb-4">
+                        {/* <label htmlFor="name" className="fw-bold">Name</label> */}
                         <input
                             type="text"
                             placeholder="Enter your name"
@@ -62,8 +62,8 @@ function SignUp() {
                         />
                         {errors.name && <small className="text-danger">{errors.name}</small>}
                     </div>
-                    <div className="mb-3">
-                        <label htmlFor="email">Email</label>
+                    <div className="font-fredoka mb-4">
+                        {/* <label htmlFor="email" className="fw-bold">Email</label> */}
                         <input
                             type="email"
                             placeholder="Enter your siswamail or ummail"
@@ -74,8 +74,8 @@ function SignUp() {
                         />
                         {errors.email && <small className="text-danger">{errors.email}</small>}
                     </div>
-                    <div className="mb-3">
-                        <label htmlFor="password">Password</label>
+                    <div className="font-fredoka mb-4">
+                        {/* <label htmlFor="password" className="fw-bold">Password</label> */}
                         <input
                             type="password"
                             placeholder="Enter your password"
@@ -86,7 +86,7 @@ function SignUp() {
                         />
                         {errors.password && <small className="text-danger">{errors.password}</small>}
                     </div>
-                    <div className="mb-3 text-center">
+                    <div className="font-fredoka mb-4 text-center">
                         <p className="mb-2">Select Your Role:</p>
                         <div className="btn-group mb-2" role="group" aria-label="Role selection">
                             <button
@@ -119,12 +119,12 @@ function SignUp() {
                     {errors.general && <div className="text-danger text-center mb-3">{errors.general}</div>}
                     <button
                         type="submit"
-                        className="btn w-100 rounded-3"
+                        className="font-fredoka btn w-100 rounded-3"
                         style={{ backgroundColor: '#015551', color: '#fff' }}
                     >
                         Signup
                     </button>
-                    <p className="mt-3 text-center">
+                    <p className="font-fredoka mt-3 text-center">
                         Already have an account?
                         <a href="/login" className="text-primary text-decoration-underline ms-1">
                             Log In

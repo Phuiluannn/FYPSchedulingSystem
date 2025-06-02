@@ -1,3 +1,27 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Change background color on hover */
+.custom-nav-item:hover {
+  background-color: #027373 !important; /* example hover color */
+  color: #ffffff !important;           /* text color on hover */
+}
+
+.CSidebar .nav-link.active, /* CoreUI standard active class */
+.custom-nav-item.active {
+  background-color: #027373 !important; /* your active background color */
+  color: #ffffff !important;
+}
+
+.CSidebar .nav-link.active .nav-icon,
+.custom-nav-item.active .nav-icon {
+  color: #ffffff !important;
+}
+
+
+
+
+
+
+

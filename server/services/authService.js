@@ -1,4 +1,5 @@
 import UserModel from '../models/User.js';
+import FeedbackModel from '../models/Feedback.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
@@ -60,6 +61,13 @@ export const login = async ({ email, password, role }) => {
         throw new Error("SECRET_KEY is not defined in environment variables");
     }
 
+    let unresolvedFeedbackCount = 0;
+    if (user.role === "admin") {
+        unresolvedFeedbackCount = await FeedbackModel.countDocuments({ status: { $in: ["Pending", "In Progress"] } });
+        console.log("Unresolved feedback count:", unresolvedFeedbackCount);
+    }
+
     const token = jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, { expiresIn: '1h' });
-    return token;
+    return { token, name: user.name, unresolvedFeedbackCount };
+
 };

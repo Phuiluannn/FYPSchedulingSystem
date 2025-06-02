@@ -10,9 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@coreui/coreui": "^5.4.0",
+    "@coreui/icons": "^3.0.1",
+    "@coreui/icons-react": "^2.3.0",
+    "@coreui/react": "^5.7.0",
     "@tailwindcss/vite": "^4.0.15",
     "axios": "^1.8.4",
-    "bootstrap": "^5.3.3",
+    "bootstrap": "^5.3.6",
+    "jwt-decode": "^4.0.0",
     "react": "^19.0.0",
     "react-data-table-component": "^7.7.0",
     "react-dom": "^19.0.0",

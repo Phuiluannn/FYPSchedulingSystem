@@ -32,7 +32,16 @@ function LogIn() {
                 alert(result.data.message);
                 if (result.data.message === "Login successful!") {
                     localStorage.setItem('token', result.data.token); // Store the token in local storage
-                    navigate('/home');
+                    localStorage.setItem('name', result.data.name);
+                    localStorage.setItem('feedbackBadge', result.data.unresolvedFeedbackCount || 0); // Store unresolved feedback count
+                    // Route based on role
+                    if (role === "student") {
+                        navigate('/student/home');
+                    } else if (role === "instructor") {
+                        navigate('/instructor/home');
+                    } else if (role === "admin") {
+                        navigate('/home');
+                    }
                 }
             })
             .catch(err => {
@@ -48,10 +57,10 @@ function LogIn() {
     return (
         <div className="d-flex justify-content-center align-items-center vh-100" style={{ backgroundColor: '#8AB2A6' }}>
             <div className="bg-white p-5 rounded-4" style={{ width: '40%' }}>
-                <h2 className="text-center fw-bold display fs-2 mb-3">Login</h2>
+                <h2 className="text-center fw-bold display fs-2 mb-5">Login</h2>
                 <form onSubmit={handleSubmit}>
-                    <div className="mb-3">
-                        <label htmlFor="email">Email</label>
+                    <div className="font-fredoka mb-4">
+                        {/* <label htmlFor="email">Email</label> */}
                         <input
                             type="email"
                             placeholder="Enter your siswamail or ummail"
@@ -62,8 +71,8 @@ function LogIn() {
                         />
                         {errors.email && <small className="text-danger">{errors.email}</small>}
                     </div>
-                    <div className="mb-3">
-                        <label htmlFor="password">Password</label>
+                    <div className="font-fredoka mb-4">
+                        {/* <label htmlFor="password">Password</label> */}
                         <input
                             type="password"
                             placeholder="Enter your password"
@@ -83,7 +92,7 @@ function LogIn() {
                             </a>
                         </p>
                     </div>
-                    <div className="mb-3 text-center">
+                    <div className="font-fredoka mb-4 text-center">
                         <p className="mb-2">Select Your Role:</p>
                         <div className="btn-group mb-2" role="group" aria-label="Role selection">
                             <button
@@ -110,18 +119,30 @@ function LogIn() {
                             >
                                 Instructor
                             </button>
+                            <button
+                                type="button"
+                                className="btn"
+                                style={{
+                                    backgroundColor: role === 'admin' ? '#015551' : 'transparent',
+                                    color: role === 'admin' ? '#fff' : '#015551',
+                                    border: '1px solid #015551',
+                                }}
+                                onClick={() => setRole('admin')}
+                            >
+                                Admin
+                            </button>
                         </div>
                         {errors.role && <small className="text-danger">{errors.role}</small>}
                     </div>
                     {errors.general && <div className="text-danger text-center mb-3">{errors.general}</div>}
                     <button
                         type="submit"
-                        className="btn w-100 rounded-3"
-                        style={{ backgroundColor: '#015551', color: '#fff' }}
+                        className="font-fredoka btn w-100 rounded-3"
+                        style={{ backgroundColor: '#015551', color: '#fff'}}
                     >
                         Login
                     </button>
-                    <p className="mt-3 text-center">
+                    <p className="font-fredoka mt-3 text-center">
                         Don't have an account?
                         <a href="/signup" className="text-primary text-decoration-underline ms-1">
                             Sign Up

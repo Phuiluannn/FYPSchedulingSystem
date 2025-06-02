@@ -3,6 +3,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { connectDB } from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
+import instructorRoutes from './routes/instructorRoutes.js';
+import roomRoutes from './routes/roomRoutes.js'; 
+import courseRoutes from './routes/courseRoutes.js';
+import feedbackRoutes from './routes/feedbackRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,6 +28,11 @@ connectDB();
 
 // Routes
 app.use('/', authRoutes);
+app.use('/instructors', instructorRoutes);
+app.use('/rooms', roomRoutes);
+app.use('/courses', courseRoutes);
+app.use('/user/feedback', feedbackRoutes);
+app.use('/feedback', feedbackRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);
