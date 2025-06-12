@@ -34,11 +34,12 @@ function LogIn() {
                     localStorage.setItem('token', result.data.token); // Store the token in local storage
                     localStorage.setItem('name', result.data.name);
                     localStorage.setItem('feedbackBadge', result.data.unresolvedFeedbackCount || 0); // Store unresolved feedback count
+                    localStorage.setItem('role', result.data.role); // Store the role in local storage
                     // Route based on role
                     if (role === "student") {
-                        navigate('/student/home');
+                        navigate('/user/home');
                     } else if (role === "instructor") {
-                        navigate('/instructor/home');
+                        navigate('/user/home');
                     } else if (role === "admin") {
                         navigate('/home');
                     }
@@ -67,7 +68,10 @@ function LogIn() {
                             autoComplete="off"
                             name="email"
                             className="form-control rounded-3"
-                            onChange={(e) => setEmail(e.target.value)} // Update email state on change
+                            onChange={(e) => {
+                                setEmail(e.target.value);
+                                if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
+                            }}
                         />
                         {errors.email && <small className="text-danger">{errors.email}</small>}
                     </div>
@@ -79,7 +83,10 @@ function LogIn() {
                             autoComplete="off"
                             name="password"
                             className="form-control rounded-3"
-                            onChange={(e) => setPassword(e.target.value)} // Update password state on change
+                            onChange={(e) => {
+                                setPassword(e.target.value);
+                                if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
+                            }}
                         />
                         {errors.password && <small className="text-danger">{errors.password}</small>}
                         <p className="mt-2 text-end">

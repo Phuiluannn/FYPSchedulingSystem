@@ -8,7 +8,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import Courses from './pages/Courses';
 import Instructors from './pages/Instructors';
 import Rooms from './pages/Rooms';
-import StudentHome from './pages/StudentHome';
+import UserHome from './pages/UserHome';
 import UserFeedback from './pages/UserFeedback';
 import ProtectedRoute from './pages/ProtectedRoute';
 import AdminFeedback from './pages/AdminFeedback';
@@ -51,10 +51,10 @@ function App() {
           </ProtectedRoute>
         }/> */}
 
-        {/* Student-only routes */}
-        <Route path="/student/home" element={
-          <ProtectedRoute allowedRoles={['student']}>
-            <StudentHome />
+        {/* Student & Instructor - only routes */}
+        <Route path="/user/home" element={
+          <ProtectedRoute allowedRoles={['student', 'instructor']}>
+            <UserHome />
           </ProtectedRoute>
         }/>
         <Route path="/user/feedback" element={

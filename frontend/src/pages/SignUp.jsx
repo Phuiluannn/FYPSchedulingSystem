@@ -58,7 +58,10 @@ function SignUp() {
                             autoComplete="off"
                             name="name"
                             className="form-control rounded-3"
-                            onChange={(e) => setName(e.target.value)} // Update name state on change
+                            onChange={(e) => {
+                                setName(e.target.value);
+                                if (errors.name) setErrors(prev => ({ ...prev, name: undefined }));
+                            }}
                         />
                         {errors.name && <small className="text-danger">{errors.name}</small>}
                     </div>
@@ -70,7 +73,10 @@ function SignUp() {
                             autoComplete="off"
                             name="email"
                             className="form-control rounded-3"
-                            onChange={(e) => setEmail(e.target.value)} // Update email state on change
+                            onChange={(e) => {
+                                setEmail(e.target.value);
+                                if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
+                            }}
                         />
                         {errors.email && <small className="text-danger">{errors.email}</small>}
                     </div>
@@ -82,7 +88,10 @@ function SignUp() {
                             autoComplete="off"
                             name="password"
                             className="form-control rounded-3"
-                            onChange={(e) => setPassword(e.target.value)} // Update password state on change
+                            onChange={(e) => {
+                                setPassword(e.target.value);
+                                if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
+                            }}
                         />
                         {errors.password && <small className="text-danger">{errors.password}</small>}
                     </div>

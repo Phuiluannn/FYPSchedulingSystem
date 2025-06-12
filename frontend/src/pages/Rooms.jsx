@@ -5,6 +5,8 @@ import ProtectedRoute from "./ProtectedRoute";
 import CIcon from "@coreui/icons-react";
 import { cilTrash, cilPen, cilFilter } from "@coreui/icons";
 
+const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
+
 function Rooms() {
   const [showModal, setShowModal] = useState(false);
   const [editIndex, setEditIndex] = useState(null);
@@ -87,6 +89,7 @@ function Rooms() {
   };
 
   const openModal = (room = null, idx = null) => {
+    setError(null); // Reset error state when modal opens
     if (room) {
       setForm({ ...room });
       setEditIndex(idx);
@@ -105,7 +108,7 @@ function Rooms() {
 
   const handleSave = async () => {
     if (!form.code || !form.name || !form.building || !form.capacity || !form.roomType) {
-      setError('Please fill in all required fields: Code, Name, Building, Capacity, and Room Type.');
+      setError('Please fill in all required fields.');
       return;
     }
     try {
@@ -199,13 +202,13 @@ function Rooms() {
   return (
     <ProtectedRoute>
       <SideBar role="admin">
-        <div style={{ maxWidth: 1700, margin: "10px auto 0 auto", padding: "0 10px 0px 5px" }}>
-          <h2 className="fw-bold mb-4 mt-20">Rooms</h2>
-          {error && (
+        <div style={{ maxWidth: 1700, margin: "0 auto 0 auto", padding: "0 10px 0px 5px" }}>
+          <h2 className="fw-bold mb-4">Rooms</h2>
+          {/* {error && (
             <div className="alert alert-danger mt-3" role="alert">
               {error}
             </div>
-          )}
+          )} */}
           <div className="d-flex align-items-center mb-3">
             <input
               type="text"
@@ -253,7 +256,7 @@ function Rooms() {
                   <tr>
                     <th>Code</th>
                     <th>Name</th>
-                    <th style={{ position: "relative" }} ref={buildingRef}>
+                    <th style={{ paddingLeft: 30, position: "relative" }} ref={buildingRef}>
                       Building{" "}
                       <button
                         className="btn btn-sm btn-link"
@@ -264,9 +267,9 @@ function Rooms() {
                       {showBuildingDropdown && (
                         <div
                           className="dropdown-menu show"
-                          style={{ position: "absolute", top: "100%", left: 0, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
+                          style={{ position: "absolute", top: "100%", left: 80, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
                         >
-                          <div className="form-check">
+                          <div className="form-check d-flex align-items-center mb-1">
                             <input
                               type="checkbox"
                               className="form-check-input"
@@ -274,10 +277,10 @@ function Rooms() {
                               onChange={() => toggleBuilding("")}
                               style={{ marginTop: "0" }}
                             />
-                            <label className="form-check-label" style={{ marginLeft: "5px" }}>All</label>
+                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
                           </div>
                           {["Block A", "Block B"].map((building) => (
-                            <div key={building} className="form-check">
+                            <div key={building} className="form-check d-flex align-items-center mb-1">
                               <input
                                 type="checkbox"
                                 className="form-check-input"
@@ -285,14 +288,14 @@ function Rooms() {
                                 onChange={() => toggleBuilding(building)}
                                 style={{ marginTop: "0" }}
                               />
-                              <label className="form-check-label" style={{ marginLeft: "5px" }}>{building}</label>
+                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{building}</label>
                             </div>
                           ))}
                         </div>
                       )}
                     </th>
                     <th>Capacity</th>
-                    <th style={{ position: "relative" }} ref={roomTypeRef}>
+                    <th style={{ paddingLeft: 25, position: "relative" }} ref={roomTypeRef}>
                       Room Type{" "}
                       <button
                         className="btn btn-sm btn-link"
@@ -303,9 +306,9 @@ function Rooms() {
                       {showRoomTypeDropdown && (
                         <div
                           className="dropdown-menu show"
-                          style={{ position: "absolute", top: "100%", left: 0, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
+                          style={{ position: "absolute", top: "100%", left: 100, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
                         >
-                          <div className="form-check">
+                          <div className="form-check d-flex align-items-center mb-1">
                             <input
                               type="checkbox"
                               className="form-check-input"
@@ -313,10 +316,10 @@ function Rooms() {
                               onChange={() => toggleRoomType("")}
                               style={{ marginTop: "0" }}
                             />
-                            <label className="form-check-label" style={{ marginLeft: "5px" }}>All</label>
+                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
                           </div>
                           {["Lecture Hall", "Lecture Room", "CCNA Lab", "Tutorial Room", "Other Lab"].map((roomType) => (
-                            <div key={roomType} className="form-check">
+                            <div key={roomType} className="form-check d-flex align-items-center mb-1">
                               <input
                                 type="checkbox"
                                 className="form-check-input"
@@ -324,7 +327,7 @@ function Rooms() {
                                 onChange={() => toggleRoomType(roomType)}
                                 style={{ marginTop: "0" }}
                               />
-                              <label className="form-check-label" style={{ marginLeft: "5px" }}>{roomType}</label>
+                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{roomType}</label>
                             </div>
                           ))}
                         </div>
@@ -335,22 +338,23 @@ function Rooms() {
                 </thead>
                 <tbody>
                   {filteredRooms.map((room, idx) => (
-                    <tr key={idx}>
-                      <td>{room.code}</td>
-                      <td>{room.name}</td>
-                      <td>{room.building}</td>
-                      <td>{room.capacity}</td>
-                      <td>{room.roomType}</td>
-                      <td>
-                        <button className="btn btn-link p-0 me-2" onClick={() => openModal(room, idx)}>
-                          <CIcon icon={cilPen} />
-                        </button>
-                        <button className="btn btn-link text-danger p-0" onClick={() => handleDelete(idx)}>
-                          <CIcon icon={cilTrash} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                      <tr key={idx}>
+                        <td>{room.code}</td>
+                        <td>{room.name}</td>
+                        <td>{room.building}</td>
+                        <td>{room.capacity}</td>
+                        <td>{room.roomType}</td>
+                        <td>
+                          <button className="btn btn-link p-0 me-2" onClick={() => openModal(room, idx)}>
+                            <CIcon icon={cilPen} />
+                          </button>
+                          <button className="btn btn-link text-danger p-0" onClick={() => handleDelete(idx)}>
+                            <CIcon icon={cilTrash} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  }
                 </tbody>
               </table>
             </div>
@@ -368,17 +372,22 @@ function Rooms() {
                     <button type="button" className="btn-close" onClick={() => setShowModal(false)}></button>
                   </div>
                   <div className="modal-body">
+                    {error && (
+                      <div className="alert alert-danger mt-3" role="alert">
+                        {error}
+                      </div>
+                    )}
                     <form>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Code</label>
+                        <label className="form-label fw-bold">Code <RequiredMark /></label>
                         <input className="form-control" name="code" value={form.code} onChange={handleChange} />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Name</label>
+                        <label className="form-label fw-bold">Name <RequiredMark /></label>
                         <input className="form-control" name="name" value={form.name} onChange={handleChange} />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Building</label>
+                        <label className="form-label fw-bold">Building <RequiredMark /></label>
                         <select className="form-select" name="building" value={form.building} onChange={handleChange}>
                           <option value="" disabled>Select Building</option>
                           <option value="Block A">Block A</option>
@@ -386,11 +395,11 @@ function Rooms() {
                         </select>
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Capacity</label>
+                        <label className="form-label fw-bold">Capacity <RequiredMark /></label>
                         <input className="form-control" type="number" name="capacity" value={form.capacity} min="0" onChange={handleChange} />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Room Type</label>
+                        <label className="form-label fw-bold">Room Type <RequiredMark /></label>
                         <select className="form-select" name="roomType" value={form.roomType} onChange={handleChange}>
                           <option value="" disabled>Select Room Type</option>
                           <option value="Lecture Hall">Lecture Hall</option>

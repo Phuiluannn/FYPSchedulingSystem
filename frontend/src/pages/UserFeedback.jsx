@@ -84,18 +84,17 @@ function UserFeedback() {
 
   return (
     <ProtectedRoute>
-      <SideBar role="student">
+      <SideBar role={localStorage.getItem('role') || 'student'}>
         <div
-          style={{
-            minHeight: "100vh",
-            background: "#f6f6f6",
-            padding: "10px",
-          }}
+          // style={{
+          //   minHeight: "100vh",
+          //   background: "#f6f6f6",
+          // }}
         >
           <div
             style={{
               maxWidth: 1100,
-              margin: "40px auto 0 auto",
+              margin: "0 auto 0 auto",
               background: "#fff",
               borderRadius: 12,
               boxShadow: "0 2px 12px rgba(0,0,0,0.07)",

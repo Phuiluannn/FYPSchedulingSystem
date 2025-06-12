@@ -41,7 +41,7 @@ const SideBar = ({ children, role = "admin", feedbackBadge }) => {
         className="d-flex justify-content-end align-items-center px-4 py-2 shadow-sm"
         style={{
           background: '#fff',
-          minHeight: '60px',
+          minHeight: '70px',
           zIndex: 100,
           position: 'fixed',
           top: 0,
@@ -70,7 +70,7 @@ const SideBar = ({ children, role = "admin", feedbackBadge }) => {
         <div style={{ width: '70px' }}>
           <SidebarUnfoldableExample currentPath={location.pathname} role={role} feedbackBadge={feedbackBadge} />
         </div>
-        <div className="flex-grow-1 p-4" style={{ marginLeft: '0', background: '#f8f9fa' }}>
+        <div className="flex-grow-1 p-4" style={{ marginLeft: '0', background: '#f8f9fa', marginTop: '70px' }}>
           {children}
         </div>
       </div>
@@ -92,12 +92,12 @@ const SidebarUnfoldableExample = ({ currentPath, role, feedbackBadge }) => {
     ];
   } else if (role === "student") {
     navItems = [
-      { href: "/student/home", icon: cilHome, label: "Home" },
+      { href: "/user/home", icon: cilHome, label: "Home" },
       { href: "/user/feedback", icon: cilCommentSquare, label: "Feedback"},
     ];
   } else if (role === "instructor") {
     navItems = [
-      { href: "/instructor/home", icon: cilHome, label: "Home" },
+      { href: "/user/home", icon: cilHome, label: "Home" },
       { href: "/instructor/my-timetable", icon: cilCalendar, label: "My Timetable" },
       { href: "/user/feedback", icon: cilCommentSquare, label: "Feedback"},
     ];

@@ -166,11 +166,11 @@ function AdminFeedback() {
   return (
     <ProtectedRoute>
       <SideBar role="admin" feedbackBadge={feedbackBadge}>
-        <div style={{ minHeight: "100vh", background: "#f6f6f6", padding: "20px" }}>
+        <div>
           <div
             style={{
               maxWidth: 1200,
-              margin: "40px auto 0 auto",
+              margin: "0 auto 0 auto",
               background: "#fff",
               borderRadius: 12,
               boxShadow: "0 2px 12px rgba(0,0,0,0.07)",

@@ -52,3 +52,13 @@ export const deleteCourse = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+export const copyCourses = async (req, res) => {
+  try {
+    const { fromYear, fromSemester, toYear, toSemester } = req.body;
+    const copied = await courseService.copyCourses(fromYear, fromSemester, toYear, toSemester);
+    res.status(201).json(copied);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};

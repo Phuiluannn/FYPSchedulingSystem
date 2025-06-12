@@ -5,6 +5,8 @@ import ProtectedRoute from "./ProtectedRoute";
 import CIcon from "@coreui/icons-react";
 import { cilTrash, cilPen, cilFilter } from "@coreui/icons";
 
+const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
+
 function Instructors() {
   const [showModal, setShowModal] = useState(false);
   const [editIndex, setEditIndex] = useState(null);
@@ -86,6 +88,7 @@ function Instructors() {
   };
 
   const openModal = (instructor = null, idx = null) => {
+    setError(null); // Reset error state when modal opens
     if (instructor) {
       setForm({ ...instructor });
       setEditIndex(idx);
@@ -103,9 +106,16 @@ function Instructors() {
 
   const handleSave = async () => {
     if (!form.name || !form.email || !form.department || !form.status) {
-      setError('Please fill in all required fields: Name, Email, Department, and Status.');
+      setError('Please fill in all required fields.');
       return;
     }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(form.email)) {
+    setError('Please enter a valid email address.');
+    return;
+  }
+
     try {
       const token = localStorage.getItem('token');
       if (!token) {
@@ -141,7 +151,16 @@ function Instructors() {
       setError(null);
     } catch (error) {
       console.error("Error saving instructor:", error);
-      setError(error.response?.data?.message || 'Failed to save instructor.');
+      // Handle duplicate email error
+      if (
+        error.response?.data?.message?.includes("duplicate key error") ||
+        error.response?.data?.message?.includes("E11000") ||
+        error.response?.data?.error?.includes("duplicate key error")
+      ) {
+        setError("This email is already registered.");
+      } else {
+        setError(error.response?.data?.message || 'Failed to save instructor.');
+      }
     }
   };
 
@@ -207,16 +226,16 @@ function Instructors() {
         <div
           style={{
             maxWidth: 1700,
-            margin: "10px auto 0 auto",
-            padding: "0 10px 0px 5px",
+            margin: "0 auto 0 auto",
+            padding: "0 10px 0px 5px"
           }}
         >
-          <h2 className="fw-bold mb-4 mt-20">Instructors</h2>
-          {error && (
+          <h2 className="fw-bold mb-4">Instructors</h2>
+          {/* {error && (
             <div className="alert alert-danger mt-3" role="alert">
               {error}
             </div>
-          )}
+          )} */}
           <div className="d-flex align-items-center mb-3">
             <input
               type="text"
@@ -267,7 +286,7 @@ function Instructors() {
                   <tr>
                     <th>Name</th>
                     <th>Email</th>
-                    <th style={{ position: "relative" }} ref={departmentRef}>
+                    <th style={{ paddingLeft: 33, position: "relative" }} ref={departmentRef}>
                       Department{" "}
                       <button
                         className="btn btn-sm btn-link"
@@ -278,9 +297,9 @@ function Instructors() {
                       {showDepartmentDropdown && (
                         <div
                           className="dropdown-menu show"
-                          style={{ position: "absolute", top: "100%", left: 0, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
+                          style={{ position: "absolute", top: "100%", left: 80, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
                         >
-                          <div className="form-check">
+                          <div className="form-check d-flex align-items-center mb-1">
                             <input
                               type="checkbox"
                               className="form-check-input"
@@ -288,7 +307,7 @@ function Instructors() {
                               onChange={() => toggleDepartment("")}
                               style={{ marginTop: "0" }}
                             />
-                            <label className="form-check-label" style={{ marginLeft: "5px" }}>All</label>
+                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
                           </div>
                           {[
                             "Artificial Intelligence",
@@ -298,7 +317,7 @@ function Instructors() {
                             "Multimedia Computing",
                             "Software Engineering",
                           ].map((department) => (
-                            <div key={department} className="form-check">
+                            <div key={department} className="form-check d-flex align-items-center mb-1">
                               <input
                                 type="checkbox"
                                 className="form-check-input"
@@ -306,13 +325,13 @@ function Instructors() {
                                 onChange={() => toggleDepartment(department)}
                                 style={{ marginTop: "0" }}
                               />
-                              <label className="form-check-label" style={{ marginLeft: "5px" }}>{department}</label>
+                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600  }}>{department}</label>
                             </div>
                           ))}
                         </div>
                       )}
                     </th>
-                    <th style={{ position: "relative" }} ref={statusRef}>
+                    <th style={{ paddingLeft: 34, position: "relative" }} ref={statusRef}>
                       Status{" "}
                       <button
                         className="btn btn-sm btn-link"
@@ -323,9 +342,9 @@ function Instructors() {
                       {showStatusDropdown && (
                         <div
                           className="dropdown-menu show"
-                          style={{ position: "absolute", top: "100%", left: 0, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
+                          style={{ position: "absolute", top: "100%", left: 40, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
                         >
-                          <div className="form-check">
+                          <div className="form-check d-flex align-items-center mb-1">
                             <input
                               type="checkbox"
                               className="form-check-input"
@@ -333,10 +352,10 @@ function Instructors() {
                               onChange={() => toggleStatus("")}
                               style={{ marginTop: "0" }}
                             />
-                            <label className="form-check-label" style={{ marginLeft: "5px" }}>All</label>
+                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
                           </div>
                           {["Active", "Inactive"].map((status) => (
-                            <div key={status} className="form-check">
+                            <div key={status} className="form-check d-flex align-items-center mb-1">
                               <input
                                 type="checkbox"
                                 className="form-check-input"
@@ -344,7 +363,7 @@ function Instructors() {
                                 onChange={() => toggleStatus(status)}
                                 style={{ marginTop: "0" }}
                               />
-                              <label className="form-check-label" style={{ marginLeft: "5px" }}>{status}</label>
+                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{status}</label>
                             </div>
                           ))}
                         </div>
@@ -354,7 +373,7 @@ function Instructors() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredInstructors.map((instructor, idx) => (
+                {filteredInstructors.map((instructor, idx) => (
                     <tr key={idx}>
                       <td>{instructor.name}</td>
                       <td>{instructor.email}</td>
@@ -375,8 +394,9 @@ function Instructors() {
                         </button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
+                  ))
+                }
+              </tbody>
               </table>
             </div>
           </div>
@@ -405,9 +425,14 @@ function Instructors() {
                     ></button>
                   </div>
                   <div className="modal-body">
+                    {error && (
+                      <div className="alert alert-danger mt-3" role="alert">
+                        {error}
+                      </div>
+                    )}
                     <form>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Name</label>
+                        <label className="form-label fw-bold">Name <RequiredMark /></label>
                         <input
                           className="form-control"
                           name="name"
@@ -416,7 +441,7 @@ function Instructors() {
                         />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Email</label>
+                        <label className="form-label fw-bold">Email <RequiredMark /></label>
                         <input
                           className="form-control"
                           name="email"
@@ -426,7 +451,7 @@ function Instructors() {
                         />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Department</label>
+                        <label className="form-label fw-bold">Department <RequiredMark /></label>
                         <select
                           className="form-select"
                           name="department"
@@ -453,7 +478,7 @@ function Instructors() {
                         </select>
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Status</label>
+                        <label className="form-label fw-bold">Status <RequiredMark /></label>
                         <select
                           className="form-select"
                           name="status"

@@ -51,8 +51,8 @@ function Home() {
     return (
         <ProtectedRoute>
             <SideBar>
-                <h1>Welcome to the Home Page</h1>
-                <p>This is a protected route.</p>
+                <h2 className="fw-bold mb-4">Home Page</h2>
+                <p>This is Timetable view</p>
             </SideBar>
         </ProtectedRoute>
     );
