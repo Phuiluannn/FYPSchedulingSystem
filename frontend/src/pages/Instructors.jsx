@@ -311,10 +311,9 @@ function Instructors() {
                           </div>
                           {[
                             "Artificial Intelligence",
-                            "Computer System and Network",
+                            "Computer System and Technology",
                             "Data Science",
                             "Information Systems",
-                            "Multimedia Computing",
                             "Software Engineering",
                           ].map((department) => (
                             <div key={department} className="form-check d-flex align-items-center mb-1">
@@ -462,15 +461,12 @@ function Instructors() {
                           <option value="Artificial Intelligence">
                             Artificial Intelligence
                           </option>
-                          <option value="Computer System and Network">
-                            Computer System and Network
+                          <option value="Computer System and Technology">
+                            Computer System and Technology
                           </option>
                           <option value="Data Science">Data Science</option>
                           <option value="Information Systems">
                             Information Systems
-                          </option>
-                          <option value="Multimedia Computing">
-                            Multimedia Computing
                           </option>
                           <option value="Software Engineering">
                             Software Engineering

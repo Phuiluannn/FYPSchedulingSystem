@@ -7,7 +7,7 @@ const courseSchema = new mongoose.Schema({
   name: { type: String, required: true },
   creditHour: { type: Number, required: true },
   targetStudent: { type: Number, required: true },
-  courseType: { type: String, required: true, enum: ["Faculty Core", "Program Core", "Elective"] },
+  courseType: { type: String, required: true, enum: ["Faculty Core", "Programme Core", "Elective"] },
   instructors: [{ type: String }], // or reference an Instructor model if needed
   roomTypes: [{ type: String }],
   hasTutorial: { type: String, enum: ["Yes", "No"], default: "No" },

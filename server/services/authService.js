@@ -11,9 +11,12 @@ export const signup = async ({ name, email, password, role }) => {
         throw new Error("All fields are required: name, email, password, and role.");
     }
 
-    // Check if the email ends with 'um.edu.my'
-    if (!email.endsWith('um.edu.my')) {
-        throw new Error("Only siswamail or ummail are allowed to register.");
+    // Validate email domain and role match
+    if (email.endsWith('@siswa.um.edu.my') && role !== 'student') {
+        throw new Error("Emails ending with @siswa.um.edu.my can only be registered as a student.");
+    }
+    if (email.endsWith('@um.edu.my') && !email.endsWith('@siswa.um.edu.my') && role !== 'instructor') {
+        throw new Error("Emails ending with @um.edu.my can only be registered as an instructor.");
     }
 
     // Check if the email already exists
@@ -69,5 +72,4 @@ export const login = async ({ email, password, role }) => {
 
     const token = jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, { expiresIn: '1h' });
     return { token, name: user.name, role: user.role, unresolvedFeedbackCount };
-
 };

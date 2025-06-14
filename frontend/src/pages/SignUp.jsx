@@ -1,22 +1,39 @@
-import { useState } from 'react';
-import axios from 'axios'; // Importing axios for making HTTP requests
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 function SignUp() {
-    const [name, setName] = useState(""); // State to store the name
-    const [email, setEmail] = useState(""); // State to store the email
-    const [password, setPassword] = useState(""); // State to store the password
-    const [role, setRole] = useState("student"); // State to store the selected role
-    const [errors, setErrors] = useState({}); // State to store validation errors
+    const [name, setName] = useState("");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [role, setRole] = useState("");
+    const [errors, setErrors] = useState({});
     const navigate = useNavigate();
+
+    // Automatically set role based on email domain
+    useEffect(() => {
+        if (email.endsWith('@siswa.um.edu.my')) {
+            setRole('student');
+            setErrors(prev => ({ ...prev, email: undefined, role: undefined }));
+        } else if (email.endsWith('@um.edu.my') && !email.endsWith('@siswa.um.edu.my')) {
+            setRole('instructor');
+            setErrors(prev => ({ ...prev, email: undefined, role: undefined }));
+        }
+    }, [email]);
 
     const validateFields = () => {
         const newErrors = {};
         if (!name) newErrors.name = "Name is required.";
         if (!email) newErrors.email = "Email is required.";
-        else if (!email.endsWith("um.edu.my")) newErrors.email = "Only siswamail or ummail are allowed.";
+        else if (!email.endsWith('@siswa.um.edu.my') && !email.endsWith('@um.edu.my')) {
+            newErrors.email = "Email must be siswamail or ummail";
+        } else if (email.endsWith('@siswa.um.edu.my') && role !== 'student') {
+            newErrors.role = "Email with @siswa.um.edu.my can only be registered as a student.";
+        } else if (email.endsWith('@um.edu.my') && !email.endsWith('@siswa.um.edu.my') && role !== 'instructor') {
+            newErrors.role = "Email with @um.edu.my can only be registered as an instructor.";
+        }
         if (!password) newErrors.password = "Password is required.";
-        if (!role) newErrors.role = "Role is required.";
+        if (!role) newErrors.role = "Role could not be determined based on email.";
         return newErrors;
     };
 
@@ -25,7 +42,7 @@ function SignUp() {
 
         const validationErrors = validateFields();
         if (Object.keys(validationErrors).length > 0) {
-            setErrors(validationErrors); // Set validation errors
+            setErrors(validationErrors);
             return;
         }
 
@@ -37,11 +54,11 @@ function SignUp() {
             })
             .catch(err => {
                 if (err.response && err.response.data && err.response.data.message) {
-                    setErrors({ general: err.response.data.message }); // Set backend error message
+                    setErrors({ general: err.response.data.message });
                 } else {
-                    setErrors({ general: "An error occurred. Please try again." }); // Generic error message
+                    setErrors({ general: "An error occurred. Please try again." });
                 }
-                console.log(err); // Log the error for debugging
+                console.log(err);
             });
     };
 
@@ -51,7 +68,6 @@ function SignUp() {
                 <h2 className="text-center fw-bold display fs-2 mb-5">Signup</h2>
                 <form onSubmit={handleSubmit}>
                     <div className="font-fredoka mb-4">
-                        {/* <label htmlFor="name" className="fw-bold">Name</label> */}
                         <input
                             type="text"
                             placeholder="Enter your name"
@@ -66,7 +82,6 @@ function SignUp() {
                         {errors.name && <small className="text-danger">{errors.name}</small>}
                     </div>
                     <div className="font-fredoka mb-4">
-                        {/* <label htmlFor="email" className="fw-bold">Email</label> */}
                         <input
                             type="email"
                             placeholder="Enter your siswamail or ummail"
@@ -81,7 +96,6 @@ function SignUp() {
                         {errors.email && <small className="text-danger">{errors.email}</small>}
                     </div>
                     <div className="font-fredoka mb-4">
-                        {/* <label htmlFor="password" className="fw-bold">Password</label> */}
                         <input
                             type="password"
                             placeholder="Enter your password"
@@ -93,20 +107,22 @@ function SignUp() {
                                 if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
                             }}
                         />
-                        {errors.password && <small className="text-danger">{errors.password}</small>}
+                        {errors.password && <small className="text-dang
+System: er">{errors.password}</small>}
                     </div>
                     <div className="font-fredoka mb-4 text-center">
-                        <p className="mb-2">Select Your Role:</p>
+                        <p className="mb-2">Role:</p>
                         <div className="btn-group mb-2" role="group" aria-label="Role selection">
                             <button
                                 type="button"
                                 className="btn"
                                 style={{
-                                    backgroundColor: role === 'student' ? '#015551' : 'transparent',
-                                    color: role === 'student' ? '#fff' : '#015551',
+                                    backgroundColor: role === 'student' ? '#015551' : '#e0e0e0',
+                                    color: role === 'student' ? '#fff' : '#666',
                                     border: '1px solid #015551',
+                                    cursor: 'default',
                                 }}
-                                onClick={() => setRole('student')}
+                                disabled
                             >
                                 Student
                             </button>
@@ -114,16 +130,17 @@ function SignUp() {
                                 type="button"
                                 className="btn"
                                 style={{
-                                    backgroundColor: role === 'instructor' ? '#015551' : 'transparent',
-                                    color: role === 'instructor' ? '#fff' : '#015551',
+                                    backgroundColor: role === 'instructor' ? '#015551' : '#e0e0e0',
+                                    color: role === 'instructor' ? '#fff' : '#666',
                                     border: '1px solid #015551',
+                                    cursor: 'default',
                                 }}
-                                onClick={() => setRole('instructor')}
+                                disabled
                             >
                                 Instructor
                             </button>
                         </div>
-                        {errors.role && <small className="text-danger">{errors.role}</small>}
+                        {errors.role && <small className="text-danger d-block mt-2">{errors.role}</small>}
                     </div>
                     {errors.general && <div className="text-danger text-center mb-3">{errors.general}</div>}
                     <button

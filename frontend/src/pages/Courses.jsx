@@ -455,7 +455,7 @@ function Courses() {
                               All
                             </label>
                           </div>
-                          {["Faculty Core", "Program Core", "Elective"].map((courseType) => (
+                          {["Faculty Core", "Programme Core", "Elective"].map((courseType) => (
                             <div key={courseType} className="form-check d-flex align-items-center mb-1">
                               <input
                                 type="checkbox"
@@ -613,7 +613,7 @@ function Courses() {
                         <select className="form-select" name="courseType" value={form.courseType} onChange={handleChange}>
                           <option value="" disabled>Select</option>
                           <option>Faculty Core</option>
-                          <option>Program Core</option>
+                          <option>Programme Core</option>
                           <option>Elective</option>
                         </select>
                       </div>
