@@ -177,7 +177,7 @@ function Courses() {
       !form.targetStudent ||
       !form.courseType ||
       !form.instructors.length ||
-      !form.roomTypes.length ||
+      // !form.roomTypes.length ||
       !form.hasTutorial ||
       (form.hasTutorial === "Yes" && !form.lectureHour)
     ) {
@@ -360,13 +360,13 @@ function Courses() {
               </select>
               <select
                 className="form-select"
-                style={{ width: 120 }}
+                style={{ width: 140 }}
                 value={filterSemester}
                 onChange={(e) => setFilterSemester(e.target.value)}
               >
                 <option value="">Semester</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
+                <option value="1">Semester 1</option>
+                <option value="2">Semester 2</option>
               </select>
               <button
                 className="btn d-flex align-items-center"
@@ -663,7 +663,7 @@ function Courses() {
                         </div>
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Room Type (Select one or more): <RequiredMark /></label>
+                        <label className="form-label fw-bold">Room Type (Select if necessary):</label>
                         <div className="d-flex flex-wrap gap-2">
                           {allRoomTypes.map((room, idx) => (
                             <div className="form-check" key={idx}>
