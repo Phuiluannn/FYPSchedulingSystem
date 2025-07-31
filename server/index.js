@@ -7,6 +7,7 @@ import instructorRoutes from './routes/instructorRoutes.js';
 import roomRoutes from './routes/roomRoutes.js'; 
 import courseRoutes from './routes/courseRoutes.js';
 import feedbackRoutes from './routes/feedbackRoutes.js';
+import homeRoutes from './routes/homeRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -33,6 +34,7 @@ app.use('/rooms', roomRoutes);
 app.use('/courses', courseRoutes);
 app.use('/user/feedback', feedbackRoutes);
 app.use('/feedback', feedbackRoutes);
+app.use('/home', homeRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);

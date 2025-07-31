@@ -21,9 +21,30 @@ const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 function Home() {
   const [rooms, setRooms] = useState([]);
+  const [roomsReady, setRoomsReady] = useState(false);
   const [selectedDay, setSelectedDay] = useState("Monday");
-  // Example: timetable[roomId][timeIdx] = [{id, content}]
+  const [selectedYear, setSelectedYear] = useState("2024/2025");
+  const [selectedSemester, setSelectedSemester] = useState("1");
   const [timetable, setTimetable] = useState({});
+  const [isGenerated, setIsGenerated] = useState(false);
+  const [isModified, setIsModified] = useState(false);
+  const [instructors, setInstructors] = useState([]);
+
+  // Fetch instructors
+  useEffect(() => {
+    const fetchInstructors = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get("http://localhost:3001/instructors", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setInstructors(response.data);
+      } catch (error) {
+        setInstructors([]);
+      }
+    };
+    fetchInstructors();
+  }, []);
 
   useEffect(() => {
     const fetchRooms = async () => {
@@ -33,54 +54,175 @@ function Home() {
           headers: { Authorization: `Bearer ${token}` }
         });
         setRooms(response.data);
-
-        // Initialize timetable if empty
-        if (Object.keys(timetable).length === 0) {
-          const initial = {};
-          response.data.forEach(room => {
-            initial[room._id] = TIMES.map(() => []);
-          });
-          setTimetable(initial);
-        }
+        setRoomsReady(true);
       } catch (error) {
         setRooms([]);
+        setRoomsReady(true);
       }
     };
     fetchRooms();
-    // eslint-disable-next-line
   }, []);
 
   // Handle drag end
   const onDragEnd = (result) => {
     if (!result.destination) return;
-    const { source, destination, draggableId } = result;
+    const { source, destination } = result;
 
-    // Parse source/destination
-    const [sourceRoom, sourceTime] = source.droppableId.split("-");
-    const [destRoom, destTime] = destination.droppableId.split("-");
+    const getRoomAndTime = (droppableId) => {
+      const lastDash = droppableId.lastIndexOf("-");
+      return [
+        droppableId.substring(0, lastDash),
+        Number(droppableId.substring(lastDash + 1))
+      ];
+    };
+    const [sourceRoom, sourceTime] = getRoomAndTime(source.droppableId);
+    const [destRoom, destTime] = getRoomAndTime(destination.droppableId);
 
-    // Copy timetable
     const newTimetable = JSON.parse(JSON.stringify(timetable));
-    // Remove from source
     const [moved] = newTimetable[sourceRoom][sourceTime].splice(source.index, 1);
-    // Add to destination
     newTimetable[destRoom][destTime].splice(destination.index, 0, moved);
     setTimetable(newTimetable);
+    setIsModified(true);
   };
 
-  // Example: Add a dummy event to first cell for demo
-  useEffect(() => {
-    if (rooms.length) {
-      const initial = {};
+  // Generate timetable and map to frontend structure
+  const handleGenerateTimetable = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        "http://localhost:3001/home/generate-timetable",
+        {
+          year: selectedYear,
+          semester: selectedSemester
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const schedules = response.data.schedules;
+      const newTimetable = {};
       rooms.forEach(room => {
-        initial[room._id] = TIMES.map(() => []);
+        newTimetable[room._id] = TIMES.map(() => []);
       });
-      // Add a sample event to the first room, first time slot
-      if (rooms[0]) initial[rooms[0]._id][0] = [{ id: "event-1", content: "Sample Event" }];
-      setTimetable(initial);
+      schedules.forEach(sch => {
+        if (sch.Day !== selectedDay) return;
+        const roomId = sch.RoomID;
+        const timeIdx = TIMES.findIndex(t => t === sch.StartTime);
+        if (roomId && timeIdx !== -1) {
+          newTimetable[roomId][timeIdx].push({
+            id: String(sch._id),
+            code: sch.CourseCode,
+            instructors: sch.OriginalInstructors || sch.Instructors, // Use OriginalInstructors if available
+            selectedInstructor: Array.isArray(sch.Instructors) && sch.Instructors.length === 1
+              ? sch.Instructors[0]
+              : "",
+            selectedInstructorId: sch.InstructorID || "",
+            raw: sch
+          });
+        }
+      });
+      setTimetable(newTimetable);
+      setIsGenerated(true);
+      setIsModified(true);
+      alert("Timetable generated successfully!");
+    } catch (error) {
+      alert("Failed to generate timetable.");
+      console.error(error);
     }
+  };
+
+  // Save timetable to backend
+  const handleSaveTimetable = async () => {
+    try {
+      const timetableArr = [];
+      Object.entries(timetable).forEach(([roomId, slots]) => {
+        slots.forEach((slot, timeIdx) => {
+          slot.forEach(item => {
+            if (item.raw) {
+              timetableArr.push({
+                ...item.raw,
+                RoomID: roomId,
+                Day: selectedDay,
+                StartTime: TIMES[timeIdx],
+                EndTime: TIMES[timeIdx].split(" - ")[1],
+                Instructors: item.selectedInstructor
+                  ? [item.selectedInstructor]
+                  : item.instructors,
+                InstructorID: item.selectedInstructorId && item.selectedInstructorId.length === 24
+                  ? item.selectedInstructorId
+                  : null,
+                OriginalInstructors: item.instructors // Preserve original instructors
+              });
+            }
+          });
+        });
+      });
+
+      const token = localStorage.getItem('token');
+      await axios.post(
+        "http://localhost:3001/home/save-timetable",
+        {
+          year: selectedYear,
+          semester: selectedSemester,
+          timetable: timetableArr
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      alert("Timetable saved to database!");
+      setIsModified(false);
+      setIsGenerated(true);
+    } catch (error) {
+      alert("Failed to save timetable.");
+      console.error(error);
+    }
+  };
+
+  // Fetch saved timetable only after rooms are loaded
+  useEffect(() => {
+    if (!roomsReady) return;
+
+    const fetchSavedTimetable = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get(
+          `http://localhost:3001/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const schedules = response.data.schedules;
+        const newTimetable = {};
+        rooms.forEach(room => {
+          newTimetable[room._id] = TIMES.map(() => []);
+        });
+        schedules.forEach(sch => {
+          if (sch.Day !== selectedDay) return;
+          const roomId = sch.RoomID;
+          const timeIdx = TIMES.findIndex(t => t === sch.StartTime);
+          if (roomId && timeIdx !== -1) {
+            newTimetable[roomId][timeIdx].push({
+              id: String(sch._id),
+              code: sch.CourseCode,
+              instructors: sch.OriginalInstructors || sch.Instructors, // Use OriginalInstructors if available
+              selectedInstructor: Array.isArray(sch.Instructors) && sch.Instructors.length === 1
+                ? sch.Instructors[0]
+                : "",
+              selectedInstructorId: sch.InstructorID || "",
+              raw: sch
+            });
+          }
+        });
+        setTimetable(newTimetable);
+        setIsGenerated(false);
+        setIsModified(false);
+      } catch (error) {
+        const initial = {};
+        rooms.forEach(room => {
+          initial[room._id] = TIMES.map(() => []);
+        });
+        setTimetable(initial);
+        setIsModified(false);
+      }
+    };
+    fetchSavedTimetable();
     // eslint-disable-next-line
-  }, [rooms]);
+  }, [roomsReady, rooms, selectedYear, selectedSemester, selectedDay]);
 
   return (
     <ProtectedRoute>
@@ -92,10 +234,9 @@ function Home() {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              marginBottom: 28,
+              marginBottom: 18,
             }}
           >
-            {/* Left: Day selector */}
             <select
               className='form-select'
               style={{ width: 130, borderRadius: 8 }}
@@ -106,19 +247,30 @@ function Home() {
                 <option key={day} value={day}>{day}</option>
               ))}
             </select>
-            {/* Right: Year, Semester, Export */}
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <select className='form-select' style={{ width: 130, borderRadius: 8 }}>
-                <option>2025/2026</option>
-                <option>2026/2027</option>
-                <option>2027/2028</option>
-                <option>2028/2029</option>
-                <option>2029/2030</option>
-                <option>2030/2031</option>
+              <select
+                className='form-select'
+                style={{ width: 130, borderRadius: 8 }}
+                value={selectedYear}
+                onChange={e => setSelectedYear(e.target.value)}
+              >
+                <option value="">Year</option>
+                <option value="2024/2025">2024/2025</option>
+                <option value="2025/2026">2025/2026</option>
+                <option value="2026/2027">2026/2027</option>
+                <option value="2027/2028">2027/2028</option>
+                <option value="2028/2029">2028/2029</option>
+                <option value="2029/2030">2029/2030</option>
+                <option value="2030/2031">2030/2031</option>
               </select>
-              <select className='form-select' style={{ width: 140, borderRadius: 8 }}>
-                <option>Semester 1</option>
-                <option>Semester 2</option>
+              <select
+                className='form-select'
+                style={{ width: 140, borderRadius: 8 }}
+                value={selectedSemester}
+                onChange={e => setSelectedSemester(e.target.value)}
+              >
+                <option value="1">Semester 1</option>
+                <option value="2">Semester 2</option>
               </select>
               <button style={{
                 display: "flex",
@@ -180,29 +332,53 @@ function Home() {
                                   }}
                                 >
                                   {(timetable[room._id] && timetable[room._id][tIdx] || []).map((item, idx) => (
-                                    <Draggable key={item.id} draggableId={item.id} index={idx}>
-                                      {(provided, snapshot) => (
-                                        <div
-                                          ref={provided.innerRef}
-                                          {...provided.draggableProps}
-                                          {...provided.dragHandleProps}
-                                          style={{
-                                            userSelect: "none",
-                                            padding: "6px 10px",
-                                            margin: "0 0 4px 0",
-                                            minHeight: "32px",
-                                            backgroundColor: snapshot.isDragging ? "#015551" : "#e2e8f0",
-                                            color: snapshot.isDragging ? "#fff" : "#222",
-                                            borderRadius: 6,
-                                            fontWeight: 500,
-                                            fontSize: 15,
-                                            ...provided.draggableProps.style
-                                          }}
-                                        >
-                                          {item.content}
-                                        </div>
-                                      )}
-                                    </Draggable>
+                                    item && item.id ? (
+                                      <Draggable key={item.id} draggableId={String(item.id)} index={idx}>
+                                        {(provided, snapshot) => (
+                                          <div
+                                            ref={provided.innerRef}
+                                            {...provided.draggableProps}
+                                            {...provided.dragHandleProps}
+                                            style={{
+                                              userSelect: "none",
+                                              padding: "6px 10px",
+                                              margin: "0 0 4px 0",
+                                              minHeight: "32px",
+                                              backgroundColor: snapshot.isDragging ? "#015551" : "#e2e8f0",
+                                              color: snapshot.isDragging ? "#fff" : "#222",
+                                              borderRadius: 6,
+                                              fontWeight: 500,
+                                              fontSize: 15,
+                                              ...provided.draggableProps.style
+                                            }}
+                                          >
+                                            <div><strong>{item.code}</strong></div>
+                                            <div style={{ fontSize: 13 }}>
+                                              <select
+                                                value={item.selectedInstructorId || ""}
+                                                onChange={e => {
+                                                  const selectedId = e.target.value;
+                                                  const selectedInstructorObj = instructors.find(inst => inst._id === selectedId);
+                                                  const selectedName = selectedInstructorObj ? selectedInstructorObj.name : "";
+                                                  const newTimetable = JSON.parse(JSON.stringify(timetable));
+                                                  newTimetable[room._id][tIdx][idx].selectedInstructorId = selectedId;
+                                                  newTimetable[room._id][tIdx][idx].selectedInstructor = selectedName;
+                                                  setTimetable(newTimetable);
+                                                  setIsModified(true);
+                                                }}
+                                              >
+                                                <option value="">Select Instructor</option>
+                                                {instructors
+                                                  .filter(inst => (Array.isArray(item.instructors) ? item.instructors : [item.instructors]).includes(inst.name))
+                                                  .map(inst => (
+                                                    <option key={inst._id} value={inst._id}>{inst.name}</option>
+                                                  ))}
+                                              </select>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </Draggable>
+                                    ) : null
                                   ))}
                                   {provided.placeholder}
                                 </div>
@@ -216,19 +392,39 @@ function Home() {
                 </table>
               </DragDropContext>
             </div>
-            <div style={{ display: "flex", justifyContent: "center", marginTop: 32 }}>
-              <button style={{
-                background: "#015551",
-                color: "#fff",
-                border: "none",
-                borderRadius: 8,
-                padding: "9px 36px",
-                fontWeight: 500,
-                fontSize: 16,
-                cursor: "pointer"
-              }}>
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 32, gap: 16 }}>
+              <button
+                style={{
+                  background: "#015551",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "9px 36px",
+                  fontWeight: 500,
+                  fontSize: 16,
+                  cursor: "pointer"
+                }}
+                onClick={handleGenerateTimetable}
+              >
                 Generate
               </button>
+              {isModified && (
+                <button
+                  style={{
+                    background: "#007bff",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "9px 36px",
+                    fontWeight: 500,
+                    fontSize: 16,
+                    cursor: "pointer"
+                  }}
+                  onClick={handleSaveTimetable}
+                >
+                  Save
+                </button>
+              )}
             </div>
           </div>
         </div>
