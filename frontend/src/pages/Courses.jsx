@@ -15,6 +15,17 @@ const allRoomTypes = [
   "Other Lab",
 ];
 
+const allDepartments = [
+  "Artificial Intelligence",
+  "Computer System and Network",
+  "Data Science",
+  "Information Systems",
+  "Multimedia Computing",
+  "Software Engineering",
+];
+
+const allYears = ["1", "2", "3", "4"];
+
 function Courses() {
   // Filters
   const [filterYear, setFilterYear] = useState("2024/2025");
@@ -27,7 +38,6 @@ function Courses() {
 
   // Modal and form
   const [showModal, setShowModal] = useState(false);
-  // const [editIndex, setEditIndex] = useState(null);
   const [editCourseId, setEditCourseId] = useState(null);
   const [hasTutorial, setHasTutorial] = useState("");
   const [form, setForm] = useState({
@@ -42,6 +52,10 @@ function Courses() {
     roomTypes: [],
     hasTutorial: "",
     lectureHour: "",
+    lectureOccurrence: "",
+    tutorialOcc: "", // New field for tutorial occurrences
+    year: [],
+    department: [],
   });
   const [courses, setCourses] = useState([]);
   const [error, setError] = useState(null);
@@ -116,7 +130,7 @@ function Courses() {
 
   // Handle form changes
   const handleChange = (e) => {
-    const { name, value, type, selectedOptions } = e.target;
+    const { name, value, type, selectedOptions, checked } = e.target;
     if (type === "select-multiple") {
       setForm({
         ...form,
@@ -128,7 +142,22 @@ function Courses() {
         ...form,
         hasTutorial: value,
         lectureHour: value === "No" ? "" : form.lectureHour,
+        lectureOccurrence: value === "No" ? "" : form.lectureOccurrence,
+        tutorialOcc: value === "No" ? "" : form.tutorialOcc, // Reset tutorialOcc when hasTutorial changes
       });
+    } else if (type === "checkbox" && (name === "year" || name === "department")) {
+      const currentArray = form[name];
+      if (checked) {
+        setForm({
+          ...form,
+          [name]: [...currentArray, value],
+        });
+      } else {
+        setForm({
+          ...form,
+          [name]: currentArray.filter((item) => item !== value),
+        });
+      }
     } else {
       setForm({
         ...form,
@@ -141,9 +170,8 @@ function Courses() {
   const openModal = (course = null, idx = null) => {
     setError(null);
     if (course) {
-      setForm({ ...course });
+      setForm({ ...course, lectureOccurrence: course.lectureOccurrence || "", tutorialOcc: course.tutorialOcc || "" });
       setHasTutorial(course.hasTutorial);
-      // setEditIndex(idx);
       setEditCourseId(course._id);
     } else {
       setForm({
@@ -158,6 +186,10 @@ function Courses() {
         roomTypes: [],
         hasTutorial: "",
         lectureHour: "",
+        lectureOccurrence: "",
+        tutorialOcc: "", // Initialize tutorialOcc
+        year: [],
+        department: [],
       });
       setHasTutorial("");
       setEditCourseId(null);
@@ -177,9 +209,10 @@ function Courses() {
       !form.targetStudent ||
       !form.courseType ||
       !form.instructors.length ||
-      // !form.roomTypes.length ||
       !form.hasTutorial ||
-      (form.hasTutorial === "Yes" && !form.lectureHour)
+      !form.year.length ||
+      ((form.courseType === "Programme Core" || form.courseType === "Elective") && !form.department.length) ||
+      (form.hasTutorial === "Yes" && (!form.lectureHour || !form.lectureOccurrence || !form.tutorialOcc))
     ) {
       setError("Please fill in all required fields.");
       return;
@@ -193,48 +226,56 @@ function Courses() {
       return;
     }
 
-    try {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setError("Please log in to save courses.");
+    if (
+      form.hasTutorial === "Yes" &&
+      (Number(form.lectureOccurrence) <= 0 || Number(form.tutorialOcc) <= 0)
+    ) {
+      setError("Lecture occurrence and tutorial occurrence must be positive numbers.");
       return;
     }
-    if (editCourseId) {
-      // Remove _id from the payload
-      const { _id, ...formWithoutId } = form;
-      const response = await axios.put(
-        `http://localhost:3001/courses/${editCourseId}`,
-        formWithoutId,
-        {
+
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        setError("Please log in to save courses.");
+        return;
+      }
+      if (editCourseId) {
+        // Remove _id from the payload
+        const { _id, ...formWithoutId } = form;
+        const response = await axios.put(
+          `http://localhost:3001/courses/${editCourseId}`,
+          formWithoutId,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        setCourses(
+          courses.map((c) =>
+            c._id === response.data._id ? response.data : c
+          )
+        );
+      } else {
+        // POST for new course
+        const response = await axios.post("http://localhost:3001/courses", form, {
           headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      setCourses(
-        courses.map((c) =>
-          c._id === response.data._id ? response.data : c
-        )
-      );
-    } else {
-      // POST for new course
-      const response = await axios.post("http://localhost:3001/courses", form, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setCourses([...courses, response.data]);
+        });
+        setCourses([...courses, response.data]);
+      }
+      setShowModal(false);
+      setError(null);
+    } catch (error) {
+      if (
+        error.response &&
+        error.response.data &&
+        error.response.data.message &&
+        error.response.data.message.includes("duplicate key error")
+      ) {
+        setError("A course with this code, year, and semester already exists.");
+      } else {
+        setError(error.response?.data?.message || "Failed to save course.");
+      }
     }
-    setShowModal(false);
-    setError(null);
-  } catch (error) {
-    if (
-      error.response &&
-      error.response.data &&
-      error.response.data.message &&
-      error.response.data.message.includes("duplicate key error")
-    ) {
-      setError("A course with this code, year, and semester already exists.");
-    } else {
-      setError(error.response?.data?.message || "Failed to save course.");
-    }
-  }
   };
 
   // Delete course
@@ -245,7 +286,6 @@ function Courses() {
         setError("Please log in to delete courses.");
         return;
       }
-      // const course = courses[idx];
       await axios.delete(`http://localhost:3001/courses/${courseId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -329,7 +369,7 @@ function Courses() {
   return (
     <ProtectedRoute>
       <SideBar>
-        <div style={{ maxWidth: 1700, margin: "0 auto 0 auto", padding: "0 10px 0 5px" }}>
+        <div style={{margin: "0 auto 0 auto", padding: "0 30px 0 0px", marginLeft: "50px" }}>
           <h2 className="fw-bold mb-4">Courses</h2>
           <div className="d-flex align-items-center mb-3">
             <input
@@ -403,7 +443,7 @@ function Courses() {
               <table
                 className="table align-middle text-center"
                 style={{
-                  minWidth: "1200px",
+                  minWidth: "800px",
                   borderCollapse: "separate",
                   borderSpacing: "0 12px",
                 }}
@@ -417,11 +457,12 @@ function Courses() {
                   }}
                 >
                   <tr>
-                    <th style={{ width: "8%" }}>Code</th>
-                    <th style={{ width: "15%" }}>Name</th>
-                    <th style={{ width: "8%" }}>Credit Hour</th>
-                    <th style={{ width: "10%" }}>Target Student</th>
-                    <th style={{ width: "14%", paddingLeft: 28, position: "relative" }} ref={courseTypeRef}>
+                    <th style={{ width: "6%" }}>Code</th>
+                    <th style={{ width: "11%" }}>Name</th>
+                    <th style={{ width: "6%" }}>Credit Hour</th>
+                    <th style={{ width: "7%" }}>Target Student</th>
+                    <th style={{ width: "9%" }}>Year</th>
+                    <th style={{ width: "9%", paddingLeft: 28, position: "relative" }} ref={courseTypeRef}>
                       Course Type{" "}
                       <button
                         className="btn btn-sm btn-link"
@@ -470,74 +511,112 @@ function Courses() {
                         </div>
                       )}
                     </th>
-                    <th style={{ width: "15%" }}>Instructors</th>
-                    <th style={{ width: "13%" }}>Room Type</th>
-                    <th style={{ width: "10%" }}>Lecture @ Tutorial</th>
-                    <th style={{ width: "12%" }}>Lecture Hour</th>
+                    <th style={{ width: "11%" }}>Department</th>
+                    <th style={{ width: "11%" }}>Instructors</th>
+                    <th style={{ width: "9%" }}>Room Type</th>
+                    <th style={{ width: "7%" }}>Lecture @ Tutorial</th>
+                    <th style={{ width: "9%" }}>Lecture Hour</th>
+                    <th style={{ width: "9%" }}>Lecture Occurrence</th>
+                    <th style={{ width: "9%" }}>Tutorial Occurrence</th> {/* New column */}
                     <th style={{ width: "5%" }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCourses.map((course, idx) => {
-                      const isInstructorsExpanded = expandedRows[`${idx}-instructors`];
-                      const isRoomTypesExpanded = expandedRows[`${idx}-roomTypes`];
-                      return (
-                        <tr key={course._id}>
-                          <td style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {course.code}
-                          </td>
-                          <td style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            {course.name}
-                          </td>
-                          <td>{course.creditHour}</td>
-                          <td>{course.targetStudent}</td>
-                          <td>{course.courseType || "N/A"}</td>
-                          <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
-                            {isInstructorsExpanded
-                              ? course.instructors.length > 0
-                                ? course.instructors.join(", ")
-                                : "N/A"
-                              : getCondensedContent(course.instructors)}
-                            {course.instructors.length > 2 && (
-                              <span
-                                className="ms-1 text-primary"
-                                style={{ cursor: "pointer", textDecoration: "underline" }}
-                                onClick={() => toggleExpand(idx, "instructors")}
-                              >
-                                {isInstructorsExpanded ? " Show Less" : "Show More"}
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
-                            {isRoomTypesExpanded
-                              ? course.roomTypes.length > 0
-                                ? course.roomTypes.join(", ")
-                                : "N/A"
-                              : getCondensedContent(course.roomTypes)}
-                            {course.roomTypes.length > 2 && (
-                              <span
-                                className="ms-1 text-primary"
-                                style={{ cursor: "pointer", textDecoration: "underline" }}
-                                onClick={() => toggleExpand(idx, "roomTypes")}
-                              >
-                                {isRoomTypesExpanded ? " Show Less" : " Show More"}
-                              </span>
-                            )}
-                          </td>
-                          <td>{course.hasTutorial || "N/A"}</td>
-                          <td>{course.lectureHour || "N/A"}</td>
-                          <td>
-                            <button className="btn btn-link p-0 me-2" onClick={() => openModal(course, idx)}>
-                              <CIcon icon={cilPen} />
-                            </button>
-                            <button className="btn btn-link text-danger p-0" onClick={() => handleDelete(course._id)}>
-                              <CIcon icon={cilTrash} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  }
+                    const isInstructorsExpanded = expandedRows[`${idx}-instructors`];
+                    const isRoomTypesExpanded = expandedRows[`${idx}-roomTypes`];
+                    const isYearsExpanded = expandedRows[`${idx}-year`];
+                    const isDepartmentsExpanded = expandedRows[`${idx}-department`];
+                    return (
+                      <tr key={course._id}>
+                        <td style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {course.code}
+                        </td>
+                        <td style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {course.name}
+                        </td>
+                        <td>{course.creditHour}</td>
+                        <td>{course.targetStudent}</td>
+                        <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+                          {isYearsExpanded
+                            ? course.year.length > 0
+                              ? course.year.join(", ")
+                              : "N/A"
+                            : getCondensedContent(course.year)}
+                          {course.year.length > 2 && (
+                            <span
+                              className="ms-1 text-primary"
+                              style={{ cursor: "pointer", textDecoration: "underline" }}
+                              onClick={() => toggleExpand(idx, "year")}
+                            >
+                              {isYearsExpanded ? " Show Less" : " Show More"}
+                            </span>
+                          )}
+                        </td>
+                        <td>{course.courseType || "N/A"}</td>
+                        <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+                          {isDepartmentsExpanded
+                            ? course.department.length > 0
+                              ? course.department.join(", ")
+                              : "N/A"
+                            : getCondensedContent(course.department)}
+                          {course.department.length > 2 && (
+                            <span
+                              className="ms-1 text-primary"
+                              style={{ cursor: "pointer", textDecoration: "underline" }}
+                              onClick={() => toggleExpand(idx, "department")}
+                            >
+                              {isDepartmentsExpanded ? " Show Less" : " Show More"}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+                          {isInstructorsExpanded
+                            ? course.instructors.length > 0
+                              ? course.instructors.join(", ")
+                              : "N/A"
+                            : getCondensedContent(course.instructors)}
+                          {course.instructors.length > 2 && (
+                            <span
+                              className="ms-1 text-primary"
+                              style={{ cursor: "pointer", textDecoration: "underline" }}
+                              onClick={() => toggleExpand(idx, "instructors")}
+                            >
+                              {isInstructorsExpanded ? " Show Less" : " Show More"}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+                          {isRoomTypesExpanded
+                            ? course.roomTypes.length > 0
+                              ? course.roomTypes.join(", ")
+                              : "N/A"
+                            : getCondensedContent(course.roomTypes)}
+                          {course.roomTypes.length > 2 && (
+                            <span
+                              className="ms-1 text-primary"
+                              style={{ cursor: "pointer", textDecoration: "underline" }}
+                              onClick={() => toggleExpand(idx, "roomTypes")}
+                            >
+                              {isRoomTypesExpanded ? " Show Less" : " Show More"}
+                            </span>
+                          )}
+                        </td>
+                        <td>{course.hasTutorial || "N/A"}</td>
+                        <td>{course.lectureHour || "N/A"}</td>
+                        <td>{course.lectureOccurrence || "N/A"}</td>
+                        <td>{course.tutorialOcc || "N/A"}</td> {/* Display tutorialOcc */}
+                        <td>
+                          <button className="btn btn-link p-0 me-2" onClick={() => openModal(course, idx)}>
+                            <CIcon icon={cilPen} />
+                          </button>
+                          <button className="btn btn-link text-danger p-0" onClick={() => handleDelete(course._id)}>
+                            <CIcon icon={cilTrash} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -569,11 +648,16 @@ function Courses() {
                           name="academicYear"
                           value={form.academicYear}
                           onChange={handleChange}
-                          disabled={editCourseId === null} // Disable when adding
+                          disabled={editCourseId === null}
                         >
                           <option value="" disabled>Select Year</option>
                           <option value="2024/2025">2024/2025</option>
                           <option value="2025/2026">2025/2026</option>
+                          <option value="2026/2027">2026/2027</option>
+                          <option value="2027/2028">2027/2028</option>
+                          <option value="2028/2029">2028/2029</option>
+                          <option value="2029/2030">2029/2030</option>
+                          <option value="2030/2031">2030/2031</option>
                         </select>
                       </div>
                       <div className="mb-3">
@@ -583,7 +667,7 @@ function Courses() {
                           name="semester"
                           value={form.semester}
                           onChange={handleChange}
-                          disabled={editCourseId === null} // Disable when adding
+                          disabled={editCourseId === null}
                         >
                           <option value="" disabled>Select Semester</option>
                           <option value="1">1</option>
@@ -607,6 +691,27 @@ function Courses() {
                         <input className="form-control" type="number" name="targetStudent" value={form.targetStudent} min="0" onChange={handleChange} />
                       </div>
                       <div className="mb-3">
+                        <label className="form-label fw-bold">Year (Select one or more) <RequiredMark /></label>
+                        <div className="d-flex flex-wrap gap-2">
+                          {allYears.map((year, idx) => (
+                            <div className="form-check" key={idx}>
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                name="year"
+                                value={year}
+                                id={`year-${idx}`}
+                                checked={form.year.includes(year)}
+                                onChange={handleChange}
+                              />
+                              <label className="form-check-label" htmlFor={`year-${idx}`}>
+                                Year {year}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="mb-3">
                         <label className="form-label fw-bold">Course Type <RequiredMark /></label>
                         <select className="form-select" name="courseType" value={form.courseType} onChange={handleChange}>
                           <option value="" disabled>Select</option>
@@ -615,6 +720,29 @@ function Courses() {
                           <option>Elective</option>
                         </select>
                       </div>
+                      {(form.courseType === "Programme Core" || form.courseType === "Elective") && (
+                        <div className="mb-3">
+                          <label className="form-label fw-bold">Department (Select one or more) <RequiredMark /></label>
+                          <div className="d-flex flex-wrap gap-2">
+                            {allDepartments.map((dept, idx) => (
+                              <div className="form-check" key={idx}>
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  name="department"
+                                  value={dept}
+                                  id={`department-${idx}`}
+                                  checked={form.department.includes(dept)}
+                                  onChange={handleChange}
+                                />
+                                <label className="form-check-label" htmlFor={`department-${idx}`}>
+                                  {dept}
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="mb-3">
                         <label className="form-label fw-bold">Instructor List (Select one or more): <RequiredMark /></label>
                         <div className="mb-3">
@@ -700,17 +828,41 @@ function Courses() {
                         </select>
                       </div>
                       {form.hasTutorial === "Yes" && (
-                        <div className="mb-3">
-                          <label className="form-label fw-bold">If yes, please state the lecture hours <RequiredMark /></label>
-                          <input
-                            className="form-control"
-                            type="number"
-                            min="0"
-                            name="lectureHour"
-                            value={form.lectureHour}
-                            onChange={handleChange}
-                          />
-                        </div>
+                        <>
+                          <div className="mb-3">
+                            <label className="form-label fw-bold">If yes, please state the lecture hours <RequiredMark /></label>
+                            <input
+                              className="form-control"
+                              type="number"
+                              min="0"
+                              name="lectureHour"
+                              value={form.lectureHour}
+                              onChange={handleChange}
+                            />
+                          </div>
+                          <div className="mb-3">
+                            <label className="form-label fw-bold">Number of lecture occurrences needed <RequiredMark /></label>
+                            <input
+                              className="form-control"
+                              type="number"
+                              min="1"
+                              name="lectureOccurrence"
+                              value={form.lectureOccurrence}
+                              onChange={handleChange}
+                            />
+                          </div>
+                          <div className="mb-3">
+                            <label className="form-label fw-bold">Number of tutorial occurrences needed <RequiredMark /></label>
+                            <input
+                              className="form-control"
+                              type="number"
+                              min="1"
+                              name="tutorialOcc"
+                              value={form.tutorialOcc}
+                              onChange={handleChange}
+                            />
+                          </div>
+                        </>
                       )}
                     </form>
                   </div>
@@ -751,6 +903,8 @@ function Courses() {
                       >
                         <option value="2024/2025">2024/2025</option>
                         <option value="2025/2026">2025/2026</option>
+                        <option value="2026/2027">2026/2027</option>
+                        <option value="2027/2028">2027/2028</option>
                       </select>
                     </div>
                     <div className="mb-3">

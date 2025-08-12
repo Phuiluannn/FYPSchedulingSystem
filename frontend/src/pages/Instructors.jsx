@@ -312,7 +312,6 @@ function Instructors() {
                           {[
                             "Artificial Intelligence",
                             "Computer System and Technology",
-                            "Data Science",
                             "Information Systems",
                             "Software Engineering",
                           ].map((department) => (
@@ -464,7 +463,6 @@ function Instructors() {
                           <option value="Computer System and Technology">
                             Computer System and Technology
                           </option>
-                          <option value="Data Science">Data Science</option>
                           <option value="Information Systems">
                             Information Systems
                           </option>

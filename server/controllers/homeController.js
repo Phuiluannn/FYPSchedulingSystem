@@ -25,7 +25,11 @@ export const saveTimetable = async (req, res) => {
         InstructorID: item.InstructorID && typeof item.InstructorID === "string" && item.InstructorID.length === 24
           ? new mongoose.Types.ObjectId(item.InstructorID)
           : null,
-        OriginalInstructors: item.OriginalInstructors || item.Instructors // Preserve original instructors
+        // Only save selected instructor if one was actually selected
+        Instructors: item.selectedInstructor
+          ? [item.selectedInstructor]
+          : [], // Empty array if no instructor selected
+        OriginalInstructors: item.OriginalInstructors || item.instructors // Preserve original instructors
       };
       return updatedItem;
     });

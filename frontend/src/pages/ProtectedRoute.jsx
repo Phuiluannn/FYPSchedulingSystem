@@ -32,7 +32,8 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
           alertedRef.current = true;
           alert(err.message);
           localStorage.removeItem('token');
-          window.location.href = '/login';
+          // window.location.href = '/login';
+          navigate('/login');
         } else if (!alertedRef.current) {
           alertedRef.current = true;
           alert(err.message);

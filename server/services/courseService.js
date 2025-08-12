@@ -12,13 +12,29 @@ export const getCourseById = async (id) => {
 
 // Create a new course
 export const createCourse = async (courseData) => {
-  const course = new CourseModel(courseData);
+  const course = new CourseModel({
+    ...courseData,
+    year: Array.isArray(courseData.year) ? courseData.year : [],
+    department: Array.isArray(courseData.department) ? courseData.department : [],
+    lectureOccurrence: courseData.hasTutorial === "No" ? 0 : courseData.lectureOccurrence,
+    tutorialOcc: courseData.hasTutorial === "No" ? 0 : courseData.tutorialOcc, // Handle tutorialOcc
+  });
   return await course.save();
 };
 
 // Update an existing course
 export const updateCourse = async (id, courseData) => {
-  return await CourseModel.findByIdAndUpdate(id, courseData, { new: true });
+  return await CourseModel.findByIdAndUpdate(
+    id,
+    {
+      ...courseData,
+      year: Array.isArray(courseData.year) ? courseData.year : [],
+      department: Array.isArray(courseData.department) ? courseData.department : [],
+      lectureOccurrence: courseData.hasTutorial === "No" ? 0 : courseData.lectureOccurrence,
+      tutorialOcc: courseData.hasTutorial === "No" ? 0 : courseData.tutorialOcc, // Handle tutorialOcc
+    },
+    { new: true }
+  );
 };
 
 // Delete a course
@@ -26,6 +42,7 @@ export const deleteCourse = async (id) => {
   return await CourseModel.findByIdAndDelete(id);
 };
 
+// Copy courses
 export const copyCourses = async (fromYear, fromSemester, toYear, toSemester) => {
   const coursesToCopy = await CourseModel.find({
     academicYear: fromYear,
@@ -48,6 +65,10 @@ export const copyCourses = async (fromYear, fromSemester, toYear, toSemester) =>
         ...rest,
         academicYear: toYear,
         semester: toSemester,
+        year: Array.isArray(rest.year) ? rest.year : [],
+        department: Array.isArray(rest.department) ? rest.department : [],
+        lectureOccurrence: rest.hasTutorial === "No" ? 0 : rest.lectureOccurrence,
+        tutorialOcc: rest.hasTutorial === "No" ? 0 : rest.tutorialOcc, // Copy tutorialOcc
       };
     });
 

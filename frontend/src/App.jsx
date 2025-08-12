@@ -12,6 +12,7 @@ import UserHome from './pages/UserHome';
 import UserFeedback from './pages/UserFeedback';
 import ProtectedRoute from './pages/ProtectedRoute';
 import AdminFeedback from './pages/AdminFeedback';
+import Analytics from './pages/Analytics';
 
 function App() {
 
@@ -41,6 +42,11 @@ function App() {
         <Route path="/feedback" element={
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminFeedback />
+          </ProtectedRoute>
+        }/>
+        <Route path="/analytics" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <Analytics />
           </ProtectedRoute>
         }/>
 
