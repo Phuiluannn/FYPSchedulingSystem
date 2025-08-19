@@ -15,6 +15,7 @@ function UserFeedback() {
     feedback: "",
   });
   const [errorMessage, setErrorMessage] = useState("");
+  const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
 
   // Fetch feedback on mount and when activeTab changes
   useEffect(() => {
@@ -56,31 +57,37 @@ function UserFeedback() {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim() || !form.feedback.trim()) {
-      setErrorMessage("Please fill in both Subject and Description fields.");
-      return;
-    }
-    try {
-      const token = localStorage.getItem("token");
-      const response = await axios.post(
-        "http://localhost:3001/user/feedback",
-        {
-          title: form.title,
-          type: form.type,
-          feedback: form.feedback,
-          priority: form.priority || "Low"
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setFeedbackList([response.data, ...feedbackList]);
-      setShowModal(false);
-      setForm({ title: "", type: "", feedback: "" });
-      setErrorMessage("");
-    } catch (error) {
-      setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
-    }
-  };
+  e.preventDefault();
+  if (!form.title.trim() || !form.feedback.trim()) {
+    setErrorMessage("Please fill in both Subject and Description fields.");
+    return;
+  }
+  
+  try {
+    const token = localStorage.getItem("token");
+    
+    // Automatically set priority based on feedback type
+    const priority = form.type === "Schedule Issue" ? "High" : "Low";
+    
+    const response = await axios.post(
+      "http://localhost:3001/user/feedback",
+      {
+        title: form.title,
+        type: form.type,
+        feedback: form.feedback,
+        priority: priority
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    setFeedbackList([response.data, ...feedbackList]);
+    setShowModal(false);
+    setForm({ title: "", type: "", feedback: "" });
+    setErrorMessage("");
+  } catch (error) {
+    setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
+  }
+};
 
   return (
     <ProtectedRoute>
@@ -286,7 +293,7 @@ function UserFeedback() {
                         <div className="alert alert-danger">{errorMessage}</div>
                       )}
                       <div className="mb-4">
-                        <label className="form-label fw-bold">Category</label>
+                        <label className="form-label fw-bold">Category<RequiredMark /></label>
                         <select
                           className="form-select"
                           name="type"
@@ -297,6 +304,7 @@ function UserFeedback() {
                           <option value="" disabled>
                             Select category
                           </option>
+                          <option value="Schedule Issue">Schedule Issue</option>
                           <option value="Bug">Bug</option>
                           <option value="Feature Request">Feature Request</option>
                           <option value="Improvement Suggestion">Improvement Suggestion</option>
@@ -304,7 +312,7 @@ function UserFeedback() {
                         </select>
                       </div>
                       <div className="mb-4">
-                        <label className="form-label fw-bold">Subject</label>
+                        <label className="form-label fw-bold">Subject<RequiredMark /></label>
                         <input
                           className="form-control"
                           name="title"
@@ -316,7 +324,7 @@ function UserFeedback() {
                         />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Description</label>
+                        <label className="form-label fw-bold">Description<RequiredMark /></label>
                         <textarea
                           className="form-control"
                           name="feedback"

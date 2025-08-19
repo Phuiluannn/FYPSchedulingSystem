@@ -13,6 +13,7 @@ import UserFeedback from './pages/UserFeedback';
 import ProtectedRoute from './pages/ProtectedRoute';
 import AdminFeedback from './pages/AdminFeedback';
 import Analytics from './pages/Analytics';
+import InstructorTimetable from './pages/InstructorTimetable';
 
 function App() {
 
@@ -66,6 +67,13 @@ function App() {
         <Route path="/user/feedback" element={
           <ProtectedRoute allowedRoles={['student', 'instructor']}>
             <UserFeedback />
+          </ProtectedRoute>
+        }/>
+
+        {/* Instructor Timetable */}
+        <Route path="/instructor/my-timetable" element={
+          <ProtectedRoute allowedRoles={['instructor']}>
+            <InstructorTimetable />
           </ProtectedRoute>
         }/>
 

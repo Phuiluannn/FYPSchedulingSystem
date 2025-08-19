@@ -35,6 +35,7 @@ function LogIn() {
                     localStorage.setItem('name', result.data.name);
                     localStorage.setItem('feedbackBadge', result.data.unresolvedFeedbackCount || 0); // Store unresolved feedback count
                     localStorage.setItem('role', result.data.role); // Store the role in local storage
+                    localStorage.setItem('email', email); // Store the email in local storage
                     // Route based on role
                     if (role === "student") {
                         navigate('/user/home');

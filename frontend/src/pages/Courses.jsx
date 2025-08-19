@@ -4,6 +4,7 @@ import SideBar from "./SideBar";
 import ProtectedRoute from "./ProtectedRoute";
 import CIcon from "@coreui/icons-react";
 import { cilTrash, cilPen, cilFilter, cilCopy } from "@coreui/icons";
+import { BiSearch } from "react-icons/bi";
 
 const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
 
@@ -372,14 +373,31 @@ function Courses() {
         <div style={{margin: "0 auto 0 auto", padding: "0 30px 0 0px", marginLeft: "50px" }}>
           <h2 className="fw-bold mb-4">Courses</h2>
           <div className="d-flex align-items-center mb-3">
+            <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+            <BiSearch 
+                      style={{ 
+                        position: "absolute", 
+                        left: 10, 
+                        fontSize: 18, 
+                        color: "#666", 
+                        zIndex: 1 
+                      }} 
+            />
             <input
               type="text"
               className="form-control"
-              placeholder="🔍 Search by code or name..."
-              style={{ maxWidth: 250 }}
+              placeholder="Search by code or name..."
+              style={{
+                width: 230,
+                padding: "8px 35px 8px 35px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                fontSize: 14
+              }}
               value={courseSearch}
               onChange={(e) => setCourseSearch(e.target.value)}
             />
+            </div>
             <div className="d-flex align-items-center gap-3 ms-auto">
               <select
                 className="form-select"

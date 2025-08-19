@@ -15,6 +15,7 @@ const HomeSchema = new mongoose.Schema({
   CourseCode: { type: String },      
   Instructors: [{ type: String }],   // Selected instructor(s)
   OriginalInstructors: [{ type: String }], // Full list of instructors for the course
+  Published: { type: Boolean, default: false }
 });
 
 export default mongoose.model("Schedule", HomeSchema);

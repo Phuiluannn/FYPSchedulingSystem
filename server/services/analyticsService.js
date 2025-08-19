@@ -180,14 +180,17 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
 
   // NEW: Check for instructor conflicts
   const instructorUsage = {};
+  
   for (const item of timetable) {
     const { InstructorID, Day, StartTime, Duration, CourseCode, OccNumber } = item;
     
     // Skip if no instructor assigned
-    if (!InstructorID) continue;
+    if (!InstructorID || InstructorID.trim() === '') continue;
     
     const startTimeIdx = TIMES.indexOf(StartTime);
     if (startTimeIdx === -1) continue;
+    
+    const duration = Duration || 1;
     
     // Initialize instructor usage tracking
     if (!instructorUsage[Day]) instructorUsage[Day] = {};
@@ -201,16 +204,19 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
       : "";
     
     // Check each time slot for this event's duration
-    for (let i = 0; i < Duration; i++) {
-      const timeSlot = TIMES[startTimeIdx + i];
-      if (!timeSlot) continue;
+    for (let i = 0; i < duration; i++) {
+      const timeSlotIdx = startTimeIdx + i;
+      if (timeSlotIdx >= TIMES.length) break; // Don't exceed available time slots
+      
+      const timeSlot = TIMES[timeSlotIdx];
       
       // Check if instructor already has a class at this time
       const existingClass = instructorUsage[Day][InstructorID].find(
-        existing => existing.timeSlot === timeSlot
+        existing => existing.timeSlotIdx === timeSlotIdx
       );
       
       if (existingClass) {
+        // Found a conflict!
         conflicts.push({
           Year: year,
           Semester: semester,
@@ -227,8 +233,11 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
         // Add this class to instructor's schedule
         instructorUsage[Day][InstructorID].push({
           timeSlot,
+          timeSlotIdx,
           courseCode: CourseCode,
-          occNumberText
+          occNumberText,
+          startTime: StartTime,
+          duration: duration
         });
       }
     }
@@ -239,6 +248,7 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
     await recordConflict(conflict);
   }
 
+  console.log(`=== CONFLICTS DETECTED: ${conflicts.length} ===`);
   return conflicts;
 };
 

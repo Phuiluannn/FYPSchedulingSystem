@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const FeedbackSchema = new mongoose.Schema({
   title: { type: String, required: true, maxLength: 100 },
-  type: { type: String, required: true, enum: ["Bug", "Feature Request", "Improvement Suggestion", "Other"] },
+  type: { type: String, required: true, enum: ["Schedule Issue", "Bug", "Feature Request", "Improvement Suggestion", "Other"] },
   feedback: { type: String, required: true, maxLength: 500 },
   status: { 
     type: String, 

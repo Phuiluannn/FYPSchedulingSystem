@@ -222,6 +222,7 @@ function AdminFeedback() {
                 onChange={(e) => setCategory(e.target.value)}
               >
                 <option value="">Category</option>
+                <option value="Schedule Issue">Schedule Issue</option>
                 <option value="Bug">Bug</option>
                 <option value="Feature Request">Feature Request</option>
                 <option value="Improvement Suggestion">Improvement Suggestion</option>
@@ -510,7 +511,7 @@ function AdminFeedback() {
                             <div className="d-flex gap-2 mt-2">
                               <button
                                 type="button"
-                                className="btn btn-dark"
+                                className="btn btn-primary"
                                 disabled={modalLoading || !modalForm.updateResponse.trim()}
                                 onClick={handleUpdateResponse}
                               >
@@ -546,7 +547,7 @@ function AdminFeedback() {
                             <div className="d-flex gap-2 mt-2">
                               <button
                                 type="submit"
-                                className="btn btn-dark"
+                                className="btn btn-primary"
                                 disabled={modalLoading || !modalForm.response.trim()}
                               >
                                 Send Response
