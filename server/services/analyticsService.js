@@ -16,16 +16,45 @@ const TIMES = [
   "4.00 PM - 5.00 PM",
 ];
 
-export const getInstructorWorkload = async (year, semester) => {
+export const getInstructorWorkload = async (year, semester, onlyPublished = false) => {
   console.log("=== FETCHING INSTRUCTOR WORKLOAD ===");
-  console.log(`Year: ${year}, Semester: ${semester}`);
+  console.log(`Year: ${year}, Semester: ${semester}, onlyPublished: ${onlyPublished}`);
+
+  // Build the match criteria
+  const matchCriteria = {
+    Year: year,
+    Semester: semester
+  };
+
+  // CRITICAL FIX: Handle published vs draft schedules properly
+  if (onlyPublished) {
+    matchCriteria.Published = true;
+    console.log("Filtering for published schedules only");
+  } else {
+    // For admin view, prioritize draft schedules but fall back to published if no drafts
+    console.log("Admin view - checking for draft schedules first");
+    
+    // First check if draft schedules exist
+    const draftCount = await Schedule.countDocuments({
+      Year: year,
+      Semester: semester,
+      Published: { $ne: true }
+    });
+    
+    if (draftCount > 0) {
+      matchCriteria.Published = { $ne: true };
+      console.log(`Found ${draftCount} draft schedules, using drafts for workload calculation`);
+    } else {
+      matchCriteria.Published = true;
+      console.log("No draft schedules found, falling back to published schedules for workload calculation");
+    }
+  }
+
+  console.log("Final match criteria:", matchCriteria);
 
   const workload = await Schedule.aggregate([
     {
-      $match: {
-        Year: year,
-        Semester: semester
-      }
+      $match: matchCriteria
     },
     {
       $group: {
@@ -120,7 +149,7 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
   
   const conflicts = [];
   
-  // Check for room double booking and capacity conflicts
+  // Check for room double booking and capacity conflicts (unchanged)
   const roomUsage = {};
   for (const item of timetable) {
     const { RoomID, Day, StartTime, Duration, CourseCode, OccNumber } = item;
@@ -129,7 +158,6 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
     if (!roomUsage[Day]) roomUsage[Day] = {};
     if (!roomUsage[Day][RoomID]) roomUsage[Day][RoomID] = [];
 
-    // Format OccNumber for description
     const occNumberText = OccNumber 
       ? Array.isArray(OccNumber) 
         ? ` (Occ ${OccNumber.join(", ")})` 
@@ -156,7 +184,7 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
       roomUsage[Day][RoomID].push(timeSlot);
     }
 
-    // Check room capacity
+    // Check room capacity (unchanged)
     const course = await Course.findOne({ code: CourseCode });
     const room = await Room.findById(RoomID);
     if (course && room) {
@@ -178,70 +206,83 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
     }
   }
 
-  // NEW: Check for instructor conflicts
-  const instructorUsage = {};
+  // FIXED: Check for instructor conflicts - group overlapping events
+  const instructorConflicts = new Map();
+  
+  // Group events by instructor and day
+  const instructorEvents = {};
   
   for (const item of timetable) {
     const { InstructorID, Day, StartTime, Duration, CourseCode, OccNumber } = item;
     
-    // Skip if no instructor assigned
     if (!InstructorID || InstructorID.trim() === '') continue;
     
     const startTimeIdx = TIMES.indexOf(StartTime);
     if (startTimeIdx === -1) continue;
     
-    const duration = Duration || 1;
+    const key = `${InstructorID}-${Day}`;
+    if (!instructorEvents[key]) {
+      instructorEvents[key] = [];
+    }
     
-    // Initialize instructor usage tracking
-    if (!instructorUsage[Day]) instructorUsage[Day] = {};
-    if (!instructorUsage[Day][InstructorID]) instructorUsage[Day][InstructorID] = [];
-    
-    // Format OccNumber for description
-    const occNumberText = OccNumber 
-      ? Array.isArray(OccNumber) 
-        ? ` (Occ ${OccNumber.join(", ")})` 
-        : ` (Occ ${OccNumber})`
-      : "";
-    
-    // Check each time slot for this event's duration
-    for (let i = 0; i < duration; i++) {
-      const timeSlotIdx = startTimeIdx + i;
-      if (timeSlotIdx >= TIMES.length) break; // Don't exceed available time slots
-      
-      const timeSlot = TIMES[timeSlotIdx];
-      
-      // Check if instructor already has a class at this time
-      const existingClass = instructorUsage[Day][InstructorID].find(
-        existing => existing.timeSlotIdx === timeSlotIdx
-      );
-      
-      if (existingClass) {
-        // Found a conflict!
-        conflicts.push({
-          Year: year,
-          Semester: semester,
-          Type: 'Instructor Conflict',
-          Description: `Instructor assigned to both ${existingClass.courseCode}${existingClass.occNumberText} and ${CourseCode}${occNumberText} on ${Day} at ${timeSlot}`,
-          CourseCode,
-          InstructorID,
-          Day,
-          StartTime: timeSlot,
-          Priority: 'High',
-          Status: 'Pending'
-        });
-      } else {
-        // Add this class to instructor's schedule
-        instructorUsage[Day][InstructorID].push({
-          timeSlot,
-          timeSlotIdx,
-          courseCode: CourseCode,
-          occNumberText,
-          startTime: StartTime,
-          duration: duration
-        });
+    instructorEvents[key].push({
+      ...item,
+      startTimeIdx,
+      endTimeIdx: startTimeIdx + (Duration || 1) - 1
+    });
+  }
+  
+  // Check for conflicts within each instructor's daily schedule
+  Object.values(instructorEvents).forEach(events => {
+    for (let i = 0; i < events.length; i++) {
+      for (let j = i + 1; j < events.length; j++) {
+        const event1 = events[i];
+        const event2 = events[j];
+        
+        // Check if time periods overlap
+        const hasOverlap = !(event1.endTimeIdx < event2.startTimeIdx || event1.startTimeIdx > event2.endTimeIdx);
+        
+        if (hasOverlap) {
+          // Create unique conflict ID
+          const sortedIds = [event1._id, event2._id].sort();
+          const conflictId = `${event1.InstructorID}-${event1.Day}-${sortedIds[0]}-${sortedIds[1]}`;
+          
+          if (!instructorConflicts.has(conflictId)) {
+            const overlapStart = Math.max(event1.startTimeIdx, event2.startTimeIdx);
+            const overlapTimeSlot = TIMES[overlapStart];
+            
+            const event1OccText = event1.OccNumber 
+              ? Array.isArray(event1.OccNumber) 
+                ? ` (Occ ${event1.OccNumber.join(", ")})` 
+                : ` (Occ ${event1.OccNumber})`
+              : "";
+              
+            const event2OccText = event2.OccNumber 
+              ? Array.isArray(event2.OccNumber) 
+                ? ` (Occ ${event2.OccNumber.join(", ")})` 
+                : ` (Occ ${event2.OccNumber})`
+              : "";
+            
+            instructorConflicts.set(conflictId, {
+              Year: year,
+              Semester: semester,
+              Type: 'Instructor Conflict',
+              Description: `Instructor assigned to both ${event1.CourseCode}${event1OccText} and ${event2.CourseCode}${event2OccText} on ${event1.Day} at ${overlapTimeSlot}`,
+              CourseCode: event1.CourseCode, // Primary course
+              InstructorID: event1.InstructorID,
+              Day: event1.Day,
+              StartTime: overlapTimeSlot,
+              Priority: 'High',
+              Status: 'Pending'
+            });
+          }
+        }
       }
     }
-  }
+  });
+  
+  // Add instructor conflicts to the main conflicts array
+  conflicts.push(...Array.from(instructorConflicts.values()));
 
   // Save conflicts to database
   for (const conflict of conflicts) {
@@ -249,6 +290,7 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
   }
 
   console.log(`=== CONFLICTS DETECTED: ${conflicts.length} ===`);
+  console.log(`Instructor conflicts: ${instructorConflicts.size}`);
   return conflicts;
 };
 
@@ -296,4 +338,247 @@ export const getConflictStats = async (year, semester) => {
     byType: conflictsByType,
     byPriority: conflictsByPriority
   };
+};
+
+export const autoResolveObsoleteConflicts = async (year, semester) => {
+  console.log("=== AUTO-RESOLVING OBSOLETE CONFLICTS ===");
+  
+  try {
+    // Get all pending conflicts for this year/semester
+    const pendingConflicts = await Conflict.find({
+      Year: year,
+      Semester: semester,
+      Status: 'Pending'
+    });
+
+    if (pendingConflicts.length === 0) {
+      console.log("No pending conflicts found to check");
+      return { resolved: 0, conflicts: [] };
+    }
+
+    console.log(`Found ${pendingConflicts.length} pending conflicts to validate`);
+
+    // Get current schedules (drafts take priority over published)
+    const draftSchedules = await Schedule.find({
+      Year: year,
+      Semester: semester,
+      Published: { $ne: true }
+    }).lean();
+
+    const currentSchedules = draftSchedules.length > 0 
+      ? draftSchedules 
+      : await Schedule.find({
+          Year: year,
+          Semester: semester,
+          Published: true
+        }).lean();
+
+    console.log(`Using ${currentSchedules.length} current schedules for conflict validation`);
+
+    const resolvedConflicts = [];
+    const stillValidConflicts = [];
+
+    for (const conflict of pendingConflicts) {
+      const isStillValid = await validateConflictStillExists(conflict, currentSchedules);
+      
+      if (isStillValid) {
+        stillValidConflicts.push(conflict);
+      } else {
+        // Auto-resolve this conflict
+        await Conflict.findByIdAndUpdate(
+          conflict._id,
+          { 
+            Status: 'Resolved',
+            ResolvedAt: new Date(),
+            ResolvedBy: 'System Auto-Resolution',
+            ResolutionNote: 'Conflict no longer exists in current timetable'
+          }
+        );
+        
+        resolvedConflicts.push(conflict);
+        console.log(`Auto-resolved conflict: ${conflict.Type} for ${conflict.CourseCode}`);
+      }
+    }
+
+    console.log(`Auto-resolution complete: ${resolvedConflicts.length} resolved, ${stillValidConflicts.length} still valid`);
+
+    return {
+      resolved: resolvedConflicts.length,
+      conflicts: resolvedConflicts.map(c => ({
+        id: c._id,
+        type: c.Type,
+        course: c.CourseCode,
+        description: c.Description
+      }))
+    };
+
+  } catch (error) {
+    console.error("Error in auto-resolution:", error);
+    throw error;
+  }
+};
+
+const validateConflictStillExists = async (conflict, currentSchedules) => {
+  const { Type, CourseCode, Day, StartTime, RoomID, InstructorID } = conflict;
+
+  switch (Type) {
+    case 'Room Double Booking':
+      return await validateRoomDoubleBookingConflict(conflict, currentSchedules);
+    
+    case 'Room Capacity':
+      return await validateRoomCapacityConflict(conflict, currentSchedules);
+    
+    case 'Instructor Conflict':
+      return await validateInstructorConflict(conflict, currentSchedules);
+    
+    case 'Time Slot Exceeded':
+      return await validateTimeSlotExceededConflict(conflict, currentSchedules);
+    
+    default:
+      // For unknown conflict types, assume they're still valid
+      console.log(`Unknown conflict type: ${Type}, assuming still valid`);
+      return true;
+  }
+};
+
+const validateRoomDoubleBookingConflict = async (conflict, schedules) => {
+  const { CourseCode, Day, StartTime, RoomID } = conflict;
+  
+  // Find all events in the same room on the same day
+  const roomEvents = schedules.filter(sch => 
+    sch.RoomID?.toString() === RoomID?.toString() && 
+    sch.Day === Day
+  );
+
+  if (roomEvents.length <= 1) {
+    return false; // No double booking if 1 or fewer events
+  }
+
+  // Check for actual time overlaps
+  const timeOverlaps = [];
+  for (let i = 0; i < roomEvents.length; i++) {
+    for (let j = i + 1; j < roomEvents.length; j++) {
+      const event1 = roomEvents[i];
+      const event2 = roomEvents[j];
+      
+      const startIdx1 = TIMES.indexOf(event1.StartTime);
+      const endIdx1 = startIdx1 + (event1.Duration || 1) - 1;
+      const startIdx2 = TIMES.indexOf(event2.StartTime);
+      const endIdx2 = startIdx2 + (event2.Duration || 1) - 1;
+      
+      const hasOverlap = !(endIdx1 < startIdx2 || startIdx1 > endIdx2);
+      if (hasOverlap) {
+        timeOverlaps.push([event1, event2]);
+      }
+    }
+  }
+
+  return timeOverlaps.length > 0;
+};
+
+const validateRoomCapacityConflict = async (conflict, schedules) => {
+  const { CourseCode, RoomID } = conflict;
+  
+  // Check if this course is still scheduled in this room
+  const courseInRoom = schedules.find(sch => 
+    sch.CourseCode === CourseCode && 
+    sch.RoomID?.toString() === RoomID?.toString()
+  );
+
+  if (!courseInRoom) {
+    return false; // Course no longer in this room
+  }
+
+  // Get room and course details to recalculate capacity requirement
+  const room = await Room.findById(RoomID);
+  const course = await Course.findOne({ code: CourseCode });
+
+  if (!room || !course) {
+    return false; // Room or course not found
+  }
+
+  // Recalculate required capacity
+  const requiredCapacity = calculateRequiredCapacity(
+    CourseCode, 
+    courseInRoom.OccType, 
+    courseInRoom.OccNumber, 
+    [course]
+  );
+
+  return room.capacity < requiredCapacity;
+};
+
+const validateInstructorConflict = async (conflict, schedules) => {
+  const { InstructorID, Day } = conflict;
+  
+  if (!InstructorID) return false;
+
+  // Find all events assigned to this instructor on this day
+  const instructorEvents = schedules.filter(sch => 
+    sch.InstructorID?.toString() === InstructorID?.toString() && 
+    sch.Day === Day
+  );
+
+  if (instructorEvents.length <= 1) {
+    return false; // No conflict with 1 or fewer events
+  }
+
+  // Check for time overlaps
+  for (let i = 0; i < instructorEvents.length; i++) {
+    for (let j = i + 1; j < instructorEvents.length; j++) {
+      const event1 = instructorEvents[i];
+      const event2 = instructorEvents[j];
+      
+      const startIdx1 = TIMES.indexOf(event1.StartTime);
+      const endIdx1 = startIdx1 + (event1.Duration || 1) - 1;
+      const startIdx2 = TIMES.indexOf(event2.StartTime);
+      const endIdx2 = startIdx2 + (event2.Duration || 1) - 1;
+      
+      const hasOverlap = !(endIdx1 < startIdx2 || startIdx1 > endIdx2);
+      if (hasOverlap) {
+        return true; // Conflict still exists
+      }
+    }
+  }
+
+  return false; // No overlaps found
+};
+
+const validateTimeSlotExceededConflict = async (conflict, schedules) => {
+  const { CourseCode, Day, StartTime } = conflict;
+  
+  // Find the specific event
+  const event = schedules.find(sch => 
+    sch.CourseCode === CourseCode && 
+    sch.Day === Day && 
+    sch.StartTime === StartTime
+  );
+
+  if (!event) {
+    return false; // Event no longer exists
+  }
+
+  const startIdx = TIMES.indexOf(event.StartTime);
+  const duration = event.Duration || 1;
+  
+  return startIdx + duration > TIMES.length;
+};
+
+// Helper function to calculate required capacity (same logic as in Home.jsx)
+const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
+  const course = courses.find(c => c.code === courseCode);
+  if (!course) return 0;
+  
+  const targetStudent = course.targetStudent || 0;
+  
+  if (occType === "Lecture") {
+    const lectureOccurrence = course.lectureOccurrence || 1;
+    return Math.ceil(targetStudent / lectureOccurrence);
+  } 
+  else if (occType === "Tutorial") {
+    const tutorialOcc = course.tutorialOcc || 1;
+    return Math.ceil(targetStudent / tutorialOcc);
+  }
+  
+  return targetStudent;
 };

@@ -9,6 +9,7 @@ import courseRoutes from './routes/courseRoutes.js';
 import feedbackRoutes from './routes/feedbackRoutes.js';
 import homeRoutes from './routes/homeRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -37,6 +38,7 @@ app.use('/user/feedback', feedbackRoutes);
 app.use('/feedback', feedbackRoutes);
 app.use('/home', homeRoutes);
 app.use('/analytics', analyticsRoutes);
+app.use('/api', notificationRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`);

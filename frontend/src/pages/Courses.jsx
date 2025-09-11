@@ -129,6 +129,22 @@ function Courses() {
     };
   }, [showModal, showCopyModal]);
 
+  useEffect(() => {
+  const handleClickOutside = (event) => {
+    if (courseTypeRef.current && !courseTypeRef.current.contains(event.target)) {
+      setShowCourseTypeDropdown(false);
+    }
+  };
+
+  if (showCourseTypeDropdown) {
+    document.addEventListener('mousedown', handleClickOutside);
+  }
+
+  return () => {
+    document.removeEventListener('mousedown', handleClickOutside);
+  };
+}, [showCourseTypeDropdown]);
+
   // Handle form changes
   const handleChange = (e) => {
     const { name, value, type, selectedOptions, checked } = e.target;
@@ -405,7 +421,7 @@ function Courses() {
                 value={filterYear}
                 onChange={(e) => setFilterYear(e.target.value)}
               >
-                <option value="">Year</option>
+                <option value="" disabled>Academic Year</option>
                 <option value="2024/2025">2024/2025</option>
                 <option value="2025/2026">2025/2026</option>
                 <option value="2026/2027">2026/2027</option>
@@ -420,7 +436,6 @@ function Courses() {
                 value={filterSemester}
                 onChange={(e) => setFilterSemester(e.target.value)}
               >
-                <option value="">Semester</option>
                 <option value="1">Semester 1</option>
                 <option value="2">Semester 2</option>
               </select>
@@ -480,55 +495,58 @@ function Courses() {
                     <th style={{ width: "6%" }}>Credit Hour</th>
                     <th style={{ width: "7%" }}>Target Student</th>
                     <th style={{ width: "9%" }}>Year</th>
-                    <th style={{ width: "9%", paddingLeft: 28, position: "relative" }} ref={courseTypeRef}>
-                      Course Type{" "}
-                      <button
-                        className="btn btn-sm btn-link"
-                        onClick={() => setShowCourseTypeDropdown((prev) => !prev)}
-                      >
-                        <CIcon icon={cilFilter} />
-                      </button>
-                      {showCourseTypeDropdown && (
-                        <div
-                          className="dropdown-menu show"
-                          style={{
-                            position: "absolute",
-                            top: "100%",
-                            left: 20,
-                            maxHeight: "200px",
-                            overflowY: "auto",
-                            padding: "5px",
-                          }}
-                        >
-                          <div className="form-check d-flex align-items-center mb-1">
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selectedCourseTypes.size === 0}
-                              onChange={() => setSelectedCourseTypes(new Set())}
-                              style={{ marginTop: "0" }}
-                            />
-                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>
-                              All
-                            </label>
-                          </div>
-                          {["Faculty Core", "Programme Core", "Elective"].map((courseType) => (
-                            <div key={courseType} className="form-check d-flex align-items-center mb-1">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                checked={selectedCourseTypes.has(courseType)}
-                                onChange={() => toggleCourseType(courseType)}
-                                style={{ marginTop: "0" }}
-                              />
-                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>
-                                {courseType}
-                              </label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </th>
+                    <th style={{ width: "9%", position: "relative" }} ref={courseTypeRef}>
+  Course Type{" "}
+  <button
+    className="btn btn-sm btn-link"
+    onClick={() => setShowCourseTypeDropdown((prev) => !prev)}
+  >
+    <CIcon icon={cilFilter} />
+  </button>
+  {showCourseTypeDropdown && (
+    <div
+      className="dropdown-menu show"
+      style={{
+        position: "absolute",
+        top: "100%",
+        left: "0",  // Changed from hardcoded left: 20
+        right: "0", // This ensures it spans the column width
+        minWidth: "160px", // Minimum width for readability
+        maxHeight: "200px",
+        overflowY: "auto",
+        padding: "5px",
+        zIndex: 1050 // Ensure it appears above other elements
+      }}
+    >
+      <div className="form-check d-flex align-items-center mb-1">
+        <input
+          type="checkbox"
+          className="form-check-input"
+          checked={selectedCourseTypes.size === 0}
+          onChange={() => setSelectedCourseTypes(new Set())}
+          style={{ marginTop: "0" }}
+        />
+        <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>
+          All
+        </label>
+      </div>
+      {["Faculty Core", "Programme Core", "Elective"].map((courseType) => (
+        <div key={courseType} className="form-check d-flex align-items-center mb-1">
+          <input
+            type="checkbox"
+            className="form-check-input"
+            checked={selectedCourseTypes.has(courseType)}
+            onChange={() => toggleCourseType(courseType)}
+            style={{ marginTop: "0" }}
+          />
+          <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>
+            {courseType}
+          </label>
+        </div>
+      ))}
+    </div>
+  )}
+</th>
                     <th style={{ width: "11%" }}>Department</th>
                     <th style={{ width: "11%" }}>Instructors</th>
                     <th style={{ width: "9%" }}>Room Type</th>
@@ -540,102 +558,119 @@ function Courses() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCourses.map((course, idx) => {
-                    const isInstructorsExpanded = expandedRows[`${idx}-instructors`];
-                    const isRoomTypesExpanded = expandedRows[`${idx}-roomTypes`];
-                    const isYearsExpanded = expandedRows[`${idx}-year`];
-                    const isDepartmentsExpanded = expandedRows[`${idx}-department`];
-                    return (
-                      <tr key={course._id}>
-                        <td style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {course.code}
-                        </td>
-                        <td style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {course.name}
-                        </td>
-                        <td>{course.creditHour}</td>
-                        <td>{course.targetStudent}</td>
-                        <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
-                          {isYearsExpanded
-                            ? course.year.length > 0
-                              ? course.year.join(", ")
-                              : "N/A"
-                            : getCondensedContent(course.year)}
-                          {course.year.length > 2 && (
-                            <span
-                              className="ms-1 text-primary"
-                              style={{ cursor: "pointer", textDecoration: "underline" }}
-                              onClick={() => toggleExpand(idx, "year")}
-                            >
-                              {isYearsExpanded ? " Show Less" : " Show More"}
-                            </span>
-                          )}
-                        </td>
-                        <td>{course.courseType || "N/A"}</td>
-                        <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
-                          {isDepartmentsExpanded
-                            ? course.department.length > 0
-                              ? course.department.join(", ")
-                              : "N/A"
-                            : getCondensedContent(course.department)}
-                          {course.department.length > 2 && (
-                            <span
-                              className="ms-1 text-primary"
-                              style={{ cursor: "pointer", textDecoration: "underline" }}
-                              onClick={() => toggleExpand(idx, "department")}
-                            >
-                              {isDepartmentsExpanded ? " Show Less" : " Show More"}
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
-                          {isInstructorsExpanded
-                            ? course.instructors.length > 0
-                              ? course.instructors.join(", ")
-                              : "N/A"
-                            : getCondensedContent(course.instructors)}
-                          {course.instructors.length > 2 && (
-                            <span
-                              className="ms-1 text-primary"
-                              style={{ cursor: "pointer", textDecoration: "underline" }}
-                              onClick={() => toggleExpand(idx, "instructors")}
-                            >
-                              {isInstructorsExpanded ? " Show Less" : " Show More"}
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
-                          {isRoomTypesExpanded
-                            ? course.roomTypes.length > 0
-                              ? course.roomTypes.join(", ")
-                              : "N/A"
-                            : getCondensedContent(course.roomTypes)}
-                          {course.roomTypes.length > 2 && (
-                            <span
-                              className="ms-1 text-primary"
-                              style={{ cursor: "pointer", textDecoration: "underline" }}
-                              onClick={() => toggleExpand(idx, "roomTypes")}
-                            >
-                              {isRoomTypesExpanded ? " Show Less" : " Show More"}
-                            </span>
-                          )}
-                        </td>
-                        <td>{course.hasTutorial || "N/A"}</td>
-                        <td>{course.lectureHour || "N/A"}</td>
-                        <td>{course.lectureOccurrence || "N/A"}</td>
-                        <td>{course.tutorialOcc || "N/A"}</td> {/* Display tutorialOcc */}
-                        <td>
-                          <button className="btn btn-link p-0 me-2" onClick={() => openModal(course, idx)}>
-                            <CIcon icon={cilPen} />
-                          </button>
-                          <button className="btn btn-link text-danger p-0" onClick={() => handleDelete(course._id)}>
-                            <CIcon icon={cilTrash} />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
+  {filteredCourses.length === 0 ? (
+    <tr>
+      <td colSpan="13" style={{ textAlign: "center", padding: "2rem" }}>
+        <div className="text-muted">
+          <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>📚</span>
+          <h5>No courses found!</h5>
+          <p>
+            {courseSearch || selectedCourseTypes.size > 0 
+              ? "No courses match your current search criteria. Try adjusting your filters or search term."
+              : `No courses available for ${filterYear} Semester ${filterSemester}. Click "Add Course" to get started.`
+            }
+          </p>
+        </div>
+      </td>
+    </tr>
+  ) : (
+    filteredCourses.map((course, idx) => {
+      const isInstructorsExpanded = expandedRows[`${idx}-instructors`];
+      const isRoomTypesExpanded = expandedRows[`${idx}-roomTypes`];
+      const isYearsExpanded = expandedRows[`${idx}-year`];
+      const isDepartmentsExpanded = expandedRows[`${idx}-department`];
+      return (
+        <tr key={course._id}>
+          <td style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {course.code}
+          </td>
+          <td style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {course.name}
+          </td>
+          <td>{course.creditHour}</td>
+          <td>{course.targetStudent}</td>
+          <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+            {isYearsExpanded
+              ? course.year.length > 0
+                ? course.year.join(", ")
+                : "N/A"
+              : getCondensedContent(course.year)}
+            {course.year.length > 2 && (
+              <span
+                className="ms-1 text-primary"
+                style={{ cursor: "pointer", textDecoration: "underline" }}
+                onClick={() => toggleExpand(idx, "year")}
+              >
+                {isYearsExpanded ? " Show Less" : " Show More"}
+              </span>
+            )}
+          </td>
+          <td>{course.courseType || "N/A"}</td>
+          <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+            {isDepartmentsExpanded
+              ? course.department.length > 0
+                ? course.department.join(", ")
+                : "N/A"
+              : getCondensedContent(course.department)}
+            {course.department.length > 2 && (
+              <span
+                className="ms-1 text-primary"
+                style={{ cursor: "pointer", textDecoration: "underline" }}
+                onClick={() => toggleExpand(idx, "department")}
+              >
+                {isDepartmentsExpanded ? " Show Less" : " Show More"}
+              </span>
+            )}
+          </td>
+          <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+            {isInstructorsExpanded
+              ? course.instructors.length > 0
+                ? course.instructors.join(", ")
+                : "N/A"
+              : getCondensedContent(course.instructors)}
+            {course.instructors.length > 2 && (
+              <span
+                className="ms-1 text-primary"
+                style={{ cursor: "pointer", textDecoration: "underline" }}
+                onClick={() => toggleExpand(idx, "instructors")}
+              >
+                {isInstructorsExpanded ? " Show Less" : " Show More"}
+              </span>
+            )}
+          </td>
+          <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
+            {isRoomTypesExpanded
+              ? course.roomTypes.length > 0
+                ? course.roomTypes.join(", ")
+                : "N/A"
+              : getCondensedContent(course.roomTypes)}
+            {course.roomTypes.length > 2 && (
+              <span
+                className="ms-1 text-primary"
+                style={{ cursor: "pointer", textDecoration: "underline" }}
+                onClick={() => toggleExpand(idx, "roomTypes")}
+              >
+                {isRoomTypesExpanded ? " Show Less" : " Show More"}
+              </span>
+            )}
+          </td>
+          <td>{course.hasTutorial || "N/A"}</td>
+          <td>{course.lectureHour || "N/A"}</td>
+          <td>{course.lectureOccurrence || "N/A"}</td>
+          <td>{course.tutorialOcc || "N/A"}</td>
+          <td>
+            <button className="btn btn-link p-0 me-2" onClick={() => openModal(course, idx)}>
+              <CIcon icon={cilPen} />
+            </button>
+            <button className="btn btn-link text-danger p-0" onClick={() => handleDelete(course._id)}>
+              <CIcon icon={cilTrash} />
+            </button>
+          </td>
+        </tr>
+      );
+    })
+  )}
+</tbody>
               </table>
             </div>
           </div>

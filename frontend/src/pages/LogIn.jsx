@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import axios from 'axios'; // Importing axios for making HTTP requests
+import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useAlert } from './AlertContext';
 
 function LogIn() {
-    const [email, setEmail] = useState(""); // State to store the email
-    const [password, setPassword] = useState(""); // State to store the password
-    const [role, setRole] = useState("student"); // State to store the selected role
-    const [errors, setErrors] = useState({}); // State to store validation errors
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [role, setRole] = useState("student");
+    const [errors, setErrors] = useState({});
     const navigate = useNavigate();
+    const { showAlert, showConfirm } = useAlert();
 
     const validateFields = () => {
         const newErrors = {};
@@ -17,25 +19,80 @@ function LogIn() {
         return newErrors;
     };
 
+    // Function to decode JWT token and extract user ID
+    const decodeToken = (token) => {
+        try {
+            // JWT tokens have 3 parts separated by dots
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            
+            const decoded = JSON.parse(jsonPayload);
+            console.log('Decoded token:', decoded);
+            
+            // Common JWT payload fields for user ID (your JWT uses 'id')
+            return decoded.id || decoded.userId || decoded.sub || decoded.user?.id || decoded.user?._id;
+        } catch (error) {
+            console.error('Error decoding token:', error);
+            return null;
+        }
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
 
         const validationErrors = validateFields();
         if (Object.keys(validationErrors).length > 0) {
-            setErrors(validationErrors); // Set validation errors
+            setErrors(validationErrors);
             return;
         }
 
         axios.post('http://localhost:3001/login', { email, password, role })
             .then(result => {
-                console.log(result);
-                alert(result.data.message);
+                console.log('Login response:', result.data);
+                showAlert(result.data.message, "success");
+                
                 if (result.data.message === "Login successful!") {
-                    localStorage.setItem('token', result.data.token); // Store the token in local storage
+                    const token = result.data.token;
+                    
+                    // Try to get userId from response first
+                    let userId = result.data.userId || result.data.id || result.data.user?.id || result.data.user?._id;
+                    
+                    // If not in response, decode from token (your JWT has 'id' field)
+                    if (!userId && token) {
+                        const decodedUserId = decodeToken(token);
+                        userId = decodedUserId;
+                        console.log('Extracted userId from token:', userId);
+                    }
+                    
+                    // Store all data in localStorage
+                    localStorage.setItem('token', token);
                     localStorage.setItem('name', result.data.name);
-                    localStorage.setItem('feedbackBadge', result.data.unresolvedFeedbackCount || 0); // Store unresolved feedback count
-                    localStorage.setItem('role', result.data.role); // Store the role in local storage
-                    localStorage.setItem('email', email); // Store the email in local storage
+                    localStorage.setItem('feedbackBadge', result.data.unresolvedFeedbackCount || 0);
+                    localStorage.setItem('role', result.data.role);
+                    localStorage.setItem('email', email);
+                    
+                    if (userId) {
+                        localStorage.setItem('userId', userId);
+                        console.log('✅ Stored userId:', userId);
+                    } else {
+                        console.error('❌ Could not determine userId');
+                        // Fallback: use email as identifier
+                        localStorage.setItem('userId', email);
+                        console.log('Using email as userId fallback:', email);
+                    }
+                    
+                    // Debug: Show what's stored
+                    console.log('Final localStorage contents:', {
+                        token: !!localStorage.getItem('token'),
+                        userId: localStorage.getItem('userId'),
+                        role: localStorage.getItem('role'),
+                        name: localStorage.getItem('name'),
+                        email: localStorage.getItem('email')
+                    });
+                    
                     // Route based on role
                     if (role === "student") {
                         navigate('/user/home');
@@ -48,11 +105,11 @@ function LogIn() {
             })
             .catch(err => {
                 if (err.response && err.response.data && err.response.data.message) {
-                    setErrors({ general: err.response.data.message }); // Set backend error message
+                    setErrors({ general: err.response.data.message });
                 } else {
-                    setErrors({ general: "An error occurred. Please try again." }); // Generic error message
+                    setErrors({ general: "An error occurred. Please try again." });
                 }
-                console.log(err); // Log the error for debugging
+                console.log(err);
             });
     };
 
@@ -62,7 +119,6 @@ function LogIn() {
                 <h2 className="text-center fw-bold display fs-2 mb-5">Login</h2>
                 <form onSubmit={handleSubmit}>
                     <div className="font-fredoka mb-4">
-                        {/* <label htmlFor="email">Email</label> */}
                         <input
                             type="email"
                             placeholder="Enter your siswamail or ummail"
@@ -77,7 +133,6 @@ function LogIn() {
                         {errors.email && <small className="text-danger">{errors.email}</small>}
                     </div>
                     <div className="font-fredoka mb-4">
-                        {/* <label htmlFor="password">Password</label> */}
                         <input
                             type="password"
                             placeholder="Enter your password"

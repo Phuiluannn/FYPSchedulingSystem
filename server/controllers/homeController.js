@@ -1,10 +1,27 @@
 import * as homeService from "../services/homeService.js";
 import Schedule from "../models/Home.js";
 import mongoose from "mongoose";
+// 🔥 ADD THIS IMPORT
+import { createTimetablePublishedNotification } from "../services/notificationService.js";
 
 export const generateTimetable = async (req, res) => {
   try {
     const result = await homeService.generateTimetable(req);
+    
+    // NEW: Auto-resolve obsolete conflicts after generation
+    try {
+      const { year, semester } = req.body;
+      console.log("Running auto-resolution after timetable generation...");
+      const autoResolveResult = await analyticsService.autoResolveObsoleteConflicts(year, semester);
+      console.log(`Auto-resolved ${autoResolveResult.resolved} conflicts after generation`);
+      
+      // Add auto-resolution info to response
+      result.autoResolved = autoResolveResult.resolved;
+    } catch (autoResolveError) {
+      console.warn("Auto-resolution failed, but timetable was generated:", autoResolveError);
+      // Don't fail the generation if auto-resolution fails
+    }
+    
     res.json(result);
   } catch (error) {
     console.error(error);
@@ -100,11 +117,21 @@ export const saveTimetable = async (req, res) => {
     console.log("=== SAVE COMPLETE ===");
     console.log(`Saved ${timetableWithObjectIds.length} draft schedules`);
     
+try {
+      console.log("Running auto-resolution after timetable save...");
+      const autoResolveResult = await analyticsService.autoResolveObsoleteConflicts(year, semester);
+      console.log(`Auto-resolved ${autoResolveResult.resolved} conflicts after save`);
+    } catch (autoResolveError) {
+      console.warn("Auto-resolution failed, but timetable was saved:", autoResolveError);
+      // Don't fail the save operation if auto-resolution fails
+    }
+
     res.json({ success: true });
   } catch (error) {
     console.error("Error in saveTimetable:", error);
     res.status(500).json({ error: error.message });
   }
+  
 };
 
 export const getTimetable = async (req, res) => {
@@ -189,7 +216,7 @@ export const getTimetable = async (req, res) => {
 export const publishTimetable = async (req, res) => {
   try {
     const { year, semester } = req.body;
-    console.log(`Publishing timetable for ${year} Semester ${semester}`);
+    console.log(`🚀 Publishing timetable for ${year} Semester ${semester}`);
 
     // Step 1: Get all draft schedules
     const draftSchedules = await Schedule.find({
@@ -217,7 +244,7 @@ export const publishTimetable = async (req, res) => {
     // Step 3: Create published copies of draft schedules
     const publishedSchedules = draftSchedules.map(schedule => ({
       ...schedule,
-      _id: new mongoose.Types.ObjectId(), // New ID for published copy
+      _id: new mongoose.Types.ObjectId(),
       Published: true
     }));
 
@@ -225,13 +252,23 @@ export const publishTimetable = async (req, res) => {
     const insertResult = await Schedule.insertMany(publishedSchedules);
     console.log(`Created ${insertResult.length} new published schedules`);
 
+    // Step 5: 🔥 CREATE NOTIFICATION FOR TIMETABLE PUBLICATION
+    try {
+      console.log('📢 Creating notification for timetable publication...');
+      await createTimetablePublishedNotification(year, semester);
+      console.log(`✅ Notification created successfully for timetable publication: ${year} Semester ${semester}`);
+    } catch (notificationError) {
+      console.error("⚠️ Failed to create notification, but timetable was published:", notificationError);
+      // Don't fail the entire publish operation if notification creation fails
+    }
+
     res.json({ 
       success: true, 
-      message: "Timetable published successfully",
+      message: `Timetable for ${year} Semester ${semester} has been published and notifications sent to all users`,
       publishedCount: insertResult.length 
     });
   } catch (error) {
-    console.error("Error publishing timetable:", error);
+    console.error("❌ Error publishing timetable:", error);
     res.status(500).json({ error: error.message });
   }
 };

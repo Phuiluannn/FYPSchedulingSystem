@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import SignUp from './pages/SignUp';
 import {BrowserRouter, Routes, Route} from 'react-router-dom';
@@ -14,11 +13,13 @@ import ProtectedRoute from './pages/ProtectedRoute';
 import AdminFeedback from './pages/AdminFeedback';
 import Analytics from './pages/Analytics';
 import InstructorTimetable from './pages/InstructorTimetable';
+import { AlertProvider } from './pages/AlertContext';
 
 function App() {
 
   return (
     <BrowserRouter>
+      <AlertProvider>
       <Routes>
         <Route path="/signup" element={<SignUp />} />
         <Route path="/login" element={<LogIn />} />
@@ -84,7 +85,7 @@ function App() {
           </ProtectedRoute>
         }/>
       </Routes>
-
+      </AlertProvider>
     </BrowserRouter>
   )
 }

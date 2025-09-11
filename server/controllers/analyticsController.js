@@ -45,11 +45,34 @@ export const getConflictStats = async (req, res) => {
 
 export const getInstructorWorkload = async (req, res) => {
   try {
-    const { year, semester } = req.query;
-    const workload = await analyticsService.getInstructorWorkload(year, semester);
+    const { year, semester, publishedOnly } = req.query;
+    
+    // Convert publishedOnly to boolean (similar to how getTimetable handles it)
+    const onlyPublished = publishedOnly === "true" || publishedOnly === true;
+    
+    console.log("=== WORKLOAD CONTROLLER DEBUG ===");
+    console.log(`Year: ${year}, Semester: ${semester}, publishedOnly: ${publishedOnly}, onlyPublished: ${onlyPublished}`);
+    
+    const workload = await analyticsService.getInstructorWorkload(year, semester, onlyPublished);
+    
     res.json({ success: true, workload });
   } catch (error) {
     console.error("Error fetching instructor workload:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const autoResolveConflicts = async (req, res) => {
+  try {
+    const { year, semester } = req.query;
+    const result = await analyticsService.autoResolveObsoleteConflicts(year, semester);
+    res.json({ 
+      success: true, 
+      message: `Auto-resolved ${result.resolved} obsolete conflicts`,
+      resolvedConflicts: result.conflicts
+    });
+  } catch (error) {
+    console.error("Error in auto-resolution:", error);
     res.status(500).json({ error: error.message });
   }
 };

@@ -304,115 +304,155 @@ function Instructors() {
                   <tr>
                     <th>Name</th>
                     <th>Email</th>
-                    <th style={{ paddingLeft: 33, position: "relative" }} ref={departmentRef}>
-                      Department{" "}
-                      <button
-                        className="btn btn-sm btn-link"
-                        onClick={() => setShowDepartmentDropdown((prev) => !prev)}
-                      >
-                        <CIcon icon={cilFilter} />
-                      </button>
-                      {showDepartmentDropdown && (
-                        <div
-                          className="dropdown-menu show"
-                          style={{ position: "absolute", top: "100%", left: 80, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
-                        >
-                          <div className="form-check d-flex align-items-center mb-1">
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selectedDepartments.size === 0}
-                              onChange={() => toggleDepartment("")}
-                              style={{ marginTop: "0" }}
-                            />
-                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
-                          </div>
-                          {[
-                            "Artificial Intelligence",
-                            "Computer System and Technology",
-                            "Information Systems",
-                            "Software Engineering",
-                          ].map((department) => (
-                            <div key={department} className="form-check d-flex align-items-center mb-1">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                checked={selectedDepartments.has(department)}
-                                onChange={() => toggleDepartment(department)}
-                                style={{ marginTop: "0" }}
-                              />
-                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600  }}>{department}</label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </th>
-                    <th style={{ paddingLeft: 34, position: "relative" }} ref={statusRef}>
-                      Status{" "}
-                      <button
-                        className="btn btn-sm btn-link"
-                        onClick={() => setShowStatusDropdown((prev) => !prev)}
-                      >
-                        <CIcon icon={cilFilter} />
-                      </button>
-                      {showStatusDropdown && (
-                        <div
-                          className="dropdown-menu show"
-                          style={{ position: "absolute", top: "100%", left: 40, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
-                        >
-                          <div className="form-check d-flex align-items-center mb-1">
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selectedStatuses.size === 0}
-                              onChange={() => toggleStatus("")}
-                              style={{ marginTop: "0" }}
-                            />
-                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
-                          </div>
-                          {["Active", "Inactive"].map((status) => (
-                            <div key={status} className="form-check d-flex align-items-center mb-1">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                checked={selectedStatuses.has(status)}
-                                onChange={() => toggleStatus(status)}
-                                style={{ marginTop: "0" }}
-                              />
-                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{status}</label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </th>
+                    <th style={{ position: "relative", textAlign: "center" }} ref={departmentRef}>
+  Department
+  <button
+    className="btn btn-sm btn-link p-0"
+    onClick={() => setShowDepartmentDropdown((prev) => !prev)}
+    style={{ marginLeft: "2px", fontSize: "12px" }}
+  >
+    <CIcon icon={cilFilter} />
+  </button>
+  {showDepartmentDropdown && (
+    <div
+      className="dropdown-menu show"
+      style={{ 
+        position: "absolute", 
+        top: "100%", 
+        left: "50%", 
+        transform: "translateX(-50%)", 
+        maxHeight: "200px", 
+        overflowY: "auto", 
+        padding: "5px",
+        zIndex: 1050,
+        minWidth: "200px"
+      }}
+    >
+      <div className="form-check d-flex align-items-center mb-1">
+        <input
+          type="checkbox"
+          className="form-check-input"
+          checked={selectedDepartments.size === 0}
+          onChange={() => toggleDepartment("")}
+          style={{ marginTop: "0" }}
+        />
+        <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
+      </div>
+      {[
+        "Artificial Intelligence",
+        "Computer System and Technology",
+        "Information Systems",
+        "Software Engineering",
+      ].map((department) => (
+        <div key={department} className="form-check d-flex align-items-center mb-1">
+          <input
+            type="checkbox"
+            className="form-check-input"
+            checked={selectedDepartments.has(department)}
+            onChange={() => toggleDepartment(department)}
+            style={{ marginTop: "0" }}
+          />
+          <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{department}</label>
+        </div>
+      ))}
+    </div>
+  )}
+</th>
+                    <th style={{ position: "relative" }} ref={statusRef}>
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
+    Status
+    <button
+      className="btn btn-sm btn-link p-0"
+      onClick={() => setShowStatusDropdown((prev) => !prev)}
+      style={{ fontSize: "14px" }}
+    >
+      <CIcon icon={cilFilter} />
+    </button>
+  </div>
+  {showStatusDropdown && (
+    <div
+      className="dropdown-menu show"
+      style={{ 
+        position: "absolute", 
+        top: "100%", 
+        left: "50%", 
+        transform: "translateX(-50%)", 
+        maxHeight: "200px", 
+        overflowY: "auto", 
+        padding: "5px",
+        zIndex: 1050,
+        minWidth: "120px"
+      }}
+    >
+      <div className="form-check d-flex align-items-center mb-1">
+        <input
+          type="checkbox"
+          className="form-check-input"
+          checked={selectedStatuses.size === 0}
+          onChange={() => toggleStatus("")}
+          style={{ marginTop: "0" }}
+        />
+        <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
+      </div>
+      {["Active", "Inactive"].map((status) => (
+        <div key={status} className="form-check d-flex align-items-center mb-1">
+          <input
+            type="checkbox"
+            className="form-check-input"
+            checked={selectedStatuses.has(status)}
+            onChange={() => toggleStatus(status)}
+            style={{ marginTop: "0" }}
+          />
+          <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{status}</label>
+        </div>
+      ))}
+    </div>
+  )}
+</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                {filteredInstructors.map((instructor, idx) => (
-                    <tr key={idx}>
-                      <td>{instructor.name}</td>
-                      <td>{instructor.email}</td>
-                      <td>{instructor.department}</td>
-                      <td>{instructor.status}</td>
-                      <td>
-                        <button
-                          className="btn btn-link p-0 me-2"
-                          onClick={() => openModal(instructor, idx)}
-                        >
-                          <CIcon icon={cilPen} />
-                        </button>
-                        <button
-                          className="btn btn-link text-danger p-0"
-                          onClick={() => handleDelete(idx)}
-                        >
-                          <CIcon icon={cilTrash} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                }
-              </tbody>
+  {filteredInstructors.length === 0 ? (
+    <tr>
+      <td colSpan="5" style={{ textAlign: "center", padding: "2rem" }}>
+        <div className="text-muted">
+          <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>👨‍🏫</span>
+          <h5>No instructors found!</h5>
+          <p>
+            {searchTerm || selectedDepartments.size > 0 || selectedStatuses.size > 0
+              ? "No instructors match your current search criteria. Try adjusting your filters or search term."
+              : "No instructors have been added yet. Click 'Add Instructor' to get started."
+            }
+          </p>
+        </div>
+      </td>
+    </tr>
+  ) : (
+    filteredInstructors.map((instructor, idx) => (
+      <tr key={idx}>
+        <td>{instructor.name}</td>
+        <td>{instructor.email}</td>
+        <td>{instructor.department}</td>
+        <td>{instructor.status}</td>
+        <td>
+          <button
+            className="btn btn-link p-0 me-2"
+            onClick={() => openModal(instructor, idx)}
+          >
+            <CIcon icon={cilPen} />
+          </button>
+          <button
+            className="btn btn-link text-danger p-0"
+            onClick={() => handleDelete(idx)}
+          >
+            <CIcon icon={cilTrash} />
+          </button>
+        </td>
+      </tr>
+    ))
+  )}
+</tbody>
               </table>
             </div>
           </div>

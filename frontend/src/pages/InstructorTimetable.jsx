@@ -5,6 +5,7 @@ import ProtectedRoute from './ProtectedRoute';
 import { BiExport, BiCalendar, BiTime, BiMapPin, BiUser, BiBook } from "react-icons/bi";
 import Papa from "papaparse";
 import html2canvas from "html2canvas";
+import { useAlert } from './AlertContext';
 
 const TIMES = [
   "8.00 AM - 9.00 AM",
@@ -34,6 +35,7 @@ function InstructorTimetable() {
   const tableRef = useRef(null);
   const containerRef = useRef(null);
   const [hasSchedules, setHasSchedules] = useState(false);
+  const { showAlert, showConfirm } = useAlert();
 
   // Get instructor info from localStorage or token
   useEffect(() => {
@@ -274,7 +276,7 @@ console.log("Filtered instructor schedules (only specifically assigned):", instr
 
   const handleExportTimetable = async (format) => {
     if (!timetable || Object.keys(timetable).length === 0) {
-      alert("No timetable data available to export.");
+      showAlert("No timetable data available to export.", "warning");
       return;
     }
 
@@ -319,7 +321,7 @@ console.log("Filtered instructor schedules (only specifically assigned):", instr
     } else {
       // Image export
       if (!tableRef.current) {
-        alert("Table element not found.");
+        showAlert("Table element not found.", "error");
         return;
       }
 
@@ -343,7 +345,7 @@ console.log("Filtered instructor schedules (only specifically assigned):", instr
         document.body.removeChild(link);
       } catch (error) {
         console.error("Error exporting timetable as image:", error);
-        alert("Failed to export timetable as image.");
+        showAlert("Failed to export timetable as image.", "error");
       }
     }
   };
@@ -486,16 +488,44 @@ if (noDataMessage) {
 
           {/* NO DATA MESSAGE SECTION */}
           <div style={{
-            background: "#fff",
-            borderRadius: 12,
-            boxShadow: "0 2px 12px rgba(0,0,0,0.07)",
-            padding: "40px",
-            textAlign: "center"
-          }}>
-            <BiCalendar style={{ fontSize: 64, color: "#ccc", marginBottom: 20 }} />
-            <h3 style={{ color: "#666", marginBottom: 10 }}>No Timetable Available</h3>
-            <p style={{ color: "#888" }}>{noDataMessage}</p>
-          </div>
+  background: "#fff",
+  borderRadius: 12,
+  boxShadow: "0 2px 12px rgba(0,0,0,0.07)",
+  padding: "40px",
+  textAlign: "center",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: "300px"
+}}>
+  <div style={{
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20
+  }}>
+    <BiCalendar style={{ 
+      fontSize: 64, 
+      color: "#ccc"
+    }} />
+  </div>
+  <h3 style={{ 
+    color: "#666", 
+    marginBottom: 10,
+    textAlign: "center" 
+  }}>
+    No Timetable Available
+  </h3>
+  <p style={{ 
+    color: "#888",
+    textAlign: "center",
+    maxWidth: "500px",
+    margin: "0 auto"
+  }}>
+    {noDataMessage}
+  </p>
+</div>
         </div>
       </SideBar>
     </ProtectedRoute>

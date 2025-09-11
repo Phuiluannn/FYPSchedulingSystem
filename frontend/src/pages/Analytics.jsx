@@ -3,6 +3,8 @@ import axios from "axios";
 import SideBar from "./SideBar";
 import ProtectedRoute from "./ProtectedRoute";
 import { BiExport, BiCheck, BiRefresh } from "react-icons/bi";
+import { useSearchParams } from 'react-router-dom';
+import { useAlert } from './AlertContext';
 
 function Analytics() {
   const [activeTab, setActiveTab] = useState("workload");
@@ -22,75 +24,129 @@ function Analytics() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [resolvingConflict, setResolvingConflict] = useState(null);
+  const [searchParams] = useSearchParams();
+  const { showAlert, showConfirm } = useAlert()
 
-  useEffect(() => {
+ useEffect(() => {
+  // Only fetch if this is not the initial load with URL parameters
+  const hasUrlParams = searchParams.get('year') || searchParams.get('semester') || searchParams.get('tab');
+  
+  if (!hasUrlParams) {
     fetchAnalyticsData();
-  }, [workloadYear, workloadSemester, conflictYear, conflictSemester]);
+  }
+}, [workloadYear, workloadSemester, conflictYear, conflictSemester]);
+
+useEffect(() => {
+  const tabParam = searchParams.get('tab');
+  const yearParam = searchParams.get('year');
+  const semesterParam = searchParams.get('semester');
+  
+  let shouldFetch = false;
+  
+  if (tabParam === 'conflicts') {
+    setActiveTab('conflicts');
+  }
+  
+  if (yearParam) {
+    setConflictYear(yearParam);
+    setWorkloadYear(yearParam);
+    shouldFetch = true;
+  }
+  
+  if (semesterParam) {
+    const semesterText = `Semester ${semesterParam}`;
+    setConflictSemester(semesterText);
+    setWorkloadSemester(semesterText);
+    shouldFetch = true;
+  }
+  
+  // CRITICAL FIX: Fetch data immediately if URL params were provided
+  if (shouldFetch) {
+    // Use a timeout to ensure state has been updated
+    setTimeout(() => {
+      fetchAnalyticsData();
+    }, 100);
+  }
+}, [searchParams]); // Remove fetchAnalyticsData from dependencies
 
   const fetchAnalyticsData = async () => {
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('Please log in to view analytics.');
-        console.error('No token found in localStorage');
-        return;
-      }
-
-      console.log('Fetching analytics data with parameters:', {
-        conflictYear,
-        conflictSemester: conflictSemester.replace('Semester ', '')
-      });
-
-      // Fetch workload data from backend
-      const workloadResponse = await axios.get(
-        `http://localhost:3001/analytics/instructor-workload?year=${workloadYear}&semester=${workloadSemester.replace('Semester ', '')}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setWorkloadData(workloadResponse.data.workload || []);
-
-
-      // Fetch conflict data
-      const conflictResponse = await axios.get(
-        `http://localhost:3001/analytics/conflicts?year=${conflictYear}&semester=${conflictSemester.replace('Semester ', '')}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      console.log('Conflict API response:', conflictResponse.data);
-
-      setConflictData(conflictResponse.data.conflicts || []);
-
-      // Fetch conflict statistics
-      const statsResponse = await axios.get(
-        `http://localhost:3001/analytics/conflict-stats?year=${conflictYear}&semester=${conflictSemester.replace('Semester ', '')}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      setConflictStats(statsResponse.data.stats || {
-        total: 0,
-        pending: 0,
-        resolved: 0,
-        byType: [],
-        byPriority: []
-      });
-      
-      setError(null);
-    } catch (error) {
-      console.error("Error fetching analytics data:", error);
-      console.error("Error details:", error.response?.data);
-      setError(error.response?.data?.message || 'Failed to fetch analytics data.');
-      setConflictData([]);
-      setConflictStats({
-        total: 0,
-        pending: 0,
-        resolved: 0,
-        byType: [],
-        byPriority: []
-      });
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError('Please log in to view analytics.');
+      console.error('No token found in localStorage');
+      return;
     }
-  };
+
+    // Get current values from URL params if available, otherwise use state
+    const urlYear = searchParams.get('year');
+    const urlSemester = searchParams.get('semester');
+    
+    const currentWorkloadYear = urlYear || workloadYear;
+    const currentConflictYear = urlYear || conflictYear;
+    const currentWorkloadSemester = urlSemester ? `Semester ${urlSemester}` : workloadSemester;
+    const currentConflictSemester = urlSemester ? `Semester ${urlSemester}` : conflictSemester;
+
+    console.log('Fetching analytics data with parameters:', {
+      workloadYear: currentWorkloadYear,
+      workloadSemester: currentWorkloadSemester.replace('Semester ', ''),
+      conflictYear: currentConflictYear,
+      conflictSemester: currentConflictSemester.replace('Semester ', '')
+    });
+
+    const publishedOnly = false;
+    
+    // Fetch workload data from backend
+    const workloadResponse = await axios.get(
+      `http://localhost:3001/analytics/instructor-workload?year=${currentWorkloadYear}&semester=${currentWorkloadSemester.replace('Semester ', '')}&publishedOnly=${publishedOnly}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    console.log('Workload API response:', workloadResponse.data);
+    setWorkloadData(workloadResponse.data.workload || []);
+
+    // Fetch conflict data
+    const conflictResponse = await axios.get(
+      `http://localhost:3001/analytics/conflicts?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    console.log('Conflict API response:', conflictResponse.data);
+    setConflictData(conflictResponse.data.conflicts || []);
+
+    // Fetch conflict statistics
+    const statsResponse = await axios.get(
+      `http://localhost:3001/analytics/conflict-stats?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    setConflictStats(statsResponse.data.stats || {
+      total: 0,
+      pending: 0,
+      resolved: 0,
+      byType: [],
+      byPriority: []
+    });
+    
+    setError(null);
+  } catch (error) {
+    console.error("Error fetching analytics data:", error);
+    console.error("Error details:", error.response?.data);
+    setError(error.response?.data?.message || 'Failed to fetch analytics data.');
+    setWorkloadData([]);
+    setConflictData([]);
+    setConflictStats({
+      total: 0,
+      pending: 0,
+      resolved: 0,
+      byType: [],
+      byPriority: []
+    });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const resolveConflict = async (conflictId) => {
     setResolvingConflict(conflictId);
@@ -114,9 +170,49 @@ function Analytics() {
     }
   };
 
+  const handleAutoResolveConflicts = async () => {
+  // if (!confirm("This will automatically resolve conflicts that are no longer valid in the current timetable. Continue?")) {
+  //   return;
+  // }
+  
+  const confirmed = await showConfirm(
+    "This will automatically resolve conflicts that are no longer valid in the current timetable. Continue?",
+    "Auto-Resolve Conflicts"
+  );
+  
+  if (!confirmed) {
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const token = localStorage.getItem('token');
+    const response = await axios.post(
+      `http://localhost:3001/analytics/auto-resolve?year=${conflictYear}&semester=${conflictSemester.replace('Semester ', '')}`,
+      {},
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    console.log('Auto-resolve response:', response.data);
+    
+    // Show success message
+    showAlert(`Successfully auto-resolved ${response.data.resolvedConflicts?.length || 0} conflicts.`, "success");
+    
+    // Refresh the conflict data
+    await fetchAnalyticsData();
+    
+  } catch (error) {
+    console.error("Error auto-resolving conflicts:", error);
+    showAlert('Failed to auto-resolve conflicts. Please try again.', "error");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
   const exportWorkloadData = () => {
   if (!workloadData || workloadData.length === 0) {
-    alert("No workload data to export.");
+    showAlert("No workload data to export.", "warning");
     return;
   }
 
@@ -147,7 +243,7 @@ function Analytics() {
 // Export Conflict Data as CSV
 const exportConflictData = () => {
   if (!conflictData || conflictData.length === 0) {
-    alert("No conflict data to export.");
+    showAlert("No conflict data to export.", "warning");
     return;
   }
 
@@ -319,6 +415,7 @@ const exportConflictData = () => {
                       value={workloadYear}
                       onChange={e => setWorkloadYear(e.target.value)}
                     >
+                      <option value="" disabled>Academic Year</option>
                       <option value="2024/2025">2024/2025</option>
                       <option value="2025/2026">2025/2026</option>
                       <option value="2026/2027">2026/2027</option>
@@ -390,110 +487,177 @@ const exportConflictData = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {workloadData.map((instructor, idx) => (
-                        <tr key={idx}>
-                          <td style={{ paddingLeft: 20 }}>
-                            <div>
-                              <div className="fw-bold">{instructor.name}</div>
-                              <div className="text-muted small">{instructor.courses} course(s)</div>
-                            </div>
-                          </td>
-                          <td style={{ textAlign: "center" }}>{instructor.courses}</td>
-                          <td style={{ padding: "0 20px" }}>
-                            <div className="d-flex align-items-center">
-                              <div
-                                className="progress flex-grow-1"
-                                style={{ height: "20px", backgroundColor: "#e9ecef" }}
-                              >
-                                <div
-                                  className="progress-bar"
-                                  style={{
-                                    width: `${Math.min((instructor.totalHours / 16) * 100, 100)}%`,
-                                    backgroundColor: "#000"
-                                  }}
-                                ></div>
-                              </div>
-                            </div>
-                          </td>
-                          <td style={{ textAlign: "right", paddingRight: 20 }}>
-                            <span className="fw-bold">{instructor.totalHours}/12 hrs</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
+  {workloadData.length === 0 ? (
+    <tr>
+      <td colSpan="4" style={{ textAlign: "center", padding: "2rem" }}>
+        <div className="text-muted">
+          <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>👨‍🏫</span>
+          <h5>No workload data found!</h5>
+          <p>
+            There is no instructor workload data available for {workloadYear} {workloadSemester}.
+            <br />
+            {/* This could mean no courses have been assigned to instructors for this period. */}
+          </p>
+        </div>
+      </td>
+    </tr>
+  ) : (
+    workloadData.map((instructor, idx) => (
+      <tr key={idx}>
+        <td style={{ paddingLeft: 20 }}>
+          <div>
+            <div className="fw-bold">{instructor.name}</div>
+            <div className="text-muted small">{instructor.courses} course(s)</div>
+          </div>
+        </td>
+        <td style={{ textAlign: "center" }}>{instructor.courses}</td>
+        <td style={{ padding: "0 20px" }}>
+          <div className="d-flex align-items-center">
+            <div
+              className="progress flex-grow-1"
+              style={{ height: "20px", backgroundColor: "#e9ecef" }}
+            >
+              <div
+                className="progress-bar"
+                style={{
+                  width: `${Math.min((instructor.totalHours / 16) * 100, 100)}%`,
+                  backgroundColor: "#000"
+                }}
+              ></div>
+            </div>
+          </div>
+        </td>
+        <td style={{ textAlign: "right", paddingRight: 20 }}>
+          <span className="fw-bold">{instructor.totalHours}/12 hrs</span>
+        </td>
+      </tr>
+    ))
+  )}
+</tbody>
                   </table>
                 </div>
               </>
             )}
 
             {activeTab === "conflicts" && (
-              <>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-                  <h5 className="fw-bold mb-0">Scheduling Conflicts</h5>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <select
-                      className='form-select'
-                      style={{ width: 130, borderRadius: 8 }}
-                      value={conflictYear}
-                      onChange={e => setConflictYear(e.target.value)}
-                    >
-                      <option value="2024/2025">2024/2025</option>
-                      <option value="2025/2026">2025/2026</option>
-                      <option value="2026/2027">2026/2027</option>
-                      <option value="2027/2028">2027/2028</option>
-                      <option value="2028/2029">2028/2029</option>
-                      <option value="2029/2030">2029/2030</option>
-                      <option value="2030/2031">2030/2031</option>
-                    </select>
-                    <select
-                      className='form-select'
-                      style={{ width: 140, borderRadius: 8 }}
-                      value={conflictSemester}
-                      onChange={e => setConflictSemester(e.target.value)}
-                    >
-                      <option value="Semester 1">Semester 1</option>
-                      <option value="Semester 2">Semester 2</option>
-                    </select>
-                    <button
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "8px 20px",
-                        borderRadius: 8,
-                        background: "#28a745",
-                        fontWeight: 500,
-                        fontSize: 16,
-                        color: "#fff",
-                        cursor: "pointer",
-                        border: "none"
-                      }}
-                      onClick={() => fetchAnalyticsData()}
-                    >
-                      <BiRefresh style={{ fontSize: 20 }} />
-                      Refresh
-                    </button>
-                    <button
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "8px 24px",
-                        borderRadius: 8,
-                        background: "#015551",
-                        fontWeight: 500,
-                        fontSize: 16,
-                        color: "#fff",
-                        cursor: "pointer",
-                        border: "none"
-                      }}
-                      onClick={exportConflictData}
-                    >
-                      <BiExport style={{ fontSize: 20 }} />
-                      Export
-                    </button>
-                  </div>
-                </div>
+  <>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+      <h5 className="fw-bold mb-0">Scheduling Conflicts</h5>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <select
+          className='form-select'
+          style={{ width: 130, borderRadius: 8 }}
+          value={conflictYear}
+          onChange={e => setConflictYear(e.target.value)}
+        >
+          <option value="" disabled>Academic Year</option>
+          <option value="2024/2025">2024/2025</option>
+          <option value="2025/2026">2025/2026</option>
+          <option value="2026/2027">2026/2027</option>
+          <option value="2027/2028">2027/2028</option>
+          <option value="2028/2029">2028/2029</option>
+          <option value="2029/2030">2029/2030</option>
+          <option value="2030/2031">2030/2031</option>
+        </select>
+        <select
+          className='form-select'
+          style={{ width: 140, borderRadius: 8 }}
+          value={conflictSemester}
+          onChange={e => setConflictSemester(e.target.value)}
+        >
+          <option value="Semester 1">Semester 1</option>
+          <option value="Semester 2">Semester 2</option>
+        </select>
+        
+        {/* NEW: Auto-resolve button with smart disable state */}
+        <button
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 20px",
+            borderRadius: 8,
+            background: conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+              ? "#ccc" 
+              : "#6f42c1",
+            fontWeight: 500,
+            fontSize: 16,
+            color: "#fff",
+            cursor: conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+              ? "not-allowed" 
+              : "pointer",
+            border: "none",
+            opacity: conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+              ? 0.6 
+              : 1,
+            transition: "all 0.2s ease"
+          }}
+          onClick={handleAutoResolveConflicts}
+          disabled={conflictData.filter(conflict => conflict.Status === 'Pending').length === 0}
+          title={
+            conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+              ? "No pending conflicts found - nothing to auto-resolve" 
+              : `Auto-resolve ${conflictData.filter(conflict => conflict.Status === 'Pending').length} pending conflicts that are no longer valid`
+          }
+        >
+          <span style={{ fontSize: 20 }}>🔧</span>
+          {conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+            ? "No Conflicts" 
+            : "Auto-Resolve"
+          }
+          {conflictData.filter(conflict => conflict.Status === 'Pending').length > 0 && (
+            <span style={{ 
+              backgroundColor: "rgba(255,255,255,0.2)", 
+              borderRadius: "10px", 
+              padding: "2px 6px", 
+              fontSize: "12px",
+              marginLeft: "4px"
+            }}>
+              {conflictData.filter(conflict => conflict.Status === 'Pending').length}
+            </span>
+          )}
+        </button>
+        
+        <button
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 20px",
+            borderRadius: 8,
+            background: "#28a745",
+            fontWeight: 500,
+            fontSize: 16,
+            color: "#fff",
+            cursor: "pointer",
+            border: "none"
+          }}
+          onClick={() => fetchAnalyticsData()}
+        >
+          <BiRefresh style={{ fontSize: 20 }} />
+          Refresh
+        </button>
+        <button
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 24px",
+            borderRadius: 8,
+            background: "#015551",
+            fontWeight: 500,
+            fontSize: 16,
+            color: "#fff",
+            cursor: "pointer",
+            border: "none"
+          }}
+          onClick={exportConflictData}
+        >
+          <BiExport style={{ fontSize: 20 }} />
+          Export
+        </button>
+      </div>
+    </div>
 
                 {/* Conflict Statistics Cards */}
                 <div className="row mb-4">
@@ -558,6 +722,60 @@ const exportConflictData = () => {
                     </div>
                   </div>
                 </div>
+
+                <div className="row mb-3">
+  <div className="col-12">
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      padding: "12px 20px",
+      borderRadius: 8,
+      background: conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+        ? "#d4edda" 
+        : "#fff3cd",
+      border: `1px solid ${conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+        ? "#c3e6cb" 
+        : "#ffeaa7"}`,
+      fontSize: 14
+    }}>
+      <span style={{ 
+        fontSize: 20,
+        color: conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+          ? "#28a745" 
+          : "#856404"
+      }}>
+        {conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 
+          ? "✅" 
+          : "⚠️"
+        }
+      </span>
+      <div style={{ flex: 1 }}>
+        {conflictData.filter(conflict => conflict.Status === 'Pending').length === 0 ? (
+          <span style={{ color: "#155724", fontWeight: 500 }}>
+            No conflicts found! No auto-fix needed.
+          </span>
+        ) : (
+          <span style={{ color: "#856404" }}>
+            <strong>{conflictData.filter(conflict => conflict.Status === 'Pending').length}</strong> pending conflict(s) found. 
+            <span style={{ marginLeft: 8, fontWeight: 500 }}>
+              Use Auto-Resolve to resolve conflicts that are no longer valid.
+            </span>
+          </span>
+        )}
+      </div>
+      {conflictData.filter(conflict => conflict.Status === 'Pending').length > 0 && (
+        <div style={{
+          fontSize: 12,
+          color: "#856404",
+          fontStyle: "italic"
+        }}>
+          Last updated: {new Date().toLocaleTimeString()}
+        </div>
+      )}
+    </div>
+  </div>
+</div>
 
                 <div className="table-responsive">
                   <table

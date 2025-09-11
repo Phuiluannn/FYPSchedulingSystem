@@ -5,6 +5,7 @@ import ProtectedRoute from './ProtectedRoute';
 import { BiExport, BiSearch, BiX } from "react-icons/bi";
 import Papa from "papaparse";
 import html2canvas from "html2canvas";
+import { useAlert } from './AlertContext';
 
 const TIMES = [
   "8.00 AM - 9.00 AM",
@@ -35,17 +36,43 @@ function UserHome() {
   const [isPublished, setIsPublished] = useState(false);
   const [loading, setLoading] = useState(false);
   const [instructors, setInstructors] = useState([]);
+  const [selectedStudentYear, setSelectedStudentYear] = useState("All");
+  const [courses, setCourses] = useState([]);
+  const [selectedStudentYears, setSelectedStudentYears] = useState(["All"]);
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
   
   const tableRef = useRef(null);
   const allDaysTableRef = useRef(null);
   const exportButtonRef = useRef(null);
   const role = localStorage.getItem('role') || 'student';
+  const { showAlert, showConfirm } = useAlert();
 
   // Check if event matches search query
   const isEventMatchingSearch = (item) => {
     if (!searchQuery.trim()) return true;
     return item.code.toLowerCase().includes(searchQuery.toLowerCase());
   };
+
+  // Check if event matches student year filter
+const isEventMatchingYearFilter = (item) => {
+  if (selectedStudentYears.includes("All")) return true;
+  
+  // Find the course that matches this event
+  const course = courses.find(c => c.code === item.code);
+  if (!course) return true; // Show if course not found
+  
+  // Check if any of the selected years is in the course's year array
+  return course.year && selectedStudentYears.some(selectedYear => 
+    course.year.includes(selectedYear)
+  );
+};
+
+// Combined filter function
+const isEventMatchingAllFilters = (item) => {
+  const matchesSearch = !searchQuery.trim() || item.code.toLowerCase().includes(searchQuery.toLowerCase());
+  const matchesYear = isEventMatchingYearFilter(item);
+  return matchesSearch && matchesYear;
+};
 
   // Get unique courses from timetable for search
   const getUniqueCoursesFromTimetable = () => {
@@ -230,7 +257,7 @@ function UserHome() {
   };
 
   fetchPublishedTimetable();
-}, [roomsReady, rooms, selectedYear, selectedSemester, instructors]);
+}, [roomsReady, rooms, selectedYear, selectedSemester, instructors, courses]);
 
   useEffect(() => {
   const fetchInstructors = async () => {
@@ -248,6 +275,27 @@ function UserHome() {
   };
   fetchInstructors();
 }, []);
+
+// Fetch courses data
+useEffect(() => {
+  const fetchCourses = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(
+        `http://localhost:3001/courses?year=${selectedYear}&semester=${selectedSemester}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setCourses(response.data);
+    } catch (error) {
+      console.error("Error fetching courses:", error);
+      setCourses([]);
+    }
+  };
+  
+  if (selectedYear && selectedSemester) {
+    fetchCourses();
+  }
+}, [selectedYear, selectedSemester]);
 
   // Handle export modal positioning
   const calculateModalPosition = () => {
@@ -278,7 +326,7 @@ function UserHome() {
   console.log("isPublished:", isPublished); // Add this
   
   if (!isPublished) {
-    alert("No published timetable available to export.");
+    showAlert("No published timetable available to export.", "warning");
     return;
   }
   
@@ -293,243 +341,296 @@ function UserHome() {
 
   // Handle export functionality
   const handleExportTimetable = async (format) => {
-    if (!timetable || Object.keys(timetable).length === 0) {
-      alert("No timetable data available to export.");
+  if (!timetable || Object.keys(timetable).length === 0) {
+    showAlert("No timetable data available to export.", "warning");
+    return;
+  }
+
+  if (format === "csv") {
+    const csvData = [];
+    const headers = ["Day", "Time Slot", "End Time", "Duration (Hours)", "Room Code", "Room Capacity", "Course Code", "Occurrence Type", "Occurrence Number", "Instructor"];
+    csvData.push(headers);
+
+    const exportedEvents = new Set();
+
+    DAYS.forEach(day => {
+      Object.entries(timetable[day] || {}).forEach(([roomId, slots]) => {
+        const room = rooms.find(r => r._id === roomId);
+        const roomCode = room ? room.code : "Unknown";
+        const roomCapacity = room && room.capacity ? room.capacity : "N/A";
+
+        slots.forEach((slot, timeIdx) => {
+          slot.forEach(item => {
+            // CRITICAL: Only export events that match current filters
+            if (item && item.raw && !exportedEvents.has(item.id) && isEventMatchingAllFilters(item)) {
+              exportedEvents.add(item.id);
+              
+              csvData.push([
+                day,
+                TIMES[timeIdx],
+                item.raw.EndTime || TIMES[Math.min(timeIdx + (item.raw.Duration || 1) - 1, TIMES.length - 1)].split(" - ")[1],
+                item.raw.Duration || 1,
+                roomCode,
+                roomCapacity,
+                item.code || "N/A",
+                item.raw.OccType || "N/A",
+                Array.isArray(item.raw.OccNumber) ? item.raw.OccNumber.join(", ") : item.raw.OccNumber || "N/A",
+                item.instructorName || "No Instructor Assigned",
+              ]);
+            }
+          });
+        });
+      });
+    });
+
+    const csv = Papa.unparse(csvData);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    
+    // Update filename to include filter info
+    let filterSuffix = "";
+    if (searchQuery.trim()) {
+      filterSuffix += `_${searchQuery.trim().replace(/[^a-zA-Z0-9]/g, '_')}`;
+    }
+    if (!selectedStudentYears.includes("All")) {
+      filterSuffix += `_Year${selectedStudentYears.join('_')}`;
+    }
+    
+    const filename = `published_timetable_${selectedYear.replace("/", "-")}_sem${selectedSemester}_all_days${filterSuffix}.csv`;
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } else {
+    // Image export logic with filtering
+    if (!allDaysTableRef.current) {
+      showAlert("All days table element not found.", "error");
       return;
     }
 
-    if (format === "csv") {
-      const csvData = [];
-      const headers = ["Day", "Time Slot", "End Time", "Duration (Hours)", "Room Code", "Room Capacity", "Course Code", "Occurrence Type", "Occurrence Number", "Instructor"];
-      csvData.push(headers);
+    const allDaysTable = document.createElement("table");
+    allDaysTable.style.width = "100%";
+    allDaysTable.style.borderCollapse = "collapse";
+    allDaysTable.style.position = "absolute";
+    allDaysTable.style.top = "-9999px";
 
-      const exportedEvents = new Set();
+    const mainHeader = document.createElement("thead");
+    const mainHeaderRow = document.createElement("tr");
+    const mainHeaderCell = document.createElement("th");
+    mainHeaderCell.colSpan = TIMES.length + 1;
+    mainHeaderCell.style.padding = "15px";
+    mainHeaderCell.style.textAlign = "center";
+    mainHeaderCell.style.background = "#015551";
+    mainHeaderCell.style.color = "#fff";
+    mainHeaderCell.style.fontSize = "18px";
+    
+    // Update header to show filter info
+    let headerText = `Published Timetable - ${selectedYear}, Semester ${selectedSemester}`;
+    if (searchQuery.trim()) {
+      headerText += ` (Course: ${searchQuery})`;
+    }
+    if (!selectedStudentYears.includes("All")) {
+      headerText += ` (Year ${selectedStudentYears.join(", ")})`;
+    }
+    mainHeaderCell.textContent = headerText;
+    
+    mainHeaderRow.appendChild(mainHeaderCell);
+    mainHeader.appendChild(mainHeaderRow);
+    allDaysTable.appendChild(mainHeader);
 
-      DAYS.forEach(day => {
-        Object.entries(timetable[day] || {}).forEach(([roomId, slots]) => {
-          const room = rooms.find(r => r._id === roomId);
-          const roomCode = room ? room.code : "Unknown";
-          const roomCapacity = room && room.capacity ? room.capacity : "N/A";
-
-          slots.forEach((slot, timeIdx) => {
-            slot.forEach(item => {
-              if (item && item.raw && !exportedEvents.has(item.id)) {
-                exportedEvents.add(item.id);
-                
-                csvData.push([
-                  day,
-                  TIMES[timeIdx],
-                  item.raw.EndTime || TIMES[Math.min(timeIdx + (item.raw.Duration || 1) - 1, TIMES.length - 1)].split(" - ")[1],
-                  item.raw.Duration || 1,
-                  roomCode,
-                  roomCapacity,
-                  item.code || "N/A",
-                  item.raw.OccType || "N/A",
-                  Array.isArray(item.raw.OccNumber) ? item.raw.OccNumber.join(", ") : item.raw.OccNumber || "N/A",
-                  item.instructorName || "No Instructor Assigned",
-                ]);
-              }
-            });
+    DAYS.forEach(day => {
+      // Check if this day has any filtered events before creating the day section
+      let dayHasFilteredEvents = false;
+      rooms.forEach(room => {
+        const daySlots = timetable[day][room._id] || [];
+        daySlots.forEach(slot => {
+          slot.forEach(event => {
+            if (isEventMatchingAllFilters(event)) {
+              dayHasFilteredEvents = true;
+            }
           });
         });
       });
 
-      const csv = Papa.unparse(csvData);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
+      // Only create day section if there are filtered events
+      if (!dayHasFilteredEvents) return;
+
+      const dayHeader = document.createElement("thead");
+      const dayHeaderRow = document.createElement("tr");
+      const dayHeaderCell = document.createElement("th");
+      dayHeaderCell.colSpan = TIMES.length + 1;
+      dayHeaderCell.style.padding = "10px";
+      dayHeaderCell.style.textAlign = "center";
+      dayHeaderCell.style.background = "#e2e8f0";
+      dayHeaderCell.style.fontSize = "16px";
+      dayHeaderCell.style.fontWeight = "bold";
+      dayHeaderCell.textContent = `${day} Timetable`;
+      dayHeaderRow.appendChild(dayHeaderCell);
+      dayHeader.appendChild(dayHeaderRow);
+      allDaysTable.appendChild(dayHeader);
+
+      const timeHeader = document.createElement("thead");
+      const timeHeaderRow = document.createElement("tr");
+      const roomHeader = document.createElement("th");
+      roomHeader.style.textAlign = "left";
+      roomHeader.style.padding = "8px 12px";
+      roomHeader.style.border = "1px solid #ccc";
+      roomHeader.style.background = "#f8f8f8";
+      roomHeader.textContent = "Room (Capacity)";
+      timeHeaderRow.appendChild(roomHeader);
+      TIMES.forEach((time, idx) => {
+        const timeHeaderCell = document.createElement("th");
+        timeHeaderCell.style.textAlign = "center";
+        timeHeaderCell.style.padding = "8px 10px";
+        timeHeaderCell.style.border = "1px solid #ccc";
+        timeHeaderCell.style.background = "#f8f8f8";
+        timeHeaderCell.textContent = time;
+        timeHeaderRow.appendChild(timeHeaderCell);
+      });
+      timeHeader.appendChild(timeHeaderRow);
+      allDaysTable.appendChild(timeHeader);
+
+      const tbody = document.createElement("tbody");
+      rooms.forEach((room) => {
+        const daySlots = timetable[day][room._id] || [];
+        
+        // Build lanes but only with filtered events
+        const lanes = [];
+        for (let timeIdx = 0; timeIdx < TIMES.length; timeIdx++) {
+          const slotEvents = daySlots[timeIdx] || [];
+          slotEvents.forEach(event => {
+            // CRITICAL: Only include events that match the current filters
+            if (!isEventMatchingAllFilters(event)) return;
+            
+            const duration = event.raw?.Duration || 1;
+            let placed = false;
+            for (let lane of lanes) {
+              let canPlace = true;
+              for (let d = 0; d < duration; d++) {
+                if (lane[timeIdx + d]) {
+                  canPlace = false;
+                  break;
+                }
+              }
+              if (canPlace) {
+                for (let d = 0; d < duration; d++) {
+                  lane[timeIdx + d] = event;
+                }
+                placed = true;
+                break;
+              }
+            }
+            if (!placed) {
+              const newLane = Array(TIMES.length).fill(null);
+              for (let d = 0; d < duration; d++) {
+                newLane[timeIdx + d] = event;
+              }
+              lanes.push(newLane);
+            }
+          });
+        }
+
+        // Skip rooms that have no filtered events
+        if (lanes.length === 0) return;
+
+        const maxLanes = lanes.length;
+
+        for (let laneIdx = 0; laneIdx < maxLanes; laneIdx++) {
+          const row = document.createElement("tr");
+
+          if (laneIdx === 0) {
+            const roomCell = document.createElement("td");
+            roomCell.rowSpan = maxLanes;
+            roomCell.style.padding = "8px 12px";
+            roomCell.style.border = "1px solid #ccc";
+            roomCell.style.fontWeight = "600";
+            roomCell.innerHTML = `${room.code} ${room.capacity ? `(${room.capacity})` : ""}<br /><span style="font-weight: 400; font-size: 13px; color: #555">${room.building || room.block}</span>`;
+            row.appendChild(roomCell);
+          }
+
+          let timeIdx = 0;
+          while (timeIdx < TIMES.length) {
+            const event = lanes[laneIdx]?.[timeIdx];
+
+            if (event) {
+              const duration = event.raw?.Duration || 1;
+              const cell = document.createElement("td");
+              cell.colSpan = duration;
+              cell.style.border = "1px solid #ccc";
+              cell.style.height = `${48 * duration}px`;
+
+              const div = document.createElement("div");
+              div.style.padding = "6px 10px";
+              div.style.minHeight = `${32 * duration}px`;
+              div.style.backgroundColor = event.raw.OccType === "Lecture" ? "#e2e8f0" : "#d4f4e2";
+              div.style.borderRadius = "6px";
+              div.style.fontWeight = "500";
+              div.style.fontSize = "15px";
+              div.innerHTML = `<div><strong>${event.code} (${event.raw.OccType})${duration > 1 ? ` (${duration}h)` : ""}</strong></div>
+                <div style="font-size: 13px">${event.raw.OccNumber ? (Array.isArray(event.raw.OccNumber) ? `(Occ ${event.raw.OccNumber.join(", ")})` : `(Occ ${event.raw.OccNumber})`) : ""} ${event.instructorName}</div>`;
+
+              cell.appendChild(div);
+              row.appendChild(cell);
+              timeIdx += duration;
+            } else {
+              const emptyCell = document.createElement("td");
+              emptyCell.style.border = "1px solid #ccc";
+              emptyCell.style.height = "48px";
+              row.appendChild(emptyCell);
+              timeIdx++;
+            }
+          }
+          tbody.appendChild(row);
+        }
+      });
+      allDaysTable.appendChild(tbody);
+    });
+
+    document.body.appendChild(allDaysTable);
+
+    try {
+      const canvas = await html2canvas(allDaysTable, {
+        scale: 3,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        width: allDaysTable.scrollWidth,
+        height: allDaysTable.scrollHeight,
+      });
+
+      document.body.removeChild(allDaysTable);
+
+      const imageType = format === "png" ? "image/png" : "image/jpeg";
+      const imageQuality = format === "png" ? 1 : 0.8;
+      const imageData = canvas.toDataURL(imageType, imageQuality);
       const link = document.createElement("a");
-      const filename = `timetable_${selectedYear.replace("/", "-")}_sem${selectedSemester}_all_days.csv`;
-      link.setAttribute("href", url);
-      link.setAttribute("download", filename);
+      
+      // Update filename to include filter info
+      let filterSuffix = "";
+      if (searchQuery.trim()) {
+        filterSuffix += `_${searchQuery.trim().replace(/[^a-zA-Z0-9]/g, '_')}`;
+      }
+      if (!selectedStudentYears.includes("All")) {
+        filterSuffix += `_Year${selectedStudentYears.join('_')}`;
+      }
+      
+      const filename = `published_timetable_${selectedYear.replace("/", "-")}_sem${selectedSemester}_all_days${filterSuffix}.${format}`;
+      link.href = imageData;
+      link.download = filename;
       link.style.visibility = "hidden";
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } else {
-      // Image export logic
-      if (!allDaysTableRef.current) {
-        alert("All days table element not found.");
-        return;
-      }
-
-      const allDaysTable = document.createElement("table");
-      allDaysTable.style.width = "100%";
-      allDaysTable.style.borderCollapse = "collapse";
-      allDaysTable.style.position = "absolute";
-      allDaysTable.style.top = "-9999px";
-
-      const mainHeader = document.createElement("thead");
-      const mainHeaderRow = document.createElement("tr");
-      const mainHeaderCell = document.createElement("th");
-      mainHeaderCell.colSpan = TIMES.length + 1;
-      mainHeaderCell.style.padding = "15px";
-      mainHeaderCell.style.textAlign = "center";
-      mainHeaderCell.style.background = "#015551";
-      mainHeaderCell.style.color = "#fff";
-      mainHeaderCell.style.fontSize = "18px";
-      mainHeaderCell.textContent = `Published Timetable - ${selectedYear}, Semester ${selectedSemester}`;
-      mainHeaderRow.appendChild(mainHeaderCell);
-      mainHeader.appendChild(mainHeaderRow);
-      allDaysTable.appendChild(mainHeader);
-
-      DAYS.forEach(day => {
-        const dayHeader = document.createElement("thead");
-        const dayHeaderRow = document.createElement("tr");
-        const dayHeaderCell = document.createElement("th");
-        dayHeaderCell.colSpan = TIMES.length + 1;
-        dayHeaderCell.style.padding = "10px";
-        dayHeaderCell.style.textAlign = "center";
-        dayHeaderCell.style.background = "#e2e8f0";
-        dayHeaderCell.style.fontSize = "16px";
-        dayHeaderCell.style.fontWeight = "bold";
-        dayHeaderCell.textContent = `${day} Timetable`;
-        dayHeaderRow.appendChild(dayHeaderCell);
-        dayHeader.appendChild(dayHeaderRow);
-        allDaysTable.appendChild(dayHeader);
-
-        const timeHeader = document.createElement("thead");
-        const timeHeaderRow = document.createElement("tr");
-        const roomHeader = document.createElement("th");
-        roomHeader.style.textAlign = "left";
-        roomHeader.style.padding = "8px 12px";
-        roomHeader.style.border = "1px solid #ccc";
-        roomHeader.style.background = "#f8f8f8";
-        roomHeader.textContent = "Room (Capacity)";
-        timeHeaderRow.appendChild(roomHeader);
-        TIMES.forEach((time, idx) => {
-          const timeHeaderCell = document.createElement("th");
-          timeHeaderCell.style.textAlign = "center";
-          timeHeaderCell.style.padding = "8px 10px";
-          timeHeaderCell.style.border = "1px solid #ccc";
-          timeHeaderCell.style.background = "#f8f8f8";
-          timeHeaderCell.textContent = time;
-          timeHeaderRow.appendChild(timeHeaderCell);
-        });
-        timeHeader.appendChild(timeHeaderRow);
-        allDaysTable.appendChild(timeHeader);
-
-        const tbody = document.createElement("tbody");
-        rooms.forEach((room) => {
-          const daySlots = timetable[day][room._id] || [];
-          
-          // Build lanes for display
-          const lanes = [];
-          for (let timeIdx = 0; timeIdx < TIMES.length; timeIdx++) {
-            const slotEvents = daySlots[timeIdx] || [];
-            slotEvents.forEach(event => {
-              const duration = event.raw?.Duration || 1;
-              let placed = false;
-              for (let lane of lanes) {
-                let canPlace = true;
-                for (let d = 0; d < duration; d++) {
-                  if (lane[timeIdx + d]) {
-                    canPlace = false;
-                    break;
-                  }
-                }
-                if (canPlace) {
-                  for (let d = 0; d < duration; d++) {
-                    lane[timeIdx + d] = event;
-                  }
-                  placed = true;
-                  break;
-                }
-              }
-              if (!placed) {
-                const newLane = Array(TIMES.length).fill(null);
-                for (let d = 0; d < duration; d++) {
-                  newLane[timeIdx + d] = event;
-                }
-                lanes.push(newLane);
-              }
-            });
-          }
-
-          const maxLanes = lanes.length || 1;
-
-          for (let laneIdx = 0; laneIdx < maxLanes; laneIdx++) {
-            const row = document.createElement("tr");
-
-            if (laneIdx === 0) {
-              const roomCell = document.createElement("td");
-              roomCell.rowSpan = maxLanes;
-              roomCell.style.padding = "8px 12px";
-              roomCell.style.border = "1px solid #ccc";
-              roomCell.style.fontWeight = "600";
-              roomCell.innerHTML = `${room.code} ${room.capacity ? `(${room.capacity})` : ""}<br /><span style="font-weight: 400; font-size: 13px; color: #555">${room.building || room.block}</span>`;
-              row.appendChild(roomCell);
-            }
-
-            let timeIdx = 0;
-            while (timeIdx < TIMES.length) {
-              const event = lanes[laneIdx]?.[timeIdx];
-
-              if (event) {
-                const duration = event.raw?.Duration || 1;
-                const cell = document.createElement("td");
-                cell.colSpan = duration;
-                cell.style.border = "1px solid #ccc";
-                cell.style.height = `${48 * duration}px`;
-
-                const div = document.createElement("div");
-                div.style.padding = "6px 10px";
-                div.style.minHeight = `${32 * duration}px`;
-                div.style.backgroundColor = event.raw.OccType === "Lecture" ? "#e2e8f0" : "#d4f4e2";
-                div.style.borderRadius = "6px";
-                div.style.fontWeight = "500";
-                div.style.fontSize = "15px";
-                div.innerHTML = `<div><strong>${event.code} (${event.raw.OccType})${duration > 1 ? ` (${duration}h)` : ""}</strong></div>
-                  <div style="font-size: 13px">${event.raw.OccNumber ? (Array.isArray(event.raw.OccNumber) ? `(Occ ${event.raw.OccNumber.join(", ")})` : `(Occ ${event.raw.OccNumber})`) : ""} ${event.instructorName}</div>`;
-
-                cell.appendChild(div);
-                row.appendChild(cell);
-                timeIdx += duration;
-              } else {
-                const emptyCell = document.createElement("td");
-                emptyCell.style.border = "1px solid #ccc";
-                emptyCell.style.height = "48px";
-                row.appendChild(emptyCell);
-                timeIdx++;
-              }
-            }
-            tbody.appendChild(row);
-          }
-        });
-        allDaysTable.appendChild(tbody);
-      });
-
-      document.body.appendChild(allDaysTable);
-
-      try {
-        const canvas = await html2canvas(allDaysTable, {
-          scale: 3,
-          useCORS: true,
-          backgroundColor: "#ffffff",
-          width: allDaysTable.scrollWidth,
-          height: allDaysTable.scrollHeight,
-        });
-
-        document.body.removeChild(allDaysTable);
-
-        const imageType = format === "png" ? "image/png" : "image/jpeg";
-        const imageQuality = format === "png" ? 1 : 0.8;
-        const imageData = canvas.toDataURL(imageType, imageQuality);
-        const link = document.createElement("a");
-        const filename = `published_timetable_${selectedYear.replace("/", "-")}_sem${selectedSemester}_all_days.${format}`;
-        link.href = imageData;
-        link.download = filename;
-        link.style.visibility = "hidden";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } catch (error) {
-        console.error("Error exporting timetable as image:", error);
-        alert("Failed to export timetable as image.");
-        document.body.removeChild(allDaysTable);
-      }
+    } catch (error) {
+      console.error("Error exporting timetable as image:", error);
+      showAlert("Failed to export timetable as image.", "error");
+      document.body.removeChild(allDaysTable);
     }
-  };
+  }
+};
 
   // Handle day change
   const handleDayChange = (e) => {
@@ -559,6 +660,20 @@ function UserHome() {
     //   };
     }
   }, [showExportModal]);
+
+  useEffect(() => {
+  if (showYearDropdown) {
+    const handleClickOutside = (event) => {
+      const dropdown = event.target.closest('[data-dropdown="year-filter"]');
+      if (!dropdown) {
+        setShowYearDropdown(false);
+      }
+    };
+    
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }
+}, [showYearDropdown]);
 
   const handleExportConfirm = () => {
     handleExportTimetable(selectedExportFormat);
@@ -679,7 +794,7 @@ function UserHome() {
                 value={selectedYear}
                 onChange={e => setSelectedYear(e.target.value)}
               >
-                <option value="">Year</option>
+                <option value="" disabled>Academic Year</option>
                 <option value="2024/2025">2024/2025</option>
                 <option value="2025/2026">2025/2026</option>
                 <option value="2026/2027">2026/2027</option>
@@ -697,6 +812,131 @@ function UserHome() {
                 <option value="1">Semester 1</option>
                 <option value="2">Semester 2</option>
               </select>
+              <div style={{ position: "relative" }} data-dropdown="year-filter">
+  <div
+    onClick={() => setShowYearDropdown(!showYearDropdown)}
+    style={{
+      width: 140,
+      padding: "8px 12px",
+      borderRadius: 8,
+      border: "1px solid #ced4da",
+      background: "#fff",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      fontSize: 14,
+      fontFamily: 'inherit',
+      lineHeight: '1.5'
+    }}
+  >
+    <span>
+      {selectedStudentYears.includes("All") 
+        ? "All Years" 
+        : selectedStudentYears.length === 1 
+        ? `Year ${selectedStudentYears[0]}`
+        : `${selectedStudentYears.length} Years Selected`
+      }
+    </span>
+    <span style={{ 
+      transform: showYearDropdown ? "rotate(180deg)" : "rotate(0deg)", 
+      transition: "transform 0.2s ease",
+      fontSize: 10,
+      color: "#666"
+    }}>
+      ▼
+    </span>
+  </div>
+  
+  {showYearDropdown && (
+    <div style={{
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      right: 0,
+      background: "#fff",
+      border: "1px solid #ced4da",
+      borderTop: "none",
+      borderRadius: "0 0 8px 8px",
+      zIndex: 1000,
+      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+      maxHeight: "200px",
+      overflowY: "auto"
+    }}>
+      {[
+        { value: "All", label: "All Years" },
+        { value: "1", label: "Year 1" },
+        { value: "2", label: "Year 2" },
+        { value: "3", label: "Year 3" },
+        { value: "4", label: "Year 4" }
+      ].map((option) => (
+        <div
+          key={option.value}
+          onClick={(e) => {
+            e.stopPropagation();
+            
+            if (option.value === "All") {
+              setSelectedStudentYears(["All"]);
+              setShowYearDropdown(false);
+            } else {
+              let newSelection;
+              if (selectedStudentYears.includes(option.value)) {
+                // Remove if already selected
+                newSelection = selectedStudentYears.filter(y => y !== option.value && y !== "All");
+                if (newSelection.length === 0) {
+                  newSelection = ["All"];
+                }
+              } else {
+                // Add to selection
+                newSelection = selectedStudentYears.includes("All") 
+                  ? [option.value]
+                  : [...selectedStudentYears.filter(y => y !== "All"), option.value];
+              }
+              setSelectedStudentYears(newSelection);
+            }
+          }}
+          style={{
+            padding: "8px 12px",
+            cursor: "pointer",
+            borderBottom: "1px solid #f0f0f0",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 14,
+            background: selectedStudentYears.includes(option.value) ? "#f8f9fa" : "#fff"
+          }}
+          onMouseEnter={(e) => {
+            if (!selectedStudentYears.includes(option.value)) {
+              e.target.style.background = "#f5f5f5";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!selectedStudentYears.includes(option.value)) {
+              e.target.style.background = "#fff";
+            }
+          }}
+        >
+          <div style={{
+            width: 16,
+            height: 16,
+            border: "2px solid #ddd",
+            borderRadius: 3,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: selectedStudentYears.includes(option.value) ? "#015551" : "#fff",
+            borderColor: selectedStudentYears.includes(option.value) ? "#015551" : "#ddd"
+          }}>
+            {selectedStudentYears.includes(option.value) && (
+              <span style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>✓</span>
+            )}
+          </div>
+          <span>{option.label}</span>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
               <button
                 ref={exportButtonRef}
                 style={{
@@ -735,18 +975,31 @@ function UserHome() {
               <h2 style={{ fontWeight: 700, fontSize: 27, margin: 0 }}>
                 {selectedDay} Timetable
               </h2>
-              {searchQuery.trim() && (
-                <span style={{ 
-                  fontSize: 14, 
-                  color: "#666",
-                  background: "#f8f9fa",
-                  padding: "4px 12px",
-                  borderRadius: 20,
-                  border: "1px solid #e9ecef"
-                }}>
-                  Showing results for: <strong>{searchQuery}</strong>
-                </span>
-              )}
+              {(searchQuery.trim() || !selectedStudentYears.includes("All")) && (
+  <div style={{ 
+    fontSize: 14, 
+    color: "#666",
+    background: "#f8f9fa",
+    padding: "6px 16px",
+    borderRadius: 20,
+    border: "1px solid #e9ecef",
+    display: "flex",
+    alignItems: "center",
+    gap: 12
+  }}>
+    {searchQuery.trim() && (
+      <span>
+        Course: <strong>{searchQuery}</strong>
+      </span>
+    )}
+    {searchQuery.trim() && !selectedStudentYears.includes("All") && <span>•</span>}
+    {!selectedStudentYears.includes("All") && (
+      <span>
+        Year{selectedStudentYears.length > 1 ? 's' : ''}: <strong>{selectedStudentYears.join(", ")}</strong>
+      </span>
+    )}
+  </div>
+)}
             </div>
 
             {loading ? (
@@ -871,38 +1124,40 @@ function UserHome() {
                                         verticalAlign: "top" 
                                       }}
                                     >
-                                      {isEventMatchingSearch(event) && (
-                                        <div
-                                          style={{
-                                            padding: "6px 10px",
-                                            margin: "2px",
-                                            minHeight: "32px",
-                                            backgroundColor: event.raw.OccType === "Lecture" ? "#e2e8f0" : "#d4f4e2",
-                                            borderRadius: 6,
-                                            fontWeight: 500,
-                                            fontSize: 15,
-                                            border: searchQuery.trim() && isEventMatchingSearch(event) 
-                                              ? "2px solid #015551" 
-                                              : "2px solid transparent",
-                                          }}
-                                        >
-                                          <div>
-                                            <strong>{event.code} ({event.raw.OccType})</strong>
-                                            {duration > 1 && (
-                                              <span style={{ fontSize: 12, color: "#666", marginLeft: 8 }}>
-                                                ({duration}h)
-                                              </span>
-                                            )}
-                                          </div>
-                                          <div style={{ fontSize: 13 }}>
-                                            {event.raw.OccNumber && (
-                                              Array.isArray(event.raw.OccNumber)
-                                                ? `(Occ ${event.raw.OccNumber.join(", ")})`
-                                                : `(Occ ${event.raw.OccNumber})`
-                                            )} {event.instructorName}
-                                          </div>
-                                        </div>
-                                      )}
+                                      {isEventMatchingAllFilters(event) && (
+  <div
+    style={{
+      padding: "6px 10px",
+      margin: "2px",
+      minHeight: "32px",
+      backgroundColor: event.raw.OccType === "Lecture" ? "#e2e8f0" : "#d4f4e2",
+      borderRadius: 6,
+      fontWeight: 500,
+      fontSize: 15,
+      border: (searchQuery.trim() && event.code.toLowerCase().includes(searchQuery.toLowerCase())) || 
+              (!selectedStudentYears.includes("All") && !isEventMatchingYearFilter(event))
+        ? "2px solid #015551" 
+        : "2px solid transparent",
+      opacity: isEventMatchingAllFilters(event) ? 1 : 0.3,
+    }}
+  >
+    <div>
+      <strong>{event.code} ({event.raw.OccType})</strong>
+      {duration > 1 && (
+        <span style={{ fontSize: 12, color: "#666", marginLeft: 8 }}>
+          ({duration}h)
+        </span>
+      )}
+    </div>
+    <div style={{ fontSize: 13 }}>
+      {event.raw.OccNumber && (
+        Array.isArray(event.raw.OccNumber)
+          ? `(Occ ${event.raw.OccNumber.join(", ")})`
+          : `(Occ ${event.raw.OccNumber})`
+      )} {event.instructorName}
+    </div>
+  </div>
+)}
                                     </td>
                                   );
                                 } else {

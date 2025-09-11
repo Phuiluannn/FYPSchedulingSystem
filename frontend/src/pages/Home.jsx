@@ -6,6 +6,8 @@ import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import { BiExport, BiSearch, BiX } from "react-icons/bi";
 import Papa from "papaparse";
 import html2canvas from "html2canvas";
+import { useNavigate } from 'react-router-dom';
+import { useAlert } from "./AlertContext";
 
 const TIMES = [
   "8.00 AM - 9.00 AM",
@@ -48,10 +50,42 @@ function Home() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [originalEventElement, setOriginalEventElement] = useState(null);
   const containerRef = useRef(null);
+  const [selectedStudentYears, setSelectedStudentYears] = useState(["All"]);
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const [conflictSummary, setConflictSummary] = useState({
+  total: 0,
+  roomCapacity: 0,
+  roomDoubleBooking: 0,
+  instructorConflict: 0,
+  timeSlotExceeded: 0
+});
+const navigate = useNavigate();
+const { showAlert, showConfirm } = useAlert();
 
-  const isEventMatchingSearch = (item) => {
-  if (!searchQuery.trim()) return true; // Show all if no search query
-  return item.code.toLowerCase().includes(searchQuery.toLowerCase());
+
+// const isEventMatchingSearch = (item) => {
+//   if (!searchQuery.trim()) return true; // Show all if no search query
+//   return item.code.toLowerCase().includes(searchQuery.toLowerCase());
+// };
+
+const isEventMatchingYearFilter = (item) => {
+  if (selectedStudentYears.includes("All")) return true;
+  
+  // Find the course that matches this event
+  const course = courses.find(c => c.code === item.code);
+  if (!course) return true; // Show if course not found
+  
+  // Check if any of the selected years is in the course's year array
+  return course.year && selectedStudentYears.some(selectedYear => 
+    course.year.includes(selectedYear)
+  );
+};
+
+// Update the existing isEventMatchingSearch function to also include year filter
+const isEventMatchingAllFilters = (item) => {
+  const matchesSearch = !searchQuery.trim() || item.code.toLowerCase().includes(searchQuery.toLowerCase());
+  const matchesYear = isEventMatchingYearFilter(item);
+  return matchesSearch && matchesYear;
 };
 
 // 4. Add this function to get unique courses from timetable
@@ -113,8 +147,18 @@ const checkInstructorConflicts = (timetable, movedEvent, targetDay, targetTimeId
           
           if (hasOverlap) {
             const conflictingRoomObj = rooms.find(r => r._id === roomId);
+            
+            // FIXED: Calculate the full overlapping time range
             const overlapStart = Math.max(movedStartIdx, conflictingStartIdx);
-            const overlapTimeSlot = TIMES[overlapStart];
+            const overlapEnd = Math.min(movedEndIdx, conflictingEndIdx);
+            
+            // Create the proper time range string
+            const overlapStartTime = TIMES[overlapStart];
+            const overlapEndTime = TIMES[overlapEnd];
+            
+            const overlapTimeSlot = overlapStartTime.includes(' - ') 
+              ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+              : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
             
             conflicts.push({
               type: 'Instructor Conflict',
@@ -124,7 +168,7 @@ const checkInstructorConflicts = (timetable, movedEvent, targetDay, targetTimeId
               conflictingCourseType: event.raw?.OccType || 'Unknown',
               conflictingOccNumber: event.raw?.OccNumber,
               conflictingRoomCode: conflictingRoomObj?.code || 'Unknown Room',
-              timeSlot: overlapTimeSlot,
+              timeSlot: overlapTimeSlot, // Now contains the full overlap range
               conflictingEvent: event
             });
           }
@@ -136,30 +180,16 @@ const checkInstructorConflicts = (timetable, movedEvent, targetDay, targetTimeId
   return conflicts;
 };
 
-
   const recordDragDropConflict = async (conflictData) => {
   try {
     const token = localStorage.getItem('token');
     
-    // Format OccNumber for the description
-    const occNumberText = conflictData.OccNumber
-      ? Array.isArray(conflictData.OccNumber)
-        ? ` (Occ ${conflictData.OccNumber.join(", ")})`
-        : ` (Occ ${conflictData.OccNumber})`
-      : "";
-
-    // Update the conflict description to include OccNumber
-    const updatedConflictData = {
-      ...conflictData,
-      Description: `${conflictData.Description}${occNumberText}`
-    };
-
     await axios.post(
       "http://localhost:3001/analytics/record-conflict",
-      updatedConflictData,
+      conflictData, // Use original conflictData without modification
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    console.log("Conflict recorded successfully:", updatedConflictData);
+    console.log("Conflict recorded successfully:", conflictData);
   } catch (error) {
     console.error("Error recording conflict:", error);
   }
@@ -172,13 +202,402 @@ const handlePublish = async () => {
       { year: selectedYear, semester: selectedSemester },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    alert("Timetable published successfully!");
+    showAlert("Timetable published successfully!", "success");
   } catch (error) {
     console.error("Error publishing timetable:", error);
-    alert("Failed to publish timetable");
+    showAlert("Failed to publish timetable", "error");
   }
 };
 
+// Add this helper function to Home.jsx after the existing helper functions
+
+/**
+ * Get available instructors for a specific event based on occurrence restrictions
+ * An instructor can only teach tutorials for occurrences they're assigned to in lectures
+ */
+const getAvailableInstructorsForEvent = (event, timetable, selectedDay) => {
+  const { code: courseCode, raw } = event;
+  const { OccType, OccNumber } = raw;
+  
+  // If this is a lecture, return all course instructors (no restrictions)
+  if (OccType === "Lecture") {
+    return instructors.filter(inst => 
+      (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
+        .includes(inst.name)
+    );
+  }
+  
+  // If this is a tutorial, filter instructors based on lecture assignments
+  if (OccType === "Tutorial") {
+    const tutorialOccurrences = Array.isArray(OccNumber) ? OccNumber : [OccNumber];
+    const availableInstructors = [];
+    
+    // Find all lecture events for this course
+    const lectureEvents = [];
+    DAYS.forEach(day => {
+      if (timetable[day]) {
+        Object.values(timetable[day]).forEach(roomSlots => {
+          roomSlots.forEach(slot => {
+            slot.forEach(item => {
+              if (item && 
+                  item.code === courseCode && 
+                  item.raw?.OccType === "Lecture" &&
+                  item.selectedInstructor && 
+                  item.selectedInstructorId) {
+                lectureEvents.push(item);
+              }
+            });
+          });
+        });
+      }
+    });
+    
+    // For each instructor in the course, check if they teach lectures that cover these tutorial occurrences
+    instructors
+      .filter(inst => 
+        (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
+          .includes(inst.name)
+      )
+      .forEach(instructor => {
+        // Find lecture events taught by this instructor for this course
+        const instructorLectures = lectureEvents.filter(lecture => 
+          lecture.selectedInstructorId === instructor._id
+        );
+        
+        if (instructorLectures.length === 0) {
+          // No lecture restriction - instructor can teach any tutorial
+          availableInstructors.push(instructor);
+        } else {
+          // Check if any of the instructor's lectures cover these tutorial occurrences
+          const canTeachTutorial = instructorLectures.some(lecture => {
+            const lectureOccurrences = Array.isArray(lecture.raw.OccNumber) 
+              ? lecture.raw.OccNumber 
+              : [lecture.raw.OccNumber];
+            
+            // Check if there's any overlap between lecture occurrences and tutorial occurrences
+            return tutorialOccurrences.some(tutOcc => 
+              lectureOccurrences.includes(tutOcc)
+            );
+          });
+          
+          if (canTeachTutorial) {
+            availableInstructors.push(instructor);
+          }
+        }
+      });
+    
+    return availableInstructors;
+  }
+  
+  // Default: return all course instructors
+  return instructors.filter(inst => 
+    (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
+      .includes(inst.name)
+  );
+};
+
+/**
+ * Check if an instructor assignment would violate occurrence restrictions
+ */
+const checkOccurrenceRestriction = (event, selectedInstructorId, timetable) => {
+  const { code: courseCode, raw } = event;
+  const { OccType, OccNumber } = raw;
+  
+  // Only apply restrictions to tutorials
+  if (OccType !== "Tutorial") return null;
+  
+  const selectedInstructor = instructors.find(inst => inst._id === selectedInstructorId);
+  if (!selectedInstructor) return null;
+  
+  const tutorialOccurrences = Array.isArray(OccNumber) ? OccNumber : [OccNumber];
+  
+  // Find all lecture events for this course taught by this instructor
+  const instructorLectures = [];
+  DAYS.forEach(day => {
+    if (timetable[day]) {
+      Object.values(timetable[day]).forEach(roomSlots => {
+        roomSlots.forEach(slot => {
+          slot.forEach(item => {
+            if (item && 
+                item.code === courseCode && 
+                item.raw?.OccType === "Lecture" &&
+                item.selectedInstructorId === selectedInstructorId) {
+              instructorLectures.push(item);
+            }
+          });
+        });
+      });
+    }
+  });
+  
+  if (instructorLectures.length === 0) {
+    // No lecture assignments - no restrictions
+    return null;
+  }
+  
+  // Check if any lecture covers these tutorial occurrences
+  const validLectures = instructorLectures.filter(lecture => {
+    const lectureOccurrences = Array.isArray(lecture.raw.OccNumber) 
+      ? lecture.raw.OccNumber 
+      : [lecture.raw.OccNumber];
+    
+    return tutorialOccurrences.some(tutOcc => 
+      lectureOccurrences.includes(tutOcc)
+    );
+  });
+  
+  if (validLectures.length === 0) {
+    return {
+      isViolation: true,
+      message: `${selectedInstructor.name} cannot teach tutorial for occurrences [${tutorialOccurrences.join(', ')}] because they are not assigned to teach lectures covering these occurrences.`,
+      instructorLectures: instructorLectures.map(lec => ({
+        occurrences: Array.isArray(lec.raw.OccNumber) ? lec.raw.OccNumber : [lec.raw.OccNumber],
+        day: lec.raw.Day,
+        time: lec.raw.StartTime
+      }))
+    };
+  }
+  
+  return null; // No violation
+};
+
+const detectAllConflicts = (currentTimetable, currentCourses, currentRooms) => {
+  console.log("=== DETECTING ALL CONFLICTS ===");
+  
+  const conflicts = {
+    roomCapacity: [],
+    roomDoubleBooking: [],
+    instructorConflict: [],
+    timeSlotExceeded: []
+  };
+
+  // Helper function to get events from all days/rooms
+  const getAllEvents = () => {
+    const allEvents = [];
+    DAYS.forEach(day => {
+      Object.entries(currentTimetable[day] || {}).forEach(([roomId, slots]) => {
+        slots.forEach((slot, timeIdx) => {
+          slot.forEach(event => {
+            if (event && event.raw) {
+              allEvents.push({
+                ...event,
+                day,
+                roomId,
+                timeIdx
+              });
+            }
+          });
+        });
+      });
+    });
+    return allEvents;
+  };
+
+  const allEvents = getAllEvents();
+  console.log(`Found ${allEvents.length} events to check for conflicts`);
+
+  // 1. Check Room Capacity Conflicts (unchanged)
+  allEvents.forEach(event => {
+    const room = currentRooms.find(r => r._id === event.roomId);
+    if (room && event.raw) {
+      const requiredCapacity = calculateRequiredCapacity(
+        event.code,
+        event.raw.OccType,
+        event.raw.OccNumber,
+        currentCourses
+      );
+      
+      if (room.capacity < requiredCapacity) {
+        conflicts.roomCapacity.push({
+          id: `capacity-${event.id}`,
+          eventId: event.id,
+          courseCode: event.code,
+          roomCode: room.code,
+          roomCapacity: room.capacity,
+          requiredCapacity,
+          day: event.day,
+          time: TIMES[event.timeIdx],
+          occType: event.raw.OccType,
+          occNumber: event.raw.OccNumber
+        });
+      }
+    }
+  });
+
+  // 2. Check Room Double Booking Conflicts (unchanged)
+  const roomDoubleBookingConflicts = new Map(); // Use Map to prevent duplicates
+
+allEvents.forEach(event => {
+  const { day, roomId, timeIdx } = event;
+  const duration = event.raw?.Duration || 1;
+  const eventEndIdx = timeIdx + duration - 1;
+  
+  // Find all other events in the same room on the same day
+  const sameRoomEvents = allEvents.filter(otherEvent => 
+    otherEvent.day === day &&
+    otherEvent.roomId === roomId &&
+    otherEvent.id !== event.id
+  );
+  
+  sameRoomEvents.forEach(otherEvent => {
+    const otherStartIdx = otherEvent.timeIdx;
+    const otherDuration = otherEvent.raw?.Duration || 1;
+    const otherEndIdx = otherStartIdx + otherDuration - 1;
+    
+    // Check if time periods overlap
+    const hasOverlap = !(eventEndIdx < otherStartIdx || timeIdx > otherEndIdx);
+    
+    if (hasOverlap) {
+      // Create unique conflict ID that's the same regardless of event order
+      const sortedIds = [event.id, otherEvent.id].sort();
+      const conflictId = `double-${roomId}-${day}-${sortedIds[0]}-${sortedIds[1]}`;
+      
+      // Only add if we haven't already recorded this conflict
+      if (!roomDoubleBookingConflicts.has(conflictId)) {
+        const room = currentRooms.find(r => r._id === roomId);
+        
+        // Calculate the overlapping time range
+        const overlapStart = Math.max(timeIdx, otherStartIdx);
+        const overlapEnd = Math.min(eventEndIdx, otherEndIdx);
+        const overlapTime = TIMES[overlapStart];
+        
+        roomDoubleBookingConflicts.set(conflictId, {
+          id: conflictId,
+          event1: {
+            id: event.id,
+            courseCode: event.code,
+            occType: event.raw.OccType,
+            occNumber: event.raw.OccNumber
+          },
+          event2: {
+            id: otherEvent.id,
+            courseCode: otherEvent.code,
+            occType: otherEvent.raw.OccType,
+            occNumber: otherEvent.raw.OccNumber
+          },
+          roomCode: room?.code || 'Unknown',
+          day,
+          time: overlapTime,
+          overlapStart: overlapStart,
+          overlapEnd: overlapEnd
+        });
+      }
+    }
+  });
+});
+
+// Convert Map values to array
+conflicts.roomDoubleBooking = Array.from(roomDoubleBookingConflicts.values());
+
+  // 3. FIXED: Check Instructor Conflicts - Group overlapping events into single conflicts
+  const instructorConflicts = new Map(); // Use Map to prevent duplicates
+  
+  allEvents.forEach(event => {
+    if (!event.selectedInstructorId || event.selectedInstructorId.trim() === '') return;
+
+    const { day, timeIdx, selectedInstructorId } = event;
+    const duration = event.raw?.Duration || 1;
+
+    // Find all other events with the same instructor on the same day
+    const conflictingEvents = allEvents.filter(otherEvent => 
+      otherEvent.selectedInstructorId === selectedInstructorId &&
+      otherEvent.id !== event.id &&
+      otherEvent.day === day
+    );
+
+    conflictingEvents.forEach(conflictingEvent => {
+      const conflictingDuration = conflictingEvent.raw?.Duration || 1;
+      const conflictingTimeIdx = conflictingEvent.timeIdx;
+
+      // Check if time periods overlap
+      const eventStart = timeIdx;
+      const eventEnd = timeIdx + duration - 1;
+      const conflictingStart = conflictingTimeIdx;
+      const conflictingEnd = conflictingTimeIdx + conflictingDuration - 1;
+
+      const hasOverlap = !(eventEnd < conflictingStart || eventStart > conflictingEnd);
+
+      if (hasOverlap) {
+        // Create a unique conflict ID that's the same regardless of event order
+        const sortedIds = [event.id, conflictingEvent.id].sort();
+        const conflictId = `instructor-${selectedInstructorId}-${day}-${sortedIds[0]}-${sortedIds[1]}`;
+        
+        // Only add if we haven't already recorded this conflict
+        if (!instructorConflicts.has(conflictId)) {
+          const room1 = currentRooms.find(r => r._id === event.roomId);
+          const room2 = currentRooms.find(r => r._id === conflictingEvent.roomId);
+          
+          // Calculate the actual overlapping time range
+          const overlapStart = Math.max(eventStart, conflictingStart);
+          const overlapEnd = Math.min(eventEnd, conflictingEnd);
+          
+          instructorConflicts.set(conflictId, {
+            id: conflictId,
+            instructorId: selectedInstructorId,
+            instructorName: event.selectedInstructor,
+            event1: {
+              id: event.id,
+              courseCode: event.code,
+              roomCode: room1?.code || 'Unknown',
+              occType: event.raw.OccType,
+              occNumber: event.raw.OccNumber
+            },
+            event2: {
+              id: conflictingEvent.id,
+              courseCode: conflictingEvent.code,
+              roomCode: room2?.code || 'Unknown',
+              occType: conflictingEvent.raw.OccType,
+              occNumber: conflictingEvent.raw.OccNumber
+            },
+            day,
+            time: TIMES[overlapStart],
+            overlapStart: overlapStart,
+            overlapEnd: overlapEnd,
+            overlapDuration: overlapEnd - overlapStart + 1
+          });
+        }
+      }
+    });
+  });
+
+  // Convert Map values to array
+  conflicts.instructorConflict = Array.from(instructorConflicts.values());
+
+  // 4. Check Time Slot Exceeded Conflicts (unchanged)
+  allEvents.forEach(event => {
+    const { timeIdx } = event;
+    const duration = event.raw?.Duration || 1;
+    
+    if (timeIdx + duration > TIMES.length) {
+      conflicts.timeSlotExceeded.push({
+        id: `time-exceeded-${event.id}`,
+        eventId: event.id,
+        courseCode: event.code,
+        occType: event.raw.OccType,
+        occNumber: event.raw.OccNumber,
+        day: event.day,
+        startTime: TIMES[timeIdx],
+        duration,
+        availableSlots: TIMES.length - timeIdx
+      });
+    }
+  });
+
+  const summary = {
+    total: conflicts.roomCapacity.length + 
+           conflicts.roomDoubleBooking.length + 
+           conflicts.instructorConflict.length + 
+           conflicts.timeSlotExceeded.length,
+    roomCapacity: conflicts.roomCapacity.length,
+    roomDoubleBooking: conflicts.roomDoubleBooking.length,
+    instructorConflict: conflicts.instructorConflict.length,
+    timeSlotExceeded: conflicts.timeSlotExceeded.length
+  };
+
+  console.log("Conflict Summary:", summary);
+  console.log("Instructor conflicts found:", conflicts.instructorConflict.length);
+  return { summary, details: conflicts };
+};
 
 useEffect(() => {
   if (searchQuery.trim()) {
@@ -439,6 +858,37 @@ useEffect(() => {
     };
   }
 }, [showDaySelector, originalEventElement]);
+
+useEffect(() => {
+  if (showYearDropdown) {
+    const handleClickOutside = (event) => {
+      const dropdown = event.target.closest('[data-dropdown="year-filter"]');
+      if (!dropdown) {
+        setShowYearDropdown(false);
+      }
+    };
+    
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }
+}, [showYearDropdown]);
+
+useEffect(() => {
+  if (!timetable || Object.keys(timetable).length === 0 || !courses.length || !rooms.length) {
+    setConflictSummary({
+      total: 0,
+      roomCapacity: 0,
+      roomDoubleBooking: 0,
+      instructorConflict: 0,
+      timeSlotExceeded: 0
+    });
+    return;
+  }
+
+  console.log("Detecting conflicts after timetable change...");
+  const { summary } = detectAllConflicts(timetable, courses, rooms);
+  setConflictSummary(summary);
+}, [timetable, courses, rooms]);
 
   const handleContextMenu = (e, item, roomId, timeIdx, index) => {
   e.preventDefault();
@@ -773,43 +1223,55 @@ const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
 
   // Check for room double booking conflicts
   rooms
-    .filter(r => r._id === destRoom)
-    .forEach(roomObj => {
-      newTimetable[selectedDay][roomObj._id].forEach((slotEvents, slotIdx) => {
-        slotEvents.forEach(event => {
-          if (!event || event.id === moved.id) return;
+  .filter(r => r._id === destRoom)
+  .forEach(roomObj => {
+    newTimetable[selectedDay][roomObj._id].forEach((slotEvents, slotIdx) => {
+      slotEvents.forEach(event => {
+        if (!event || event.id === moved.id) return;
 
-          const eventStartIdx = TIMES.findIndex(t => t === event.raw.StartTime);
-          const eventDuration = event.raw?.Duration || 1;
-          const eventEndIdx = eventStartIdx + eventDuration - 1;
+        const eventStartIdx = TIMES.findIndex(t => t === event.raw.StartTime);
+        const eventDuration = event.raw?.Duration || 1;
+        const eventEndIdx = eventStartIdx + eventDuration - 1;
 
-          const movedStartIdx = destTimeIdx;
-          const movedEndIdx = destTimeIdx + duration - 1;
+        const movedStartIdx = destTimeIdx;
+        const movedEndIdx = destTimeIdx + duration - 1;
 
-          const hasOverlap = !(movedEndIdx < eventStartIdx || movedStartIdx > eventEndIdx);
+        const hasOverlap = !(movedEndIdx < eventStartIdx || movedStartIdx > eventEndIdx);
 
-          if (hasOverlap) {
-            let occNum = event.raw?.OccNumber || event.OccNumber;
-            let formattedOccNum = occNum
-              ? Array.isArray(occNum)
-                ? `(Occ ${occNum.join(", ")})`
-                : `(Occ ${occNum})`
-              : '(Occ Unknown)';
+        if (hasOverlap) {
+          let occNum = event.raw?.OccNumber || event.OccNumber;
+          let formattedOccNum = occNum
+            ? Array.isArray(occNum)
+              ? `(Occ ${occNum.join(", ")})`
+              : `(Occ ${occNum})`
+            : '(Occ Unknown)';
 
-            conflicts.push({
-              type: 'Room Double Booking',
-              conflictingCourse: event.code,
-              conflictingCourseOcc: occNum,
-              conflictingCouseType: event.raw?.OccType || event.OccType,
-              formattedOccNumber: formattedOccNum,
-              timeSlot: TIMES[Math.max(movedStartIdx, eventStartIdx)],
-              roomCode: roomObj.code,
-              conflictingEvent: event
-            });
-          }
-        });
+          // FIXED: Calculate the full overlapping time range
+          const overlapStart = Math.max(movedStartIdx, eventStartIdx);
+          const overlapEnd = Math.min(movedEndIdx, eventEndIdx);
+          
+          // Create the proper time range string
+          const overlapStartTime = TIMES[overlapStart];
+          const overlapEndTime = TIMES[overlapEnd];
+          
+          const overlapTimeSlot = overlapStartTime.includes(' - ') 
+            ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+            : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+
+          conflicts.push({
+            type: 'Room Double Booking',
+            conflictingCourse: event.code,
+            conflictingCourseOcc: occNum,
+            conflictingCouseType: event.raw?.OccType || event.OccType,
+            formattedOccNumber: formattedOccNum,
+            timeSlot: overlapTimeSlot, // FIXED: Now shows full overlap range
+            roomCode: roomObj.code,
+            conflictingEvent: event
+          });
+        }
       });
     });
+  });
 
   // Check for instructor conflicts (keeping existing logic)
   if (moved.selectedInstructorId && moved.selectedInstructorId.trim() !== "" && 
@@ -856,41 +1318,33 @@ const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
                 }
 
                 const overlapStart = Math.max(movedStartIdx, conflictingStartIdx);
-                const overlapEnd = Math.min(movedEndIdx, conflictingEndIdx);
-                const overlapStartTime = TIMES[overlapStart] || TIMES[movedStartIdx];
-                const overlapEndTime = TIMES[overlapEnd] || TIMES[movedEndIdx];
-                const overlapTimeRange = overlapStartTime.includes(' - ') 
-                  ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
-                  : overlapStartTime;
-                const instructorConflicts = checkInstructorConflicts(
-                  newTimetable, 
-                  moved, 
-                  selectedDay, 
-                  destTimeIdx, 
-                  duration,
-                  selectedDay, // sourceDay
-                  originalRoomId, // sourceRoomId  
-                  originalTimeIdx // sourceTimeIdx
-                );
+const overlapEnd = Math.min(movedEndIdx, conflictingEndIdx);
+const overlapStartTime = TIMES[overlapStart] || TIMES[movedStartIdx];
+const overlapEndTime = TIMES[overlapEnd] || TIMES[movedEndIdx];
 
-                conflicts.push({
-                  type: 'Instructor Conflict',
-                  instructorName: movedInstructorName,
-                  instructorId: moved.selectedInstructorId,
-                  conflictingCourse: conflictingEvent.code,
-                  conflictingCourseType: conflictingEvent.raw?.OccType || conflictingEvent.OccType,
-                  conflictingFormattedOccNumber: conflictingFormattedOccNumber,
-                  conflictingRoomCode: conflictingRoomCode,
-                  overlapTimeRange: overlapTimeRange,
-                  movedCourse: moved.code,
-                  movedCourseType: moved.raw.OccType,
-                  movedCourseOccNumber: moved.raw.OccNumber,
-                  movedRoomCode: destRoomObj?.code || 'Unknown Room',
-                  movedTimeRange: `${TIMES[movedStartIdx]} - ${TIMES[movedEndIdx].split(" - ")[1]}`,
-                  conflictingTimeRange: `${TIMES[conflictingStartIdx]} - ${TIMES[conflictingEndIdx].split(" - ")[1]}`,
-                  conflictingDay: selectedDay,
-                  timeSlot: overlapStartTime
-                });
+// FIXED: Create proper time range for the overlap
+const overlapTimeRange = overlapStartTime.includes(' - ') 
+  ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+  : overlapStartTime;
+
+conflicts.push({
+  type: 'Instructor Conflict',
+  instructorName: movedInstructorName,
+  instructorId: moved.selectedInstructorId,
+  conflictingCourse: conflictingEvent.code,
+  conflictingCourseType: conflictingEvent.raw?.OccType || conflictingEvent.OccType,
+  conflictingFormattedOccNumber: conflictingFormattedOccNumber,
+  conflictingRoomCode: conflictingRoomCode,
+  overlapTimeRange: overlapTimeRange,
+  movedCourse: moved.code,
+  movedCourseType: moved.raw.OccType,
+  movedCourseOccNumber: moved.raw.OccNumber,
+  movedRoomCode: destRoomObj?.code || 'Unknown Room',
+  movedTimeRange: `${TIMES[movedStartIdx]} - ${TIMES[movedEndIdx].split(" - ")[1]}`,
+  conflictingTimeRange: `${TIMES[conflictingStartIdx]} - ${TIMES[conflictingEndIdx].split(" - ")[1]}`,
+  conflictingDay: selectedDay,
+  timeSlot: overlapTimeRange // FIXED: Use full overlap range instead of just start time
+});
               }
             }
           });
@@ -916,14 +1370,21 @@ const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
       } else if (conflict.type === 'Time Slot Exceeded') {
         alertMessage += `${index + 1}. Time Slot Exceeded: ${conflict.message}\n`;
       } else if (conflict.type === 'Instructor Conflict') {
-        alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.timeSlot}\n`;
-      }
+  alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.overlapTimeRange}\n`; // FIXED: Use overlapTimeRange
+}
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
 
-    if (!confirm(alertMessage)) {
-          return; // Don't apply the change
-        }
+    const confirmed = await new Promise(resolve => {
+        showConfirm(
+          alertMessage,
+          "Conflicts Detected",
+          () => resolve(true),
+          () => resolve(false)
+        );
+      });
+      
+      if (!confirmed) return;
   }
 
   console.log("=== BEFORE REMOVAL ===");
@@ -1088,27 +1549,38 @@ const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
         await recordDragDropConflict(conflictData);
         
       } else if (conflict.type === 'Instructor Conflict') {
-        const conflictData = {
-          Year: selectedYear,
-          Semester: selectedSemester,
-          Type: 'Instructor Conflict',
-          Description: `${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) ${
-            moved.raw.OccNumber
-              ? Array.isArray(moved.raw.OccNumber)
-                ? `(Occ ${moved.raw.OccNumber.join(", ")})`
-                : `(Occ ${moved.raw.OccNumber})`
-              : ""
-          } in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.timeSlot}`,
-          CourseCode: moved.code,
-          InstructorID: conflict.instructorId,
-          RoomID: destRoom,
-          Day: selectedDay,
-          StartTime: conflict.timeSlot,
-          Priority: 'High',
-          Status: 'Pending'
-        };
-        await recordDragDropConflict(conflictData);
-      }
+  // FIXED: Calculate proper time range for overlap
+  const movedStartTime = TIMES[destTimeIdx];
+  const movedEndTime = destTimeIdx + duration - 1 < TIMES.length 
+    ? TIMES[destTimeIdx + duration - 1].split(" - ")[1]
+    : TIMES[TIMES.length - 1].split(" - ")[1];
+  
+  // Create proper time range string
+  const movedTimeRange = movedStartTime.includes(' - ') 
+    ? `${movedStartTime.split(' - ')[0]} - ${movedEndTime}`
+    : `${movedStartTime} - ${movedEndTime}`;
+
+  const conflictData = {
+    Year: selectedYear,
+    Semester: selectedSemester,
+    Type: 'Instructor Conflict',
+    Description: `${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) ${
+      moved.raw.OccNumber
+        ? Array.isArray(moved.raw.OccNumber)
+          ? `(Occ ${moved.raw.OccNumber.join(", ")})`
+          : `(Occ ${moved.raw.OccNumber})`
+        : ""
+    } in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${selectedDay} at ${movedTimeRange}`, // FIXED: Use full time range
+    CourseCode: moved.code,
+    InstructorID: conflict.instructorId,
+    RoomID: destRoom,
+    Day: selectedDay,
+    StartTime: movedTimeRange, // FIXED: Use full time range instead of just start time
+    Priority: 'High',
+    Status: 'Pending'
+  };
+  await recordDragDropConflict(conflictData);
+}
     }
   }
 };
@@ -1116,14 +1588,14 @@ const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
   
 const handleModalConfirm = async () => {
   if (!contextItem || !targetRoom) {
-    alert("Please select a room.");
+    showAlert("Please select a room.", "error");
     return;
   }
 
   const { item, roomId, timeIdx, index, sourceDay } = contextItem;
   const targetTimeIdx = TIMES.indexOf(targetTime);
   if (targetTimeIdx === -1) {
-    alert(`Invalid time slot selected: ${targetTime || '(none)'}`);
+    showAlert(`Invalid time slot selected: ${targetTime || '(none)'}`, "error");
     return;
   }
   const duration = item.raw.Duration || 1;
@@ -1139,7 +1611,7 @@ const handleModalConfirm = async () => {
   // Find target room details
   const targetRoomObj = rooms.find(r => r._id === targetRoom);
   if (!targetRoomObj) {
-    alert("Target room not found.");
+    showAlert("Target room not found.", "error");
     return;
   }
 
@@ -1328,34 +1800,33 @@ const handleModalConfirm = async () => {
 
                 // FIXED: Calculate overlapping time period properly
                 const overlapStart = Math.max(movedStartIdx, conflictingStartIdx);
-                const overlapEnd = Math.min(movedEndIdx, conflictingEndIdx);
-                
-                // FIXED: Ensure valid time range calculation  
-                const overlapStartTime = TIMES[overlapStart] || TIMES[movedStartIdx];
-                const overlapEndTime = TIMES[overlapEnd] || TIMES[movedEndIdx];
-                const overlapTimeRange = overlapStartTime.includes(' - ') 
-                  ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
-                  : overlapStartTime;
+const overlapEnd = Math.min(movedEndIdx, conflictingEndIdx);
+const overlapStartTime = TIMES[overlapStart] || TIMES[movedStartIdx];
+const overlapEndTime = TIMES[overlapEnd] || TIMES[movedEndIdx];
 
-                conflicts.push({
-                  type: 'Instructor Conflict',
-                  instructorName: movedInstructorName,
-                  instructorId: item.selectedInstructorId,
-                  conflictingCourse: conflictingEvent.code,
-                  conflictingCourseType: conflictingEvent.raw?.OccType || conflictingEvent.OccType,
-                  conflictingFormattedOccNumber: conflictingFormattedOccNumber,
-                  conflictingRoomCode: conflictingRoomCode,
-                  overlapTimeRange: overlapTimeRange,
-                  movedCourse: item.code,
-                  movedCourseType: item.raw.OccType,
-                  movedCourseOccNumber: item.raw.OccNumber,
-                  movedRoomCode: targetRoomObj.code,
-                  movedTimeRange: `${TIMES[movedStartIdx]} - ${TIMES[movedEndIdx].split(" - ")[1]}`,
-                  conflictingTimeRange: `${TIMES[conflictingStartIdx]} - ${TIMES[conflictingEndIdx].split(" - ")[1]}`,
-                  // FIXED: Add the missing day and timeSlot properties
-                  conflictingDay: targetDay, // This was missing!
-                  timeSlot: overlapStartTime // This was also missing!
-                });
+// FIXED: Create proper time range for the overlap
+const overlapTimeRange = overlapStartTime.includes(' - ') 
+  ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+  : overlapStartTime;
+
+conflicts.push({
+  type: 'Instructor Conflict',
+  instructorName: movedInstructorName,
+  instructorId: item.selectedInstructorId,
+  conflictingCourse: conflictingEvent.code,
+  conflictingCourseType: conflictingEvent.raw?.OccType || conflictingEvent.OccType,
+  conflictingFormattedOccNumber: conflictingFormattedOccNumber,
+  conflictingRoomCode: conflictingRoomCode,
+  overlapTimeRange: overlapTimeRange,
+  movedCourse: item.code,
+  movedCourseType: item.raw.OccType,
+  movedCourseOccNumber: item.raw.OccNumber,
+  movedRoomCode: targetRoomObj.code,
+  movedTimeRange: `${TIMES[movedStartIdx]} - ${TIMES[movedEndIdx].split(" - ")[1]}`,
+  conflictingTimeRange: `${TIMES[conflictingStartIdx]} - ${TIMES[conflictingEndIdx].split(" - ")[1]}`,
+  conflictingDay: targetDay,
+  timeSlot: overlapTimeRange // FIXED: Use full overlap range
+});
               }
             }
           });
@@ -1398,34 +1869,45 @@ const handleModalConfirm = async () => {
 
   // NEW: Record instructor conflicts
   for (const conflict of conflicts) {
-    if (conflict.type === 'Instructor Conflict') {
-      const instructorConflictData = {
-        Year: selectedYear,
-        Semester: selectedSemester,
-        Type: 'Instructor Conflict',
-        Description: `${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) ${
-          item.raw.OccNumber
-            ? Array.isArray(item.raw.OccNumber)
-              ? `(Occ ${item.raw.OccNumber.join(", ")})`
-              : `(Occ ${item.raw.OccNumber})`
-            : ""
-        } in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.timeSlot}`,
-        CourseCode: item.code,
-        InstructorID: conflict.instructorId,
-        RoomID: targetRoom,
-        Day: targetDay,
-        StartTime: conflict.timeSlot,
-        Priority: 'High',
-        Status: 'Pending'
-      };
-      
-      try {
-        await recordDragDropConflict(instructorConflictData);
-      } catch (error) {
-        console.error("Failed to record instructor conflict:", error);
-      }
+  if (conflict.type === 'Instructor Conflict') {
+    // FIXED: Calculate proper time range for the moved event
+    const movedStartTime = targetTime;
+    const movedEndTime = targetTimeIdx + duration - 1 < TIMES.length 
+      ? TIMES[targetTimeIdx + duration - 1].split(" - ")[1]
+      : TIMES[TIMES.length - 1].split(" - ")[1];
+    
+    // Create proper time range string
+    const movedTimeRange = movedStartTime.includes(' - ') 
+      ? `${movedStartTime.split(' - ')[0]} - ${movedEndTime}`
+      : `${movedStartTime} - ${movedEndTime}`;
+
+    const instructorConflictData = {
+      Year: selectedYear,
+      Semester: selectedSemester,
+      Type: 'Instructor Conflict',
+      Description: `${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) ${
+        item.raw.OccNumber
+          ? Array.isArray(item.raw.OccNumber)
+            ? `(Occ ${item.raw.OccNumber.join(", ")})`
+            : `(Occ ${item.raw.OccNumber})`
+          : ""
+      } in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${movedTimeRange}`, // FIXED: Use full time range
+      CourseCode: item.code,
+      InstructorID: conflict.instructorId,
+      RoomID: targetRoom,
+      Day: targetDay,
+      StartTime: movedTimeRange, // FIXED: Use full time range instead of just overlap start
+      Priority: 'High',
+      Status: 'Pending'
+    };
+    
+    try {
+      await recordDragDropConflict(instructorConflictData);
+    } catch (error) {
+      console.error("Failed to record instructor conflict:", error);
     }
   }
+}
 
   // Display alert if conflicts are detected
   if (conflicts.length > 0) {
@@ -1444,14 +1926,21 @@ const handleModalConfirm = async () => {
       } else if (conflict.type === 'Time Slot Exceeded') {
         alertMessage += `${index + 1}. Time Slot Exceeded: ${conflict.message}\n`;
       } else if (conflict.type === 'Instructor Conflict') {
-        alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.timeSlot}\n`;
-      }
+  alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.overlapTimeRange}\n`; // FIXED: Use overlapTimeRange
+}
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
     
-    if (!confirm(alertMessage)) {
-          return; // Don't apply the change
-        }
+    const confirmed = await new Promise(resolve => {
+        showConfirm(
+          alertMessage,
+          "Conflicts Detected",
+          () => resolve(true),
+          () => resolve(false)
+        );
+      });
+      
+      if (!confirmed) return;
   } 
 
   // ALWAYS PERFORM THE MOVE (even with conflicts)
@@ -1549,13 +2038,20 @@ const handleGenerateTimetable = async () => {
 
     // Show appropriate success/warning message based on conflicts
     if (conflictsDetected) {
-      alert(`Timetable generated with ${totalSchedules} scheduled events.\n\n⚠️ Some conflicts were detected during generation and have been recorded in the Analytics section. Please review the conflict reports for details.`);
+      showAlert(
+          `Timetable generated with ${totalSchedules} scheduled events.\n\n⚠️ Some conflicts were detected during generation and have been recorded in the Analytics section. Please review the conflict reports for details.`,
+          "warning",
+          8000
+        );
     } else {
-      alert(`Timetable generated successfully with ${totalSchedules} scheduled events!`);
+      showAlert(
+          `Timetable generated successfully with ${totalSchedules} scheduled events!`,
+          "success"
+        );
     }
     
   } catch (error) {
-    alert("Failed to generate timetable.");
+    showAlert("Failed to generate timetable.", "error");
     console.error(error);
   }
 };
@@ -1604,18 +2100,18 @@ const handleGenerateTimetable = async () => {
       { year: selectedYear, semester: selectedSemester, timetable: timetableArr },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    alert("Timetable saved to database!");
+    showAlert("Timetable saved to database!", "success");
     setIsModified(false);
     setIsGenerated(true);
   } catch (error) {
-    alert("Failed to save timetable.");
+    showAlert("Failed to save timetable.", "error");
     console.error(error);
   }
 };
 
   const handleExportTimetable = async (format) => {
   if (!timetable || Object.keys(timetable).length === 0) {
-    alert("No timetable data available to export.");
+    showAlert("No timetable data available to export.", "warning");
     return;
   }
 
@@ -1635,8 +2131,8 @@ const handleGenerateTimetable = async () => {
 
         slots.forEach((slot, timeIdx) => {
           slot.forEach(item => {
-            // FIXED: Export ALL events in the slot, prevent duplicates
-            if (item && item.raw && !exportedEvents.has(item.id)) {
+            // CRITICAL FIX: Only export events that match current filters
+            if (item && item.raw && !exportedEvents.has(item.id) && isEventMatchingAllFilters(item)) {
               exportedEvents.add(item.id); // Mark as exported
               
               // CRITICAL FIX: Improved instructor handling
@@ -1684,7 +2180,17 @@ const handleGenerateTimetable = async () => {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const filename = `timetable_${selectedYear.replace("/", "-")}_sem${selectedSemester}_all_days.csv`;
+    
+    // Update filename to include filter info
+    let filterSuffix = "";
+    if (searchQuery.trim()) {
+      filterSuffix += `_${searchQuery.trim().replace(/[^a-zA-Z0-9]/g, '_')}`;
+    }
+    if (!selectedStudentYears.includes("All")) {
+      filterSuffix += `_Year${selectedStudentYears.join('_')}`;
+    }
+    
+    const filename = `timetable_${selectedYear.replace("/", "-")}_sem${selectedSemester}_all_days${filterSuffix}.csv`;
     link.setAttribute("href", url);
     link.setAttribute("download", filename);
     link.style.visibility = "hidden";
@@ -1693,9 +2199,9 @@ const handleGenerateTimetable = async () => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   } else {
-    // Image export logic - ALSO FIXED for multiple events in same slot
+    // Image export logic - ALSO FIXED for filtering
     if (!allDaysTableRef.current) {
-      alert("All days table element not found.");
+      showAlert("All days table element not found.", "error");
       return;
     }
 
@@ -1714,12 +2220,38 @@ const handleGenerateTimetable = async () => {
     mainHeaderCell.style.background = "#015551";
     mainHeaderCell.style.color = "#fff";
     mainHeaderCell.style.fontSize = "18px";
-    mainHeaderCell.textContent = `Timetable - ${selectedYear}, Semester ${selectedSemester}`;
+    
+    // Update header to show filter info
+    let headerText = `Timetable - ${selectedYear}, Semester ${selectedSemester}`;
+    if (searchQuery.trim()) {
+      headerText += ` (Course: ${searchQuery})`;
+    }
+    if (!selectedStudentYears.includes("All")) {
+      headerText += ` (Year ${selectedStudentYears.join(", ")})`;
+    }
+    mainHeaderCell.textContent = headerText;
+    
     mainHeaderRow.appendChild(mainHeaderCell);
     mainHeader.appendChild(mainHeaderRow);
     allDaysTable.appendChild(mainHeader);
 
     DAYS.forEach(day => {
+      // Check if this day has any filtered events before creating the day section
+      let dayHasFilteredEvents = false;
+      rooms.forEach(room => {
+        const daySlots = timetable[day][room._id] || [];
+        daySlots.forEach(slot => {
+          slot.forEach(event => {
+            if (isEventMatchingAllFilters(event)) {
+              dayHasFilteredEvents = true;
+            }
+          });
+        });
+      });
+
+      // Only create day section if there are filtered events
+      if (!dayHasFilteredEvents) return;
+
       const dayHeader = document.createElement("thead");
       const dayHeaderRow = document.createElement("tr");
       const dayHeaderCell = document.createElement("th");
@@ -1757,101 +2289,106 @@ const handleGenerateTimetable = async () => {
 
       const tbody = document.createElement("tbody");
       rooms.forEach((room) => {
-  const daySlots = timetable[day][room._id] || [];
-  
-  // Step 1: Build lanes
-  const lanes = [];
+        const daySlots = timetable[day][room._id] || [];
+        
+        // Step 1: Build lanes but only with filtered events
+        const lanes = [];
 
-  for (let timeIdx = 0; timeIdx < TIMES.length; timeIdx++) {
-    const slotEvents = daySlots[timeIdx] || [];
-    slotEvents.forEach(event => {
-      const duration = event.raw?.Duration || 1;
+        for (let timeIdx = 0; timeIdx < TIMES.length; timeIdx++) {
+          const slotEvents = daySlots[timeIdx] || [];
+          slotEvents.forEach(event => {
+            // CRITICAL: Only include events that match the current filters
+            if (!isEventMatchingAllFilters(event)) return;
+            
+            const duration = event.raw?.Duration || 1;
 
-      // Find first lane that is free for this event's entire duration
-      let placed = false;
-      for (let lane of lanes) {
-        let canPlace = true;
-        for (let d = 0; d < duration; d++) {
-          if (lane[timeIdx + d]) {
-            canPlace = false;
-            break;
+            // Find first lane that is free for this event's entire duration
+            let placed = false;
+            for (let lane of lanes) {
+              let canPlace = true;
+              for (let d = 0; d < duration; d++) {
+                if (lane[timeIdx + d]) {
+                  canPlace = false;
+                  break;
+                }
+              }
+              if (canPlace) {
+                for (let d = 0; d < duration; d++) {
+                  lane[timeIdx + d] = event;
+                }
+                placed = true;
+                break;
+              }
+            }
+
+            // If no lane found, create a new one
+            if (!placed) {
+              const newLane = Array(TIMES.length).fill(null);
+              for (let d = 0; d < duration; d++) {
+                newLane[timeIdx + d] = event;
+              }
+              lanes.push(newLane);
+            }
+          });
+        }
+
+        // Skip rooms that have no filtered events
+        if (lanes.length === 0) return;
+
+        const maxLanes = lanes.length;
+
+        // Step 2: Render each lane row
+        for (let laneIdx = 0; laneIdx < maxLanes; laneIdx++) {
+          const row = document.createElement("tr");
+
+          // First lane gets the room cell
+          if (laneIdx === 0) {
+            const roomCell = document.createElement("td");
+            roomCell.rowSpan = maxLanes;
+            roomCell.style.padding = "8px 12px";
+            roomCell.style.border = "1px solid #ccc";
+            roomCell.style.fontWeight = "600";
+            roomCell.innerHTML = `${room.code} ${room.capacity ? `(${room.capacity})` : ""}<br /><span style="font-weight: 400; font-size: 13px; color: #555">${room.building || room.block}</span>`;
+            row.appendChild(roomCell);
           }
-        }
-        if (canPlace) {
-          for (let d = 0; d < duration; d++) {
-            lane[timeIdx + d] = event;
+
+          let timeIdx = 0;
+          while (timeIdx < TIMES.length) {
+            const event = lanes[laneIdx]?.[timeIdx];
+
+            if (event) {
+              const duration = event.raw?.Duration || 1;
+              const cell = document.createElement("td");
+              cell.colSpan = duration;
+              cell.style.border = "1px solid #ccc";
+              cell.style.height = `${48 * duration}px`;
+
+              const div = document.createElement("div");
+              div.style.padding = "6px 10px";
+              div.style.minHeight = `${32 * duration}px`;
+              div.style.backgroundColor = event.raw.OccType === "Lecture" ? "#e2e8f0" : "#d4f4e2";
+              div.style.borderRadius = "6px";
+              div.style.fontWeight = "500";
+              div.style.fontSize = "15px";
+              div.innerHTML = `<div><strong>${event.code} (${event.raw.OccType})${duration > 1 ? ` (${duration}h)` : ""}</strong></div>
+                <div style="font-size: 13px">${event.raw.OccNumber ? (Array.isArray(event.raw.OccNumber) ? `(Occ ${event.raw.OccNumber.join(", ")})` : `(Occ ${event.raw.OccNumber})`) : ""} ${event.selectedInstructor || "No Instructor Assigned"}</div>`;
+
+              cell.appendChild(div);
+              row.appendChild(cell);
+
+              timeIdx += duration;
+            } else {
+              const emptyCell = document.createElement("td");
+              emptyCell.style.border = "1px solid #ccc";
+              emptyCell.style.height = "48px";
+              row.appendChild(emptyCell);
+              timeIdx++;
+            }
           }
-          placed = true;
-          break;
+
+          tbody.appendChild(row);
         }
-      }
-
-      // If no lane found, create a new one
-      if (!placed) {
-        const newLane = Array(TIMES.length).fill(null);
-        for (let d = 0; d < duration; d++) {
-          newLane[timeIdx + d] = event;
-        }
-        lanes.push(newLane);
-      }
-    });
-  }
-
-  const maxLanes = lanes.length || 1;
-
-  // Step 2: Render each lane row
-  for (let laneIdx = 0; laneIdx < maxLanes; laneIdx++) {
-    const row = document.createElement("tr");
-
-    // First lane gets the room cell
-    if (laneIdx === 0) {
-      const roomCell = document.createElement("td");
-      roomCell.rowSpan = maxLanes;
-      roomCell.style.padding = "8px 12px";
-      roomCell.style.border = "1px solid #ccc";
-      roomCell.style.fontWeight = "600";
-      roomCell.innerHTML = `${room.code} ${room.capacity ? `(${room.capacity})` : ""}<br /><span style="font-weight: 400; font-size: 13px; color: #555">${room.building || room.block}</span>`;
-      row.appendChild(roomCell);
-    }
-
-    let timeIdx = 0;
-    while (timeIdx < TIMES.length) {
-      const event = lanes[laneIdx]?.[timeIdx];
-
-      if (event) {
-        const duration = event.raw?.Duration || 1;
-        const cell = document.createElement("td");
-        cell.colSpan = duration;
-        cell.style.border = "1px solid #ccc";
-        cell.style.height = `${48 * duration}px`;
-
-        const div = document.createElement("div");
-        div.style.padding = "6px 10px";
-        div.style.minHeight = `${32 * duration}px`;
-        div.style.backgroundColor = event.raw.OccType === "Lecture" ? "#e2e8f0" : "#d4f4e2";
-        div.style.borderRadius = "6px";
-        div.style.fontWeight = "500";
-        div.style.fontSize = "15px";
-        div.innerHTML = `<div><strong>${event.code} (${event.raw.OccType})${duration > 1 ? ` (${duration}h)` : ""}</strong></div>
-          <div style="font-size: 13px">${event.raw.OccNumber ? (Array.isArray(event.raw.OccNumber) ? `(Occ ${event.raw.OccNumber.join(", ")})` : `(Occ ${event.raw.OccNumber})`) : ""} ${event.selectedInstructor || "No Instructor Assigned"}</div>`;
-
-        cell.appendChild(div);
-        row.appendChild(cell);
-
-        timeIdx += duration;
-      } else {
-        const emptyCell = document.createElement("td");
-        emptyCell.style.border = "1px solid #ccc";
-        emptyCell.style.height = "48px";
-        row.appendChild(emptyCell);
-        timeIdx++;
-      }
-    }
-
-    tbody.appendChild(row);
-  }
-});
-
+      });
 
       allDaysTable.appendChild(tbody);
     });
@@ -1873,7 +2410,17 @@ const handleGenerateTimetable = async () => {
       const imageQuality = format === "png" ? 1 : 0.8;
       const imageData = canvas.toDataURL(imageType, imageQuality);
       const link = document.createElement("a");
-      const filename = `timetable_${selectedYear.replace("/", "-")}_sem${selectedSemester}_all_days.${format}`;
+      
+      // Update filename to include filter info
+      let filterSuffix = "";
+      if (searchQuery.trim()) {
+        filterSuffix += `_${searchQuery.trim().replace(/[^a-zA-Z0-9]/g, '_')}`;
+      }
+      if (!selectedStudentYears.includes("All")) {
+        filterSuffix += `_Year${selectedStudentYears.join('_')}`;
+      }
+      
+      const filename = `timetable_${selectedYear.replace("/", "-")}_sem${selectedSemester}_all_days${filterSuffix}.${format}`;
       link.href = imageData;
       link.download = filename;
       link.style.visibility = "hidden";
@@ -1881,10 +2428,9 @@ const handleGenerateTimetable = async () => {
       link.click();
       document.body.removeChild(link);
 
-      // alert(`Timetable exported as ${format.toUpperCase()} successfully!`);
     } catch (error) {
       console.error("Error exporting timetable as image:", error);
-      alert("Failed to export timetable as image.");
+      showAlert("Failed to export timetable as image.", "error");
       document.body.removeChild(allDaysTable);
     }
   }
@@ -1970,6 +2516,81 @@ const handleGenerateTimetable = async () => {
   const handleExportCancel = () => {
     setShowExportModal(false);
   };
+
+  const ConflictIndicator = ({ conflictSummary, onViewDetails, isModified }) => {
+  if (conflictSummary.total === 0) {
+    return (
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 16px",
+        background: "#d4edda",
+        border: "1px solid #c3e6cb",
+        borderRadius: 6,
+        color: "#155724",
+        fontSize: 14,
+        fontWeight: 500
+      }}>
+        <span style={{ color: "#28a745", fontSize: 16 }}>✓</span>
+        No conflicts detected
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      padding: "8px 16px",
+      background: "#f8d7da",
+      border: "1px solid #f5c6cb",
+      borderRadius: 6,
+      color: "#721c24",
+      fontSize: 14
+    }}>
+      <span style={{ color: "#dc3545", fontSize: 16, fontWeight: "bold" }}>⚠</span>
+      <div>
+        <span style={{ fontWeight: 600 }}>
+          {conflictSummary.total} conflict{conflictSummary.total !== 1 ? 's' : ''} detected
+        </span>
+        {isModified && (
+          <div style={{ 
+            fontSize: 12, 
+            color: "#856404", 
+            marginTop: 2,
+            fontStyle: "italic"
+          }}>
+            Save changes to view details
+          </div>
+        )}
+      </div>
+      {onViewDetails && (
+        <div style={{ position: "relative", marginLeft: "auto" }}>
+          <button
+            onClick={isModified ? undefined : onViewDetails}
+            disabled={isModified}
+            style={{
+              background: isModified ? "#6c757d" : "#015551",
+              color: "#fff",
+              border: "none",
+              padding: "4px 12px",
+              borderRadius: 4,
+              fontSize: 12,
+              cursor: isModified ? "not-allowed" : "pointer",
+              opacity: isModified ? 0.6 : 1,
+              transition: "all 0.2s ease"
+            }}
+            title={isModified ? "Please save your changes before viewing conflict details" : "View conflict details"}
+          >
+            View Details
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
   return (
     <ProtectedRoute>
@@ -2073,6 +2694,13 @@ const handleGenerateTimetable = async () => {
         </div>
       )}
     </div>
+    <ConflictIndicator 
+  conflictSummary={conflictSummary}
+  isModified={isModified}
+  onViewDetails={() => {
+    navigate(`/analytics?tab=conflicts&year=${selectedYear}&semester=${selectedSemester}`);
+  }}
+/>
   </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
     <select
@@ -2081,7 +2709,7 @@ const handleGenerateTimetable = async () => {
       value={selectedYear}
       onChange={e => setSelectedYear(e.target.value)}
     >
-      <option value="">Year</option>
+      <option value="" disabled>Academic Year</option>
       <option value="2024/2025">2024/2025</option>
       <option value="2025/2026">2025/2026</option>
       <option value="2026/2027">2026/2027</option>
@@ -2099,6 +2727,131 @@ const handleGenerateTimetable = async () => {
       <option value="1">Semester 1</option>
       <option value="2">Semester 2</option>
     </select>
+    <div style={{ position: "relative" }} data-dropdown="year-filter">
+  <div
+    onClick={() => setShowYearDropdown(!showYearDropdown)}
+    style={{
+      width: 140,
+      padding: "8px 12px",
+      borderRadius: 8,
+      border: "1px solid #ced4da",
+      background: "#fff",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      fontSize: 14,
+      fontFamily: 'inherit',
+      lineHeight: '1.5'
+    }}
+  >
+    <span>
+      {selectedStudentYears.includes("All") 
+        ? "All Years" 
+        : selectedStudentYears.length === 1 
+        ? `Year ${selectedStudentYears[0]}`
+        : `${selectedStudentYears.length} Years Selected`
+      }
+    </span>
+    <span style={{ 
+      transform: showYearDropdown ? "rotate(180deg)" : "rotate(0deg)", 
+      transition: "transform 0.2s ease",
+      fontSize: 10,
+      color: "#666"
+    }}>
+      ▼
+    </span>
+  </div>
+  
+  {showYearDropdown && (
+    <div style={{
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      right: 0,
+      background: "#fff",
+      border: "1px solid #ced4da",
+      borderTop: "none",
+      borderRadius: "0 0 8px 8px",
+      zIndex: 1000,
+      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+      maxHeight: "200px",
+      overflowY: "auto"
+    }}>
+      {[
+        { value: "All", label: "All Years" },
+        { value: "1", label: "Year 1" },
+        { value: "2", label: "Year 2" },
+        { value: "3", label: "Year 3" },
+        { value: "4", label: "Year 4" }
+      ].map((option) => (
+        <div
+          key={option.value}
+          onClick={(e) => {
+            e.stopPropagation();
+            
+            if (option.value === "All") {
+              setSelectedStudentYears(["All"]);
+              setShowYearDropdown(false);
+            } else {
+              let newSelection;
+              if (selectedStudentYears.includes(option.value)) {
+                // Remove if already selected
+                newSelection = selectedStudentYears.filter(y => y !== option.value && y !== "All");
+                if (newSelection.length === 0) {
+                  newSelection = ["All"];
+                }
+              } else {
+                // Add to selection
+                newSelection = selectedStudentYears.includes("All") 
+                  ? [option.value]
+                  : [...selectedStudentYears.filter(y => y !== "All"), option.value];
+              }
+              setSelectedStudentYears(newSelection);
+            }
+          }}
+          style={{
+            padding: "8px 12px",
+            cursor: "pointer",
+            borderBottom: "1px solid #f0f0f0",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 14,
+            background: selectedStudentYears.includes(option.value) ? "#f8f9fa" : "#fff"
+          }}
+          onMouseEnter={(e) => {
+            if (!selectedStudentYears.includes(option.value)) {
+              e.target.style.background = "#f5f5f5";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!selectedStudentYears.includes(option.value)) {
+              e.target.style.background = "#fff";
+            }
+          }}
+        >
+          <div style={{
+            width: 16,
+            height: 16,
+            border: "2px solid #ddd",
+            borderRadius: 3,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: selectedStudentYears.includes(option.value) ? "#015551" : "#fff",
+            borderColor: selectedStudentYears.includes(option.value) ? "#015551" : "#ddd"
+          }}>
+            {selectedStudentYears.includes(option.value) && (
+              <span style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>✓</span>
+            )}
+          </div>
+          <span>{option.label}</span>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
     <button
       ref={exportButtonRef}
       style={{
@@ -2138,18 +2891,31 @@ const handleGenerateTimetable = async () => {
   <h2 style={{ fontWeight: 700, fontSize: 27, margin: 0 }}>
     {selectedDay} Timetable
   </h2>
-  {searchQuery.trim() && (
-    <span style={{ 
-      fontSize: 14, 
-      color: "#666",
-      background: "#f8f9fa",
-      padding: "4px 12px",
-      borderRadius: 20,
-      border: "1px solid #e9ecef"
-    }}>
-      Showing results for: <strong>{searchQuery}</strong>
-    </span>
-  )}
+  {(searchQuery.trim() || !selectedStudentYears.includes("All")) && (
+  <div style={{ 
+    fontSize: 14, 
+    color: "#666",
+    background: "#f8f9fa",
+    padding: "6px 16px",
+    borderRadius: 20,
+    border: "1px solid #e9ecef",
+    display: "flex",
+    alignItems: "center",
+    gap: 12
+  }}>
+    {searchQuery.trim() && (
+      <span>
+        Course: <strong>{searchQuery}</strong>
+      </span>
+    )}
+    {searchQuery.trim() && !selectedStudentYears.includes("All") && <span>•</span>}
+    {!selectedStudentYears.includes("All") && (
+      <span>
+        Year{selectedStudentYears.length > 1 ? 's' : ''}: <strong>{selectedStudentYears.join(", ")}</strong>
+      </span>
+    )}
+  </div>
+)}
 </div>
             <div className="table-responsive" style={{ flex: 1, overflowY: "auto"}}>
               <DragDropContext onDragEnd={onDragEnd}>
@@ -2312,32 +3078,34 @@ const handleGenerateTimetable = async () => {
                             padding: 2,
                           }}
                         >
-                          {isEventMatchingSearch(event) && (
-                            <Draggable key={event.id} draggableId={String(event.id)} index={laneIdx}>
-                              {(provided, snapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  {...provided.dragHandleProps}
-                                  onContextMenu={(e) => handleContextMenu(e, event, room._id, timeIdx, laneIdx)}
-                                  style={{
-                                    userSelect: "none",
-                                    padding: "6px 10px",
-                                    margin: "0 0 4px 0",
-                                    minHeight: "32px",
-                                    backgroundColor: snapshot.isDragging
-                                      ? event.raw.OccType === "Lecture" ? "#015551" : "#1a664e"
-                                      : event.raw.OccType === "Lecture" ? "#e2e8f0" : "#d4f4e2",
-                                    color: snapshot.isDragging ? "#fff" : "#222",
-                                    borderRadius: 6,
-                                    fontWeight: 500,
-                                    fontSize: 15,
-                                    border: searchQuery.trim() && isEventMatchingSearch(event) 
-                                      ? "2px solid #015551" 
-                                      : "2px solid transparent",
-                                    ...provided.draggableProps.style,
-                                  }}
-                                >
+                          {isEventMatchingAllFilters(event) && (
+  <Draggable key={event.id} draggableId={String(event.id)} index={laneIdx}>
+    {(provided, snapshot) => (
+      <div
+        ref={provided.innerRef}
+        {...provided.draggableProps}
+        {...provided.dragHandleProps}
+        onContextMenu={(e) => handleContextMenu(e, event, room._id, timeIdx, laneIdx)}
+        style={{
+          userSelect: "none",
+          padding: "6px 10px",
+          margin: "0 0 4px 0",
+          minHeight: "32px",
+          backgroundColor: snapshot.isDragging
+            ? event.raw.OccType === "Lecture" ? "#015551" : "#1a664e"
+            : event.raw.OccType === "Lecture" ? "#e2e8f0" : "#d4f4e2",
+          color: snapshot.isDragging ? "#fff" : "#222",
+          borderRadius: 6,
+          fontWeight: 500,
+          fontSize: 15,
+          border: (searchQuery.trim() && event.code.toLowerCase().includes(searchQuery.toLowerCase())) || 
+        (!selectedStudentYears.includes("All") && !isEventMatchingYearFilter(event))
+  ? "2px solid #015551" 
+  : "2px solid transparent",
+          opacity: isEventMatchingAllFilters(event) ? 1 : 0.3, // Dim filtered out events
+          ...provided.draggableProps.style,
+        }}
+      >
                                   <div>
                                     <strong>{event.code} ({event.raw.OccType})</strong>
                                     {duration > 1 && (
@@ -2353,114 +3121,171 @@ const handleGenerateTimetable = async () => {
                                         : `(Occ ${event.raw.OccNumber})`
                                     )}
                                     <select
-                                      value={event.selectedInstructorId || ""}
-                                      onChange={async (e) => {
-                                        const selectedId = e.target.value;
-                                        const selectedInstructorObj = instructors.find(inst => inst._id === selectedId);
-                                        const selectedName = selectedInstructorObj ? selectedInstructorObj.name : "";
-                                        
-                                        // Check for instructor conflicts before applying the change
-                                        if (selectedId && selectedId.trim() !== "") {
-                                          const eventStartIdx = TIMES.findIndex(t => t === event.raw.StartTime);
-                                          const eventDuration = event.raw?.Duration || 1;
-                                          
-                                          // Create a temporary event object to check conflicts
-                                          const tempEvent = {
-                                            ...event,
-                                            selectedInstructorId: selectedId,
-                                            selectedInstructor: selectedName
-                                          };
-                                          
-                                          const conflicts = checkInstructorConflicts(
-                                            timetable,
-                                            tempEvent,
-                                            selectedDay,
-                                            eventStartIdx,
-                                            eventDuration
-                                          );
-                                          
-                                          if (conflicts.length > 0) {
-                                            let conflictMessage = `Warning: ${selectedName} is already assigned to:\n\n`;
-                                            conflicts.forEach((conflict, index) => {
-                                              const occText = conflict.conflictingOccNumber 
-                                                ? Array.isArray(conflict.conflictingOccNumber)
-                                                  ? ` (Occ ${conflict.conflictingOccNumber.join(", ")})`
-                                                  : ` (Occ ${conflict.conflictingOccNumber})`
-                                                : "";
-                                              conflictMessage += `${index + 1}. ${conflict.conflictingCourse} (${conflict.conflictingCourseType})${occText} in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
-                                            });
-                                            conflictMessage += "\nThis will create scheduling conflicts. Do you want to proceed anyway?";
-                                            
-                                            if (!confirm(conflictMessage)) {
-                                              return; // Don't apply the change
-                                            }
-                                            
-                                            // Record the conflicts
-                                            for (const conflict of conflicts) {
-                                              const conflictData = {
-                                                Year: selectedYear,
-                                                Semester: selectedSemester,
-                                                Type: 'Instructor Conflict',
-                                                Description: `${selectedName} assigned to both ${event.code} (${event.raw.OccType}) ${
-                                                  event.raw.OccNumber
-                                                    ? Array.isArray(event.raw.OccNumber)
-                                                      ? `(Occ ${event.raw.OccNumber.join(", ")})`
-                                                      : `(Occ ${event.raw.OccNumber})`
-                                                    : ""
-                                                } in ${room.code} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${
-                                                  conflict.conflictingOccNumber
-                                                    ? Array.isArray(conflict.conflictingOccNumber)
-                                                      ? `(Occ ${conflict.conflictingOccNumber.join(", ")})`
-                                                      : `(Occ ${conflict.conflictingOccNumber})`
-                                                    : "(Occ Unknown)"
-                                                } in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.timeSlot}`,
-                                                CourseCode: event.code,
-                                                InstructorID: selectedId,
-                                                RoomID: room._id,
-                                                Day: selectedDay,
-                                                StartTime: conflict.timeSlot,
-                                                Priority: 'High',
-                                                Status: 'Pending'
-                                              };
-
-                                              
-                                              try {
-                                                await recordDragDropConflict(conflictData);
-                                              } catch (error) {
-                                                console.error("Failed to record instructor conflict:", error);
-                                              }
-                                            }
-                                          }
-                                        }
-                                        
-                                        // Update the event in all time slots it occupies
-                                        const newTimetable = JSON.parse(JSON.stringify(timetable));
-                                        
-                                        // Find and update all instances of this event
-                                        DAYS.forEach(day => {
-                                          Object.keys(newTimetable[day] || {}).forEach(roomId => {
-                                            newTimetable[day][roomId].forEach(slot => {
-                                              slot.forEach(item => {
-                                                if (item.id === event.id) {
-                                                  item.selectedInstructorId = selectedId;
-                                                  item.selectedInstructor = selectedName;
-                                                }
-                                              });
-                                            });
-                                          });
-                                        });
-                                        
-                                        setTimetable(newTimetable);
-                                        setIsModified(true);
-                                      }}
-                                    >
-                                      <option value="">Select Instructor</option>
-                                      {instructors
-                                        .filter(inst => (Array.isArray(event.instructors) ? event.instructors : [event.instructors]).includes(inst.name))
-                                        .map(inst => (
-                                          <option key={inst._id} value={inst._id}>{inst.name}</option>
-                                        ))}
-                                    </select>
+  value={event.selectedInstructorId || ""}
+  onChange={async (e) => {
+    const selectedId = e.target.value;
+    const selectedInstructorObj = instructors.find(inst => inst._id === selectedId);
+    const selectedName = selectedInstructorObj ? selectedInstructorObj.name : "";
+    
+    // Check for occurrence restriction violations
+    if (selectedId && selectedId.trim() !== "") {
+      const occurrenceViolation = checkOccurrenceRestriction(event, selectedId, timetable);
+      
+      if (occurrenceViolation && occurrenceViolation.isViolation) {
+        let violationMessage = `Occurrence Restriction Violation:\n\n${occurrenceViolation.message}\n\n`;
+        
+        if (occurrenceViolation.instructorLectures.length > 0) {
+          violationMessage += "This instructor teaches lectures for the following occurrences:\n";
+          occurrenceViolation.instructorLectures.forEach((lecture, index) => {
+            violationMessage += `${index + 1}. Occurrences [${lecture.occurrences.join(', ')}] on ${lecture.day} at ${lecture.time}\n`;
+          });
+          violationMessage += "\nTo assign this instructor to this tutorial, they must also teach a lecture covering the same occurrences.";
+        }
+        
+        violationMessage += "\n\nDo you want to proceed anyway? This will create a scheduling violation.";
+        
+        if (!confirm(violationMessage)) {
+          return; // Don't apply the change
+        }
+        
+        // Record the occurrence restriction violation
+        const violationData = {
+          Year: selectedYear,
+          Semester: selectedSemester,
+          Type: 'Instructor Conflict', // Using existing conflict type
+          Description: `Occurrence restriction violation: ${selectedName} assigned to teach tutorial ${event.code} (${event.raw.OccType}) for occurrences [${Array.isArray(event.raw.OccNumber) ? event.raw.OccNumber.join(', ') : event.raw.OccNumber}] but only teaches lectures for different occurrences`,
+          CourseCode: event.code,
+          InstructorID: selectedId,
+          RoomID: room._id,
+          Day: selectedDay,
+          StartTime: event.raw.StartTime,
+          Priority: 'Medium',
+          Status: 'Pending',
+          OccNumber: event.raw.OccNumber
+        };
+        
+        try {
+          await recordDragDropConflict(violationData);
+          console.log("Occurrence restriction violation recorded:", violationData);
+        } catch (error) {
+          console.error("Failed to record occurrence restriction violation:", error);
+        }
+      }
+      
+      // Check for standard instructor conflicts (existing logic)
+      const eventStartIdx = TIMES.findIndex(t => t === event.raw.StartTime);
+      const eventDuration = event.raw?.Duration || 1;
+      
+      const tempEvent = {
+        ...event,
+        selectedInstructorId: selectedId,
+        selectedInstructor: selectedName
+      };
+      
+      const timeConflicts = checkInstructorConflicts(
+        timetable,
+        tempEvent,
+        selectedDay,
+        eventStartIdx,
+        eventDuration
+      );
+      
+      if (timeConflicts.length > 0) {
+        let conflictMessage = `Warning: ${selectedName} is already assigned to:\n\n`;
+        timeConflicts.forEach((conflict, index) => {
+          const occText = conflict.conflictingOccNumber 
+            ? Array.isArray(conflict.conflictingOccNumber)
+              ? ` (Occ ${conflict.conflictingOccNumber.join(", ")})`
+              : ` (Occ ${conflict.conflictingOccNumber})`
+            : "";
+          conflictMessage += `${index + 1}. ${conflict.conflictingCourse} (${conflict.conflictingCourseType})${occText} in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
+        });
+        conflictMessage += "\nThis will create scheduling conflicts. Do you want to proceed anyway?";
+        
+         const confirmed = await showConfirm(
+          conflictMessage, 
+          "Instructor Conflicts Detected"
+        );
+        if (!confirmed) {
+          return;
+        }
+        
+        // Record the time conflicts (existing logic)
+        for (const conflict of timeConflicts) {
+          const conflictData = {
+            Year: selectedYear,
+            Semester: selectedSemester,
+            Type: 'Instructor Conflict',
+            Description: `${selectedName} assigned to both ${event.code} (${event.raw.OccType}) ${
+              event.raw.OccNumber
+                ? Array.isArray(event.raw.OccNumber)
+                  ? `(Occ ${event.raw.OccNumber.join(", ")})`
+                  : `(Occ ${event.raw.OccNumber})`
+                : ""
+            } in ${room.code} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${
+              conflict.conflictingOccNumber
+                ? Array.isArray(conflict.conflictingOccNumber)
+                  ? `(Occ ${conflict.conflictingOccNumber.join(", ")})`
+                  : `(Occ ${conflict.conflictingOccNumber})`
+                : "(Occ Unknown)"
+            } in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.timeSlot}`,
+            CourseCode: event.code,
+            InstructorID: selectedId,
+            RoomID: room._id,
+            Day: selectedDay,
+            StartTime: conflict.timeSlot,
+            Priority: 'High',
+            Status: 'Pending',
+            OccNumber: event.raw.OccNumber
+          };
+          
+          try {
+            await recordDragDropConflict(conflictData);
+          } catch (error) {
+            console.error("Failed to record instructor conflict:", error);
+          }
+        }
+      }
+    }
+    
+    // Update the event in all time slots it occupies
+    const newTimetable = JSON.parse(JSON.stringify(timetable));
+    
+    // Find and update all instances of this event
+    DAYS.forEach(day => {
+      Object.keys(newTimetable[day] || {}).forEach(roomId => {
+        newTimetable[day][roomId].forEach(slot => {
+          slot.forEach(item => {
+            if (item.id === event.id) {
+              item.selectedInstructorId = selectedId;
+              item.selectedInstructor = selectedName;
+            }
+          });
+        });
+      });
+    });
+    
+    setTimetable(newTimetable);
+    setIsModified(true);
+  }}
+  style={{
+    width: "100%",
+    fontSize: "12px",
+    padding: "2px 4px",
+    border: "1px solid #ccc",
+    borderRadius: "3px",
+    marginTop: "2px"
+  }}
+>
+  <option value="">Select Instructor</option>
+  {/* Only show instructors who can teach this occurrence */}
+  {getAvailableInstructorsForEvent(event, timetable, selectedDay)
+    .map(inst => (
+      <option key={inst._id} value={inst._id}>
+        {inst.name}
+      </option>
+    ))}
+</select>
                                   </div>
                                 </div>
                               )}

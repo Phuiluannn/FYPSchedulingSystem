@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useAlert } from './AlertContext';
 
 function SignUp() {
     const [name, setName] = useState("");
@@ -9,6 +10,7 @@ function SignUp() {
     const [role, setRole] = useState("");
     const [errors, setErrors] = useState({});
     const navigate = useNavigate();
+    const { showAlert, showConfirm } = useAlert();
 
     // Automatically set role based on email domain
     useEffect(() => {
@@ -49,7 +51,7 @@ function SignUp() {
         axios.post('http://localhost:3001/signup', { name, email, password, role })
             .then(result => {
                 console.log(result);
-                alert("Signup successful!");
+                showAlert("Signup successful!", "success");
                 navigate('/login');
             })
             .catch(err => {

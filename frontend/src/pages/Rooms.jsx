@@ -274,106 +274,144 @@ function Rooms() {
                   <tr>
                     <th>Code</th>
                     <th>Name</th>
-                    <th style={{ paddingLeft: 30, position: "relative" }} ref={buildingRef}>
-                      Building{" "}
-                      <button
-                        className="btn btn-sm btn-link"
-                        onClick={() => setShowBuildingDropdown((prev) => !prev)}
-                      >
-                        <CIcon icon={cilFilter} />
-                      </button>
-                      {showBuildingDropdown && (
-                        <div
-                          className="dropdown-menu show"
-                          style={{ position: "absolute", top: "100%", left: 80, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
-                        >
-                          <div className="form-check d-flex align-items-center mb-1">
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selectedBuildings.size === 0}
-                              onChange={() => toggleBuilding("")}
-                              style={{ marginTop: "0" }}
-                            />
-                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
-                          </div>
-                          {["Block A", "Block B"].map((building) => (
-                            <div key={building} className="form-check d-flex align-items-center mb-1">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                checked={selectedBuildings.has(building)}
-                                onChange={() => toggleBuilding(building)}
-                                style={{ marginTop: "0" }}
-                              />
-                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{building}</label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </th>
-                    <th>Capacity</th>
-                    <th style={{ paddingLeft: 25, position: "relative" }} ref={roomTypeRef}>
-                      Room Type{" "}
-                      <button
-                        className="btn btn-sm btn-link"
-                        onClick={() => setShowRoomTypeDropdown((prev) => !prev)}
-                      >
-                        <CIcon icon={cilFilter} />
-                      </button>
-                      {showRoomTypeDropdown && (
-                        <div
-                          className="dropdown-menu show"
-                          style={{ position: "absolute", top: "100%", left: 100, maxHeight: "200px", overflowY: "auto", padding: "5px" }}
-                        >
-                          <div className="form-check d-flex align-items-center mb-1">
-                            <input
-                              type="checkbox"
-                              className="form-check-input"
-                              checked={selectedRoomTypes.size === 0}
-                              onChange={() => toggleRoomType("")}
-                              style={{ marginTop: "0" }}
-                            />
-                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
-                          </div>
-                          {["Lecture Hall", "Lecture Room", "CCNA Lab", "Tutorial Room", "Other Lab"].map((roomType) => (
-                            <div key={roomType} className="form-check d-flex align-items-center mb-1">
-                              <input
-                                type="checkbox"
-                                className="form-check-input"
-                                checked={selectedRoomTypes.has(roomType)}
-                                onChange={() => toggleRoomType(roomType)}
-                                style={{ marginTop: "0" }}
-                              />
-                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{roomType}</label>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </th>
+                    <th style={{ position: "relative", textAlign: "center" }} ref={buildingRef}>
+  Building
+  <button
+    className="btn btn-sm btn-link p-0"
+    onClick={() => setShowBuildingDropdown((prev) => !prev)}
+    style={{ marginLeft: "2px", fontSize: "12px" }}
+  >
+    <CIcon icon={cilFilter} />
+  </button>
+  {showBuildingDropdown && (
+    <div
+      className="dropdown-menu show"
+      style={{ 
+        position: "absolute", 
+        top: "100%", 
+        left: "50%", 
+        transform: "translateX(-50%)", 
+        maxHeight: "200px", 
+        overflowY: "auto", 
+        padding: "5px",
+        zIndex: 1050,
+        minWidth: "150px"
+      }}
+    >
+      <div className="form-check d-flex align-items-center mb-1">
+        <input
+          type="checkbox"
+          className="form-check-input"
+          checked={selectedBuildings.size === 0}
+          onChange={() => toggleBuilding("")}
+          style={{ marginTop: "0" }}
+        />
+        <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
+      </div>
+      {["Block A", "Block B"].map((building) => (
+        <div key={building} className="form-check d-flex align-items-center mb-1">
+          <input
+            type="checkbox"
+            className="form-check-input"
+            checked={selectedBuildings.has(building)}
+            onChange={() => toggleBuilding(building)}
+            style={{ marginTop: "0" }}
+          />
+          <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{building}</label>
+        </div>
+      ))}
+    </div>
+  )}
+</th>
+<th>Capacity</th>
+<th style={{ position: "relative", textAlign: "center" }} ref={roomTypeRef}>
+  Room Type
+  <button
+    className="btn btn-sm btn-link p-0"
+    onClick={() => setShowRoomTypeDropdown((prev) => !prev)}
+    style={{ marginLeft: "2px", fontSize: "12px" }}
+  >
+    <CIcon icon={cilFilter} />
+  </button>
+  {showRoomTypeDropdown && (
+    <div
+      className="dropdown-menu show"
+      style={{ 
+        position: "absolute", 
+        top: "100%", 
+        left: "50%", 
+        transform: "translateX(-50%)", 
+        maxHeight: "200px", 
+        overflowY: "auto", 
+        padding: "5px",
+        zIndex: 1050,
+        minWidth: "180px"
+      }}
+    >
+      <div className="form-check d-flex align-items-center mb-1">
+        <input
+          type="checkbox"
+          className="form-check-input"
+          checked={selectedRoomTypes.size === 0}
+          onChange={() => toggleRoomType("")}
+          style={{ marginTop: "0" }}
+        />
+        <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>All</label>
+      </div>
+      {["Lecture Hall", "Lecture Room", "CCNA Lab", "Tutorial Room", "Other Lab"].map((roomType) => (
+        <div key={roomType} className="form-check d-flex align-items-center mb-1">
+          <input
+            type="checkbox"
+            className="form-check-input"
+            checked={selectedRoomTypes.has(roomType)}
+            onChange={() => toggleRoomType(roomType)}
+            style={{ marginTop: "0" }}
+          />
+          <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>{roomType}</label>
+        </div>
+      ))}
+    </div>
+  )}
+</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRooms.map((room, idx) => (
-                      <tr key={idx}>
-                        <td>{room.code}</td>
-                        <td>{room.name}</td>
-                        <td>{room.building}</td>
-                        <td>{room.capacity}</td>
-                        <td>{room.roomType}</td>
-                        <td>
-                          <button className="btn btn-link p-0 me-2" onClick={() => openModal(room, idx)}>
-                            <CIcon icon={cilPen} />
-                          </button>
-                          <button className="btn btn-link text-danger p-0" onClick={() => handleDelete(idx)}>
-                            <CIcon icon={cilTrash} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  }
-                </tbody>
+  {filteredRooms.length === 0 ? (
+    <tr>
+      <td colSpan="6" style={{ textAlign: "center", padding: "2rem" }}>
+        <div className="text-muted">
+          <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>🏫</span>
+          <h5>No rooms found!</h5>
+          <p>
+            {searchTerm || selectedBuildings.size > 0 || selectedRoomTypes.size > 0
+              ? "No rooms match your current search criteria. Try adjusting your filters or search term."
+              : "No rooms have been added yet. Click 'Add Room' to get started."
+            }
+          </p>
+        </div>
+      </td>
+    </tr>
+  ) : (
+    filteredRooms.map((room, idx) => (
+      <tr key={idx}>
+        <td>{room.code}</td>
+        <td>{room.name}</td>
+        <td>{room.building}</td>
+        <td>{room.capacity}</td>
+        <td>{room.roomType}</td>
+        <td>
+          <button className="btn btn-link p-0 me-2" onClick={() => openModal(room, idx)}>
+            <CIcon icon={cilPen} />
+          </button>
+          <button className="btn btn-link text-danger p-0" onClick={() => handleDelete(idx)}>
+            <CIcon icon={cilTrash} />
+          </button>
+        </td>
+      </tr>
+    ))
+  )}
+</tbody>
               </table>
             </div>
           </div>

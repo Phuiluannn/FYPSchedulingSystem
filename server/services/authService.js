@@ -71,5 +71,13 @@ export const login = async ({ email, password, role }) => {
     }
 
     const token = jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, { expiresIn: '1h' });
-    return { token, name: user.name, role: user.role, unresolvedFeedbackCount };
+    
+    // 🔥 RETURN THE USER ID
+    return { 
+        token, 
+        name: user.name, 
+        role: user.role, 
+        userId: user._id.toString(), // ADD THIS LINE
+        unresolvedFeedbackCount 
+    };
 };

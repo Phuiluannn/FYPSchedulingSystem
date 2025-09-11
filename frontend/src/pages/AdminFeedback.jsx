@@ -4,6 +4,7 @@ import SideBar from "./SideBar";
 import ProtectedRoute from "./ProtectedRoute";
 import CIcon from '@coreui/icons-react';
 import { cilWarning, cilClock, cilCheckCircle } from '@coreui/icons';
+import { BiSearch } from "react-icons/bi";
 
 const statusTabs = ["All", "Open", "In Progress", "Resolved"];
 const statusMap = {
@@ -16,8 +17,8 @@ function AdminFeedback() {
   const [activeTab, setActiveTab] = useState("All");
   const [feedbackList, setFeedbackList] = useState([]);
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [priority, setPriority] = useState(""); // <-- Priority filter state
+  const [categories, setCategories] = useState([]);
+  const [priorities, setPriorities] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [selectedFeedback, setSelectedFeedback] = useState(null);
   const [modalForm, setModalForm] = useState({
@@ -28,6 +29,11 @@ function AdminFeedback() {
     updateResponse: "",
   });
   const [modalLoading, setModalLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [selectedCategories, setSelectedCategories] = useState(["All"]);
+const [selectedPriorities, setSelectedPriorities] = useState(["All"]);
+const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
 
   // Fetch all feedback for admin
   useEffect(() => {
@@ -57,19 +63,66 @@ function AdminFeedback() {
     };
   }, [selectedFeedback]);
 
+  useEffect(() => {
+  if (!selectedFeedback) {
+    setSuccessMessage("");
+  }
+}, [selectedFeedback]);
+
+useEffect(() => {
+  if (successMessage) {
+    const timer = setTimeout(() => setSuccessMessage(""), 5000);
+    return () => clearTimeout(timer);
+  }
+}, [successMessage]);
+
+useEffect(() => {
+  if (showCategoryDropdown) {
+    const handleClickOutside = (event) => {
+      const dropdown = event.target.closest('[data-dropdown="category-filter"]');
+      if (!dropdown) {
+        setShowCategoryDropdown(false);
+      }
+    };
+    
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }
+}, [showCategoryDropdown]);
+
+useEffect(() => {
+  if (showPriorityDropdown) {
+    const handleClickOutside = (event) => {
+      const dropdown = event.target.closest('[data-dropdown="priority-filter"]');
+      if (!dropdown) {
+        setShowPriorityDropdown(false);
+      }
+    };
+    
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }
+}, [showPriorityDropdown]);
+
   // Filter feedback by tab, search, category, and priority
   const filteredFeedback = feedbackList.filter((fb) => {
-    const matchesStatus =
-      activeTab === "All" ||
-      (statusMap[activeTab] ? fb.status === statusMap[activeTab] : true);
-    const matchesCategory = !category || fb.type === category;
-    const matchesPriority = !priority || fb.priority === priority;
-    const matchesSearch =
-      !search ||
-      fb.title.toLowerCase().includes(search.toLowerCase()) ||
-      fb.feedback.toLowerCase().includes(search.toLowerCase());
-    return matchesStatus && matchesCategory && matchesPriority && matchesSearch;
-  });
+  const matchesStatus =
+    activeTab === "All" ||
+    (statusMap[activeTab] ? fb.status === statusMap[activeTab] : true);
+  
+  // Updated category filter - check if selectedCategories includes "All" or the feedback type
+  const matchesCategory = selectedCategories.includes("All") || selectedCategories.includes(fb.type);
+  
+  // Updated priority filter - check if selectedPriorities includes "All" or the feedback priority
+  const matchesPriority = selectedPriorities.includes("All") || selectedPriorities.includes(fb.priority);
+  
+  const matchesSearch =
+    !search ||
+    fb.title.toLowerCase().includes(search.toLowerCase()) ||
+    fb.feedback.toLowerCase().includes(search.toLowerCase());
+    
+  return matchesStatus && matchesCategory && matchesPriority && matchesSearch;
+});
 
   const openCount = feedbackList.filter((fb) => fb.status === "Pending").length;
   const inProgressCount = feedbackList.filter((fb) => fb.status === "In Progress").length;
@@ -93,6 +146,7 @@ function AdminFeedback() {
       updateResponse: "",
     });
     setErrorMessage("");
+    setSuccessMessage("");
   };
 
   // Handle modal form changes
@@ -101,67 +155,93 @@ function AdminFeedback() {
   };
 
   // Handle admin response submit (for first response)
-  const handleModalSubmit = async (e) => {
-    e.preventDefault();
-    setModalLoading(true);
-    try {
-      const token = localStorage.getItem("token");
-      // If status is Pending and response is being sent, set to In Progress
-      const newStatus =
-        selectedFeedback.status === "Pending" && modalForm.response.trim()
-          ? "In Progress"
-          : modalForm.status;
-      const response = await axios.put(
-        `http://localhost:3001/feedback/${selectedFeedback._id}`,
-        {
-          status: newStatus,
-          priority: modalForm.priority,
-          response: modalForm.response,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setFeedbackList((prev) =>
-        prev.map((fb) =>
-          fb._id === selectedFeedback._id ? { ...fb, ...response.data } : fb
-        )
-      );
-      setSelectedFeedback(null);
-    } catch (error) {
-      setErrorMessage(error.response?.data?.message || "Failed to update feedback.");
-    }
-    setModalLoading(false);
-  };
+const handleModalSubmit = async (e) => {
+  e.preventDefault();
+  setModalLoading(true);
+  try {
+    const token = localStorage.getItem("token");
+    // If status is Pending and response is being sent, set to In Progress
+    const newStatus =
+      selectedFeedback.status === "Pending" && modalForm.response.trim()
+        ? "In Progress"
+        : modalForm.status;
+    const response = await axios.put(
+      `http://localhost:3001/feedback/${selectedFeedback._id}`,
+      {
+        status: newStatus,
+        priority: modalForm.priority,
+        response: modalForm.response,
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    setFeedbackList((prev) =>
+      prev.map((fb) =>
+        fb._id === selectedFeedback._id ? { ...fb, ...response.data } : fb
+      )
+    );
+    // Show success message and keep modal open
+    setSuccessMessage("Response sent successfully! User will be notified.");
+    
+    // Update the selected feedback with the new response
+    setSelectedFeedback({ ...selectedFeedback, ...response.data });
+    
+    // Reset the form to show the response was sent
+    setModalForm({
+      status: response.data.status || selectedFeedback.status,
+      priority: response.data.priority || selectedFeedback.priority,
+      response: response.data.response || "",
+      editing: false,
+      updateResponse: "",
+    });
+  } catch (error) {
+    setErrorMessage(error.response?.data?.message || "Failed to update feedback.");
+  }
+  setModalLoading(false);
+};
 
   // Handle admin response update (for editing)
   const handleUpdateResponse = async () => {
-    setModalLoading(true);
-    try {
-      const token = localStorage.getItem("token");
-      // If status is Pending and response is being sent, set to In Progress
-      const newStatus =
-        selectedFeedback.status === "Pending" && modalForm.updateResponse.trim()
-          ? "In Progress"
-          : modalForm.status;
-      const response = await axios.put(
-        `http://localhost:3001/feedback/${selectedFeedback._id}`,
-        {
-          status: newStatus,
-          priority: modalForm.priority,
-          response: modalForm.updateResponse,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setFeedbackList((prev) =>
-        prev.map((fb) =>
-          fb._id === selectedFeedback._id ? { ...fb, ...response.data } : fb
-        )
-      );
-      setSelectedFeedback(null);
-    } catch (error) {
-      setErrorMessage(error.response?.data?.message || "Failed to update feedback.");
-    }
-    setModalLoading(false);
-  };
+  setModalLoading(true);
+  try {
+    const token = localStorage.getItem("token");
+    // If status is Pending and response is being sent, set to In Progress
+    const newStatus =
+      selectedFeedback.status === "Pending" && modalForm.updateResponse.trim()
+        ? "In Progress"
+        : modalForm.status;
+    const response = await axios.put(
+      `http://localhost:3001/feedback/${selectedFeedback._id}`,
+      {
+        status: newStatus,
+        priority: modalForm.priority,
+        response: modalForm.updateResponse,
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    setFeedbackList((prev) =>
+      prev.map((fb) =>
+        fb._id === selectedFeedback._id ? { ...fb, ...response.data } : fb
+      )
+    );
+    // Show success message and keep modal open
+    setSuccessMessage("Response updated successfully! User will be notified.");
+    
+    // Update the selected feedback with the new response
+    setSelectedFeedback({ ...selectedFeedback, ...response.data });
+    
+    // Reset the form to show the updated response
+    setModalForm({
+      status: response.data.status || selectedFeedback.status,
+      priority: response.data.priority || selectedFeedback.priority,
+      response: response.data.response || "",
+      editing: false,
+      updateResponse: "",
+    });
+  } catch (error) {
+    setErrorMessage(error.response?.data?.message || "Failed to update feedback.");
+  }
+  setModalLoading(false);
+};
 
   return (
     <ProtectedRoute>
@@ -207,38 +287,281 @@ function AdminFeedback() {
             </div>
             {/* Feedback List Controls */}
             <div className="d-flex align-items-center mb-3 gap-3">
+              <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                                    <BiSearch 
+                                              style={{ 
+                                                position: "absolute", 
+                                                left: 10, 
+                                                fontSize: 18, 
+                                                color: "#666", 
+                                                zIndex: 1 
+                                              }} 
+                                    />
               <input
                 type="text"
                 className="form-control"
-                placeholder="🔍 Search feedback..."
-                style={{ maxWidth: 250 }}
+                placeholder="Search feedback..."
+                style={{
+                width: 240,
+                padding: "8px 35px 8px 35px",
+                borderRadius: 8,
+                border: "1px solid #ddd",
+                fontSize: 14
+              }}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <select
-                className="form-select"
-                style={{ maxWidth: 205 }}
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-              >
-                <option value="">Category</option>
-                <option value="Schedule Issue">Schedule Issue</option>
-                <option value="Bug">Bug</option>
-                <option value="Feature Request">Feature Request</option>
-                <option value="Improvement Suggestion">Improvement Suggestion</option>
-                <option value="Other">Other</option>
-              </select>
-              <select
-                className="form-select"
-                style={{ maxWidth: 180 }}
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-              >
-                <option value="">Priority</option>
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
-              </select>
+              </div>
+              <div style={{ position: "relative" }} data-dropdown="category-filter">
+  <div
+    onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+    style={{
+      width: 205,
+      padding: "8px 12px",
+      borderRadius: 8,
+      border: "1px solid #ced4da",
+      background: "#fff",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      fontSize: 14,
+      fontFamily: 'inherit',
+      lineHeight: '1.5'
+    }}
+  >
+    <span>
+      {selectedCategories.includes("All") 
+        ? "All Categories" 
+        : selectedCategories.length === 1 
+        ? selectedCategories[0]
+        : `${selectedCategories.length} Categories Selected`
+      }
+    </span>
+    <span style={{ 
+      transform: showCategoryDropdown ? "rotate(180deg)" : "rotate(0deg)", 
+      transition: "transform 0.2s ease",
+      fontSize: 10,
+      color: "#666"
+    }}>
+      ▼
+    </span>
+  </div>
+  
+  {showCategoryDropdown && (
+    <div style={{
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      right: 0,
+      background: "#fff",
+      border: "1px solid #ced4da",
+      borderTop: "none",
+      borderRadius: "0 0 8px 8px",
+      zIndex: 1000,
+      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+      maxHeight: "200px",
+      overflowY: "auto"
+    }}>
+      {[
+        { value: "All", label: "All Categories" },
+        { value: "Schedule Issue", label: "Schedule Issue" },
+        { value: "Bug", label: "Bug" },
+        { value: "Feature Request", label: "Feature Request" },
+        { value: "Improvement Suggestion", label: "Improvement Suggestion" },
+        { value: "Other", label: "Other" }
+      ].map((option) => (
+        <div
+          key={option.value}
+          onClick={(e) => {
+            e.stopPropagation();
+            
+            if (option.value === "All") {
+              setSelectedCategories(["All"]);
+              setShowCategoryDropdown(false);
+            } else {
+              let newSelection;
+              if (selectedCategories.includes(option.value)) {
+                // Remove if already selected
+                newSelection = selectedCategories.filter(cat => cat !== option.value && cat !== "All");
+                if (newSelection.length === 0) {
+                  newSelection = ["All"];
+                }
+              } else {
+                // Add to selection
+                newSelection = selectedCategories.includes("All") 
+                  ? [option.value]
+                  : [...selectedCategories.filter(cat => cat !== "All"), option.value];
+              }
+              setSelectedCategories(newSelection);
+            }
+          }}
+          style={{
+            padding: "8px 12px",
+            cursor: "pointer",
+            borderBottom: "1px solid #f0f0f0",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 14,
+            background: selectedCategories.includes(option.value) ? "#f8f9fa" : "#fff"
+          }}
+          onMouseEnter={(e) => {
+            if (!selectedCategories.includes(option.value)) {
+              e.target.style.background = "#f5f5f5";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!selectedCategories.includes(option.value)) {
+              e.target.style.background = "#fff";
+            }
+          }}
+        >
+          <div style={{
+            width: 16,
+            height: 16,
+            border: "2px solid #ddd",
+            borderRadius: 3,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: selectedCategories.includes(option.value) ? "#015551" : "#fff",
+            borderColor: selectedCategories.includes(option.value) ? "#015551" : "#ddd"
+          }}>
+            {selectedCategories.includes(option.value) && (
+              <span style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>✓</span>
+            )}
+          </div>
+          <span>{option.label}</span>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+              <div style={{ position: "relative" }} data-dropdown="priority-filter">
+  <div
+    onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
+    style={{
+      width: 180,
+      padding: "8px 12px",
+      borderRadius: 8,
+      border: "1px solid #ced4da",
+      background: "#fff",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      fontSize: 14,
+      fontFamily: 'inherit',
+      lineHeight: '1.5'
+    }}
+  >
+    <span>
+      {selectedPriorities.includes("All") 
+        ? "All Priorities" 
+        : selectedPriorities.length === 1 
+        ? selectedPriorities[0]
+        : `${selectedPriorities.length} Priorities Selected`
+      }
+    </span>
+    <span style={{ 
+      transform: showPriorityDropdown ? "rotate(180deg)" : "rotate(0deg)", 
+      transition: "transform 0.2s ease",
+      fontSize: 10,
+      color: "#666"
+    }}>
+      ▼
+    </span>
+  </div>
+  
+  {showPriorityDropdown && (
+    <div style={{
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      right: 0,
+      background: "#fff",
+      border: "1px solid #ced4da",
+      borderTop: "none",
+      borderRadius: "0 0 8px 8px",
+      zIndex: 1000,
+      boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+      maxHeight: "200px",
+      overflowY: "auto"
+    }}>
+      {[
+        { value: "All", label: "All Priorities" },
+        { value: "Low", label: "Low" },
+        { value: "Medium", label: "Medium" },
+        { value: "High", label: "High" }
+      ].map((option) => (
+        <div
+          key={option.value}
+          onClick={(e) => {
+            e.stopPropagation();
+            
+            if (option.value === "All") {
+              setSelectedPriorities(["All"]);
+              setShowPriorityDropdown(false);
+            } else {
+              let newSelection;
+              if (selectedPriorities.includes(option.value)) {
+                // Remove if already selected
+                newSelection = selectedPriorities.filter(pri => pri !== option.value && pri !== "All");
+                if (newSelection.length === 0) {
+                  newSelection = ["All"];
+                }
+              } else {
+                // Add to selection
+                newSelection = selectedPriorities.includes("All") 
+                  ? [option.value]
+                  : [...selectedPriorities.filter(pri => pri !== "All"), option.value];
+              }
+              setSelectedPriorities(newSelection);
+            }
+          }}
+          style={{
+            padding: "8px 12px",
+            cursor: "pointer",
+            borderBottom: "1px solid #f0f0f0",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 14,
+            background: selectedPriorities.includes(option.value) ? "#f8f9fa" : "#fff"
+          }}
+          onMouseEnter={(e) => {
+            if (!selectedPriorities.includes(option.value)) {
+              e.target.style.background = "#f5f5f5";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!selectedPriorities.includes(option.value)) {
+              e.target.style.background = "#fff";
+            }
+          }}
+        >
+          <div style={{
+            width: 16,
+            height: 16,
+            border: "2px solid #ddd",
+            borderRadius: 3,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: selectedPriorities.includes(option.value) ? "#015551" : "#fff",
+            borderColor: selectedPriorities.includes(option.value) ? "#015551" : "#ddd"
+          }}>
+            {selectedPriorities.includes(option.value) && (
+              <span style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>✓</span>
+            )}
+          </div>
+          <span>{option.label}</span>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
             </div>
             {/* Status Tabs */}
             <div className="d-flex mb-4" style={{ gap: 2 }}>
@@ -397,6 +720,9 @@ function AdminFeedback() {
                   </div>
                   <form onSubmit={handleModalSubmit}>
                     <div className="modal-body">
+                      {successMessage && (
+                        <div className="alert alert-success">{successMessage}</div>
+                      )}
                       {errorMessage && (
                         <div className="alert alert-danger">{errorMessage}</div>
                       )}

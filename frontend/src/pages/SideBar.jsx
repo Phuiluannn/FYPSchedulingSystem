@@ -15,9 +15,9 @@ import {
   cilHome,
   cilBuilding,
   cilAccountLogout,
-  cilBell,
   cilCalendar,
 } from '@coreui/icons';
+import NotificationDropdown from './NotificationDropdown'; // Import the new component
 import '../index.css';
 
 const SideBar = ({ children, role = "admin", feedbackBadge }) => {
@@ -38,7 +38,7 @@ const SideBar = ({ children, role = "admin", feedbackBadge }) => {
     <div className="d-flex flex-column" style={{ minHeight: '100vh' }}>
       {/* Top Navigation Bar */}
       <div
-        className="d-flex justify-content-end align-items-center px-4 py-2 shadow-sm"
+        className="d-flex justify-content-end align-items-center px-5 py-2 shadow-sm"
         style={{
           background: '#fff',
           minHeight: '70px',
@@ -51,8 +51,9 @@ const SideBar = ({ children, role = "admin", feedbackBadge }) => {
         }}
       >
         <div className="d-flex align-items-center gap-4">
-          {/* Notification Icon */}
-          <CIcon icon={cilBell} height={25} width={25} style={{ color: '#015551', cursor: 'pointer' }} />
+          {/* Replace the simple notification icon with NotificationDropdown */}
+          <NotificationDropdown />
+          
           {/* Profile Info */}
           <div className="d-flex align-items-center">
             <img

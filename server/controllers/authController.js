@@ -15,8 +15,15 @@ export const login = async (req, res) => {
     const { email, password, role } = req.body;
 
     try {
-        const {token, name, role: userRole, unresolvedFeedbackCount} = await authService.login({ email, password, role });
-        res.json({ message: "Login successful!", token, name, role: userRole, unresolvedFeedbackCount });
+        const {token, name, role: userRole, unresolvedFeedbackCount, userId} = await authService.login({ email, password, role });
+        res.json({ 
+            message: "Login successful!", 
+            token, 
+            name, 
+            role: userRole, 
+            userId, // 🔥 ADD THIS LINE
+            unresolvedFeedbackCount 
+        });
     } catch (err) {
         const status = err.message === "User not found" ? 404 :
                        err.message === "The password is incorrect" ? 401 :
