@@ -9,12 +9,15 @@ function UserFeedback() {
   const [activeTab, setActiveTab] = useState("All");
   const [feedbackList, setFeedbackList] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [feedbackToDelete, setFeedbackToDelete] = useState(null);
   const [form, setForm] = useState({
     title: "",
     type: "",
     feedback: "",
   });
   const [errorMessage, setErrorMessage] = useState("");
+  const [deleteErrorMessage, setDeleteErrorMessage] = useState("");
   const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
 
   // Fetch feedback on mount and when activeTab changes
@@ -39,7 +42,7 @@ function UserFeedback() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (showModal) {
+    if (showModal || showDeleteModal) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
@@ -47,7 +50,7 @@ function UserFeedback() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [showModal]);
+  }, [showModal, showDeleteModal]);
 
   const filteredFeedback = feedbackList; // Backend handles filtering by status
 
@@ -57,47 +60,78 @@ function UserFeedback() {
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (!form.title.trim() || !form.feedback.trim()) {
-    setErrorMessage("Please fill in both Subject and Description fields.");
-    return;
-  }
-  
-  try {
-    const token = localStorage.getItem("token");
+    e.preventDefault();
+    if (!form.title.trim() || !form.feedback.trim()) {
+      setErrorMessage("Please fill in both Subject and Description fields.");
+      return;
+    }
     
-    // Automatically set priority based on feedback type
-    const priority = form.type === "Schedule Issue" ? "High" : "Low";
-    
-    const response = await axios.post(
-      "http://localhost:3001/user/feedback",
-      {
-        title: form.title,
-        type: form.type,
-        feedback: form.feedback,
-        priority: priority
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    
-    setFeedbackList([response.data, ...feedbackList]);
-    setShowModal(false);
-    setForm({ title: "", type: "", feedback: "" });
-    setErrorMessage("");
-  } catch (error) {
-    setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
-  }
-};
+    try {
+      const token = localStorage.getItem("token");
+      
+      // Automatically set priority based on feedback type
+      const priority = form.type === "Schedule Issue" ? "High" : "Low";
+      
+      const response = await axios.post(
+        "http://localhost:3001/user/feedback",
+        {
+          title: form.title,
+          type: form.type,
+          feedback: form.feedback,
+          priority: priority
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      setFeedbackList([response.data, ...feedbackList]);
+      setShowModal(false);
+      setForm({ title: "", type: "", feedback: "" });
+      setErrorMessage("");
+    } catch (error) {
+      setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
+    }
+  };
+
+  const handleDeleteClick = (feedback) => {
+    setFeedbackToDelete(feedback);
+    setShowDeleteModal(true);
+    setDeleteErrorMessage("");
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!feedbackToDelete) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      await axios.delete(
+        `http://localhost:3001/user/feedback/${feedbackToDelete._id}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Remove the deleted feedback from the list
+      setFeedbackList(feedbackList.filter(fb => fb._id !== feedbackToDelete._id));
+      setShowDeleteModal(false);
+      setFeedbackToDelete(null);
+    } catch (error) {
+      setDeleteErrorMessage(error.response?.data?.message || "Failed to delete feedback.");
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteModal(false);
+    setFeedbackToDelete(null);
+    setDeleteErrorMessage("");
+  };
+
+  // Function to check if feedback can be deleted (only unresolved feedback)
+  const canDeleteFeedback = (feedback) => {
+    return feedback.status !== "Resolved";
+  };
 
   return (
     <ProtectedRoute>
       <SideBar role={localStorage.getItem('role') || 'student'}>
-        <div
-          // style={{
-          //   minHeight: "100vh",
-          //   background: "#f6f6f6",
-          // }}
-        >
+        <div>
           <div
             style={{
               maxWidth: 1100,
@@ -169,7 +203,7 @@ function UserFeedback() {
                   }}
                 >
                   <div className="d-flex justify-content-between align-items-start">
-                    <div>
+                    <div style={{ flex: 1 }}>
                       <div className="fw-bold" style={{ fontSize: 22 }}>
                         {fb.title}
                       </div>
@@ -208,23 +242,13 @@ function UserFeedback() {
                         </span>
                       </div>
                     </div>
-                    <div
-                      className="text-end"
-                      style={{ minWidth: 180, fontSize: 15, color: "#666" }}
-                    >
-                      <div>
-                        Submitted: {new Date(fb.submitted).toLocaleString("en-GB", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          hour12: false,
-                        })}
-                      </div>
-                      {fb.status === "Resolved" && fb.resolved && (
-                        <div style={{ color: "#1db16a", fontSize: 14, marginTop: 2 }}>
-                          Resolved: {new Date(fb.resolved).toLocaleString("en-GB", {
+                    <div className="d-flex align-items-start gap-3">
+                      <div
+                        className="text-end"
+                        style={{ minWidth: 180, fontSize: 15, color: "#666" }}
+                      >
+                        <div>
+                          Submitted: {new Date(fb.submitted).toLocaleString("en-GB", {
                             day: "2-digit",
                             month: "2-digit",
                             year: "numeric",
@@ -233,6 +257,37 @@ function UserFeedback() {
                             hour12: false,
                           })}
                         </div>
+                        {fb.status === "Resolved" && fb.resolved && (
+                          <div style={{ color: "#1db16a", fontSize: 14, marginTop: 2 }}>
+                            Resolved: {new Date(fb.resolved).toLocaleString("en-GB", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: false,
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      {canDeleteFeedback(fb) && (
+                        <button
+                          className="btn btn-sm"
+                          style={{
+                            background: "#dc3545",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 6,
+                            padding: "4px 8px",
+                            fontSize: 12,
+                            fontWeight: 500,
+                            minWidth: 60,
+                          }}
+                          onClick={() => handleDeleteClick(fb)}
+                          title="Delete feedback"
+                        >
+                          Delete
+                        </button>
                       )}
                     </div>
                   </div>
@@ -262,7 +317,7 @@ function UserFeedback() {
             </div>
           </div>
 
-          {/* Modal */}
+          {/* Submit Feedback Modal */}
           {showModal && (
             <div
               className="modal fade show"
@@ -333,7 +388,7 @@ function UserFeedback() {
                           rows={4}
                           required
                           maxLength={500}
-                          placeholder="Please provide detailed information about your feedback or the issue you’re experiencing..."
+                          placeholder="Please provide detailed information about your feedback or the issue you're experiencing..."
                         />
                       </div>
                     </div>
@@ -354,6 +409,65 @@ function UserFeedback() {
                       </button>
                     </div>
                   </form>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Confirmation Modal */}
+          {showDeleteModal && (
+            <div
+              className="modal fade show"
+              style={{ display: "block", background: "rgba(0,0,0,0.3)" }}
+            >
+              <div
+                className="modal-dialog modal-dialog-centered"
+                style={{ maxWidth: "500px" }}
+              >
+                <div className="modal-content">
+                  <div className="modal-header">
+                    <h4 className="modal-title fw-bold">
+                      Confirm Delete
+                    </h4>
+                    <button
+                      type="button"
+                      className="btn-close"
+                      onClick={handleDeleteCancel}
+                    ></button>
+                  </div>
+                  <div className="modal-body">
+                    {deleteErrorMessage && (
+                      <div className="alert alert-danger">{deleteErrorMessage}</div>
+                    )}
+                    <p>Are you sure you want to delete this feedback?</p>
+                    {feedbackToDelete && (
+                      <div className="bg-light p-3 rounded">
+                        <strong>Subject:</strong> {feedbackToDelete.title}<br/>
+                        <strong>Type:</strong> {feedbackToDelete.type}<br/>
+                        <strong>Status:</strong> {feedbackToDelete.status}
+                      </div>
+                    )}
+                    <p className="mt-3 text-muted">
+                      <small>This action cannot be undone.</small>
+                    </p>
+                  </div>
+                  <div className="modal-footer">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleDeleteCancel}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ background: "#dc3545", color: "#fff" }}
+                      onClick={handleDeleteConfirm}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

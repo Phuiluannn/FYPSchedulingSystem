@@ -477,35 +477,47 @@ const validateRoomDoubleBookingConflict = async (conflict, schedules) => {
 };
 
 const validateRoomCapacityConflict = async (conflict, schedules) => {
-  const { CourseCode, RoomID } = conflict;
+  const { CourseCode, RoomID, Day, StartTime } = conflict;
   
-  // Check if this course is still scheduled in this room
-  const courseInRoom = schedules.find(sch => 
+  // FIXED: Check if this specific course event (same course, room, day, time) still exists
+  const specificEvent = schedules.find(sch => 
     sch.CourseCode === CourseCode && 
-    sch.RoomID?.toString() === RoomID?.toString()
+    sch.RoomID?.toString() === RoomID?.toString() &&
+    sch.Day === Day &&
+    sch.StartTime === StartTime
   );
 
-  if (!courseInRoom) {
-    return false; // Course no longer in this room
+  if (!specificEvent) {
+    console.log(`Room capacity conflict auto-resolved: Course ${CourseCode} no longer scheduled in room ${RoomID} at ${Day} ${StartTime}`);
+    return false; // Specific event no longer exists, conflict is resolved
   }
 
-  // Get room and course details to recalculate capacity requirement
+  // If the event still exists at the same time/room, recheck capacity requirements
   const room = await Room.findById(RoomID);
   const course = await Course.findOne({ code: CourseCode });
 
   if (!room || !course) {
+    console.log(`Room capacity conflict auto-resolved: Room or course not found for ${CourseCode}`);
     return false; // Room or course not found
   }
 
-  // Recalculate required capacity
+  // Recalculate required capacity for this specific event
   const requiredCapacity = calculateRequiredCapacity(
     CourseCode, 
-    courseInRoom.OccType, 
-    courseInRoom.OccNumber, 
+    specificEvent.OccType, 
+    specificEvent.OccNumber, 
     [course]
   );
 
-  return room.capacity < requiredCapacity;
+  const stillHasCapacityIssue = room.capacity < requiredCapacity;
+  
+  if (!stillHasCapacityIssue) {
+    console.log(`Room capacity conflict auto-resolved: Capacity issue resolved for ${CourseCode} in room ${room.code}`);
+  } else {
+    console.log(`Room capacity conflict still valid: ${CourseCode} still needs ${requiredCapacity} seats but room ${room.code} only has ${room.capacity}`);
+  }
+
+  return stillHasCapacityIssue;
 };
 
 const validateInstructorConflict = async (conflict, schedules) => {

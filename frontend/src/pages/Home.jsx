@@ -396,7 +396,7 @@ const detectAllConflicts = (currentTimetable, currentCourses, currentRooms) => {
   const allEvents = getAllEvents();
   console.log(`Found ${allEvents.length} events to check for conflicts`);
 
-  // 1. Check Room Capacity Conflicts (unchanged)
+  // 1. Check Room Capacity Conflicts
   allEvents.forEach(event => {
     const room = currentRooms.find(r => r._id === event.roomId);
     if (room && event.raw) {
@@ -424,151 +424,150 @@ const detectAllConflicts = (currentTimetable, currentCourses, currentRooms) => {
     }
   });
 
-  // 2. Check Room Double Booking Conflicts (unchanged)
-  const roomDoubleBookingConflicts = new Map(); // Use Map to prevent duplicates
+  // 2. FIXED: Check Room Double Booking Conflicts - Group by conflicting event pairs
+  const roomConflictGroups = new Map();
 
-allEvents.forEach(event => {
-  const { day, roomId, timeIdx } = event;
-  const duration = event.raw?.Duration || 1;
-  const eventEndIdx = timeIdx + duration - 1;
-  
-  // Find all other events in the same room on the same day
-  const sameRoomEvents = allEvents.filter(otherEvent => 
-    otherEvent.day === day &&
-    otherEvent.roomId === roomId &&
-    otherEvent.id !== event.id
-  );
-  
-  sameRoomEvents.forEach(otherEvent => {
-    const otherStartIdx = otherEvent.timeIdx;
-    const otherDuration = otherEvent.raw?.Duration || 1;
-    const otherEndIdx = otherStartIdx + otherDuration - 1;
-    
-    // Check if time periods overlap
-    const hasOverlap = !(eventEndIdx < otherStartIdx || timeIdx > otherEndIdx);
-    
-    if (hasOverlap) {
-      // Create unique conflict ID that's the same regardless of event order
-      const sortedIds = [event.id, otherEvent.id].sort();
-      const conflictId = `double-${roomId}-${day}-${sortedIds[0]}-${sortedIds[1]}`;
-      
-      // Only add if we haven't already recorded this conflict
-      if (!roomDoubleBookingConflicts.has(conflictId)) {
-        const room = currentRooms.find(r => r._id === roomId);
-        
-        // Calculate the overlapping time range
-        const overlapStart = Math.max(timeIdx, otherStartIdx);
-        const overlapEnd = Math.min(eventEndIdx, otherEndIdx);
-        const overlapTime = TIMES[overlapStart];
-        
-        roomDoubleBookingConflicts.set(conflictId, {
-          id: conflictId,
-          event1: {
-            id: event.id,
-            courseCode: event.code,
-            occType: event.raw.OccType,
-            occNumber: event.raw.OccNumber
-          },
-          event2: {
-            id: otherEvent.id,
-            courseCode: otherEvent.code,
-            occType: otherEvent.raw.OccType,
-            occNumber: otherEvent.raw.OccNumber
-          },
-          roomCode: room?.code || 'Unknown',
-          day,
-          time: overlapTime,
-          overlapStart: overlapStart,
-          overlapEnd: overlapEnd
-        });
-      }
-    }
-  });
-});
+  // Find all overlapping event pairs in the same room
+  allEvents.forEach(event1 => {
+    allEvents.forEach(event2 => {
+      if (event1.id >= event2.id) return; // Avoid duplicates and self-comparison
+      if (event1.roomId !== event2.roomId || event1.day !== event2.day) return;
 
-// Convert Map values to array
-conflicts.roomDoubleBooking = Array.from(roomDoubleBookingConflicts.values());
+      // Calculate overlap between the two events
+      const event1Start = event1.timeIdx;
+      const event1Duration = event1.raw?.Duration || 1;
+      const event1End = event1Start + event1Duration - 1;
 
-  // 3. FIXED: Check Instructor Conflicts - Group overlapping events into single conflicts
-  const instructorConflicts = new Map(); // Use Map to prevent duplicates
-  
-  allEvents.forEach(event => {
-    if (!event.selectedInstructorId || event.selectedInstructorId.trim() === '') return;
+      const event2Start = event2.timeIdx;
+      const event2Duration = event2.raw?.Duration || 1;
+      const event2End = event2Start + event2Duration - 1;
 
-    const { day, timeIdx, selectedInstructorId } = event;
-    const duration = event.raw?.Duration || 1;
-
-    // Find all other events with the same instructor on the same day
-    const conflictingEvents = allEvents.filter(otherEvent => 
-      otherEvent.selectedInstructorId === selectedInstructorId &&
-      otherEvent.id !== event.id &&
-      otherEvent.day === day
-    );
-
-    conflictingEvents.forEach(conflictingEvent => {
-      const conflictingDuration = conflictingEvent.raw?.Duration || 1;
-      const conflictingTimeIdx = conflictingEvent.timeIdx;
-
-      // Check if time periods overlap
-      const eventStart = timeIdx;
-      const eventEnd = timeIdx + duration - 1;
-      const conflictingStart = conflictingTimeIdx;
-      const conflictingEnd = conflictingTimeIdx + conflictingDuration - 1;
-
-      const hasOverlap = !(eventEnd < conflictingStart || eventStart > conflictingEnd);
+      // Check if they overlap
+      const hasOverlap = !(event1End < event2Start || event1Start > event2End);
 
       if (hasOverlap) {
-        // Create a unique conflict ID that's the same regardless of event order
-        const sortedIds = [event.id, conflictingEvent.id].sort();
-        const conflictId = `instructor-${selectedInstructorId}-${day}-${sortedIds[0]}-${sortedIds[1]}`;
+        // Create a unique key for this conflict group (sorted event IDs)
+        const conflictKey = `${event1.roomId}-${event1.day}-${[event1.id, event2.id].sort().join('-')}`;
         
-        // Only add if we haven't already recorded this conflict
-        if (!instructorConflicts.has(conflictId)) {
-          const room1 = currentRooms.find(r => r._id === event.roomId);
-          const room2 = currentRooms.find(r => r._id === conflictingEvent.roomId);
+        if (!roomConflictGroups.has(conflictKey)) {
+          const room = currentRooms.find(r => r._id === event1.roomId);
+          const overlapStart = Math.max(event1Start, event2Start);
+          const overlapEnd = Math.min(event1End, event2End);
           
-          // Calculate the actual overlapping time range
-          const overlapStart = Math.max(eventStart, conflictingStart);
-          const overlapEnd = Math.min(eventEnd, conflictingEnd);
-          
-          instructorConflicts.set(conflictId, {
-            id: conflictId,
-            instructorId: selectedInstructorId,
-            instructorName: event.selectedInstructor,
-            event1: {
-              id: event.id,
-              courseCode: event.code,
-              roomCode: room1?.code || 'Unknown',
-              occType: event.raw.OccType,
-              occNumber: event.raw.OccNumber
-            },
-            event2: {
-              id: conflictingEvent.id,
-              courseCode: conflictingEvent.code,
-              roomCode: room2?.code || 'Unknown',
-              occType: conflictingEvent.raw.OccType,
-              occNumber: conflictingEvent.raw.OccNumber
-            },
-            day,
-            time: TIMES[overlapStart],
-            overlapStart: overlapStart,
-            overlapEnd: overlapEnd,
-            overlapDuration: overlapEnd - overlapStart + 1
+          roomConflictGroups.set(conflictKey, {
+            id: `double-${conflictKey}`,
+            type: 'Room Double Booking',
+            roomCode: room?.code || 'Unknown',
+            day: event1.day,
+            time: TIMES[overlapStart] || `Time ${overlapStart}`,
+            overlapStart,
+            overlapEnd,
+            conflictingEvents: [
+              {
+                id: event1.id,
+                courseCode: event1.code,
+                occType: event1.raw.OccType,
+                occNumber: event1.raw.OccNumber
+              },
+              {
+                id: event2.id,
+                courseCode: event2.code,
+                occType: event2.raw.OccType,
+                occNumber: event2.raw.OccNumber
+              }
+            ],
+            description: `${event1.code} and ${event2.code} overlap in ${room?.code || 'Unknown'} on ${event1.day}`
           });
         }
       }
     });
   });
 
-  // Convert Map values to array
-  conflicts.instructorConflict = Array.from(instructorConflicts.values());
+  // Convert map to array
+  conflicts.roomDoubleBooking = Array.from(roomConflictGroups.values());
 
-  // 4. Check Time Slot Exceeded Conflicts (unchanged)
+  // 3. Check Instructor Conflicts - Group by instructor-day-timeslot
+  const instructorConflictGroups = new Map();
+
+// Find all overlapping event pairs with same instructor
+allEvents.forEach(event1 => {
+  allEvents.forEach(event2 => {
+    if (event1.id >= event2.id) return; // Avoid duplicates and self-comparison
+    
+    // Only check events with assigned instructors
+    if (!event1.selectedInstructorId || !event2.selectedInstructorId) return;
+    if (event1.selectedInstructorId !== event2.selectedInstructorId) return;
+    if (event1.day !== event2.day) return; // Must be same day
+    
+    // Calculate time ranges
+    const event1Start = TIMES.findIndex(t => t === event1.raw.StartTime);
+    const event1Duration = event1.raw?.Duration || 1;
+    const event1End = event1Start + event1Duration - 1;
+    
+    const event2Start = TIMES.findIndex(t => t === event2.raw.StartTime);
+    const event2Duration = event2.raw?.Duration || 1;
+    const event2End = event2Start + event2Duration - 1;
+    
+    // Check if they overlap
+    const hasOverlap = !(event1End < event2Start || event1Start > event2End);
+    
+    if (hasOverlap) {
+      // Create a unique key for this conflict pair (sorted event IDs)
+      const conflictKey = `${event1.selectedInstructorId}-${event1.day}-${[event1.id, event2.id].sort().join('-')}`;
+      
+      if (!instructorConflictGroups.has(conflictKey)) {
+        const overlapStart = Math.max(event1Start, event2Start);
+        const overlapEnd = Math.min(event1End, event2End);
+        const overlapStartTime = TIMES[overlapStart];
+        const overlapEndTime = TIMES[overlapEnd];
+        
+        // Create proper time range string
+        const overlapTimeRange = overlapStartTime.includes(' - ') 
+          ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+          : overlapStartTime;
+        
+        instructorConflictGroups.set(conflictKey, {
+          id: `instructor-${conflictKey}`,
+          type: 'Instructor Conflict',
+          instructorId: event1.selectedInstructorId,
+          instructorName: event1.selectedInstructor,
+          day: event1.day,
+          time: overlapStartTime,
+          timeRange: overlapTimeRange,
+          conflictingEvents: [
+            {
+              id: event1.id,
+              courseCode: event1.code,
+              roomCode: currentRooms.find(r => r._id === event1.roomId)?.code || 'Unknown',
+              occType: event1.raw.OccType,
+              occNumber: event1.raw.OccNumber
+            },
+            {
+              id: event2.id,
+              courseCode: event2.code,
+              roomCode: currentRooms.find(r => r._id === event2.roomId)?.code || 'Unknown',
+              occType: event2.raw.OccType,
+              occNumber: event2.raw.OccNumber
+            }
+          ],
+          description: `${event1.selectedInstructor} assigned to ${event1.code} and ${event2.code} at ${overlapTimeRange} on ${event1.day}`
+        });
+      }
+    }
+  });
+});
+
+// Convert map to array
+conflicts.instructorConflict = Array.from(instructorConflictGroups.values());
+
+  // 4. Check Time Slot Exceeded Conflicts
   allEvents.forEach(event => {
-    const { timeIdx } = event;
+    const startTimeIdx = TIMES.findIndex(t => t === event.raw.StartTime);
+    if (startTimeIdx === -1) return;
+    
     const duration = event.raw?.Duration || 1;
     
-    if (timeIdx + duration > TIMES.length) {
+    if (startTimeIdx + duration > TIMES.length) {
       conflicts.timeSlotExceeded.push({
         id: `time-exceeded-${event.id}`,
         eventId: event.id,
@@ -576,9 +575,9 @@ conflicts.roomDoubleBooking = Array.from(roomDoubleBookingConflicts.values());
         occType: event.raw.OccType,
         occNumber: event.raw.OccNumber,
         day: event.day,
-        startTime: TIMES[timeIdx],
+        startTime: TIMES[startTimeIdx],
         duration,
-        availableSlots: TIMES.length - timeIdx
+        availableSlots: TIMES.length - startTimeIdx
       });
     }
   });
@@ -595,8 +594,115 @@ conflicts.roomDoubleBooking = Array.from(roomDoubleBookingConflicts.values());
   };
 
   console.log("Conflict Summary:", summary);
-  console.log("Instructor conflicts found:", conflicts.instructorConflict.length);
+  console.log("Room double booking conflicts found:", conflicts.roomDoubleBooking.length);
+  console.log("Room conflicts detail:", conflicts.roomDoubleBooking);
+  
   return { summary, details: conflicts };
+};
+
+const recordFrontendConflicts = async (conflictDetails) => {
+  if (!conflictDetails || !conflictDetails.details) return;
+  
+  const { details } = conflictDetails;
+  const conflictsToRecord = [];
+
+  try {
+    // Process Room Double Booking conflicts
+    details.roomDoubleBooking.forEach(conflict => {
+      const conflictData = {
+        Year: selectedYear,
+        Semester: selectedSemester,
+        Type: 'Room Double Booking',
+        Description: `Room double booking detected: ${conflict.conflictingEvents.map(e => 
+          `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''})`
+        ).join(' and ')} in ${conflict.roomCode} on ${conflict.day} at ${conflict.time}`,
+        CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+        RoomID: rooms.find(r => r.code === conflict.roomCode)?._id || null,
+        Day: conflict.day,
+        StartTime: conflict.time,
+        Priority: 'High',
+        Status: 'Pending'
+      };
+      conflictsToRecord.push(conflictData);
+    });
+
+    // // Process Instructor Conflicts
+    // details.instructorConflict.forEach(conflict => {
+    //   const conflictData = {
+    //     Year: selectedYear,
+    //     Semester: selectedSemester,
+    //     Type: 'Instructor Conflict',
+    //     Description: `Instructor conflict detected: ${conflict.instructorName} assigned to multiple events (${conflict.conflictingEvents.map(e => 
+    //       `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''}) in ${e.roomCode}`
+    //     ).join(' and ')}) on ${conflict.day} at ${conflict.time}`,
+    //     CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+    //     InstructorID: conflict.instructorId,
+    //     Day: conflict.day,
+    //     StartTime: conflict.time,
+    //     Priority: 'High',
+    //     Status: 'Pending'
+    //   };
+    //   conflictsToRecord.push(conflictData);
+    // });
+
+    // Process Room Capacity conflicts
+    details.roomCapacity.forEach(conflict => {
+      const conflictData = {
+        Year: selectedYear,
+        Semester: selectedSemester,
+        Type: 'Room Capacity',
+        Description: `Room capacity exceeded: ${conflict.courseCode} (${conflict.occType}${conflict.occNumber ? ` Occ ${Array.isArray(conflict.occNumber) ? conflict.occNumber.join(', ') : conflict.occNumber}` : ''}) requires ${conflict.requiredCapacity} seats but ${conflict.roomCode} only has ${conflict.roomCapacity}`,
+        CourseCode: conflict.courseCode,
+        RoomID: rooms.find(r => r.code === conflict.roomCode)?._id || null,
+        Day: conflict.day,
+        StartTime: conflict.time,
+        Priority: 'High',
+        Status: 'Pending'
+      };
+      conflictsToRecord.push(conflictData);
+    });
+
+    // Process Time Slot Exceeded conflicts
+    details.timeSlotExceeded.forEach(conflict => {
+      const conflictData = {
+        Year: selectedYear,
+        Semester: selectedSemester,
+        Type: 'Time Slot Exceeded',
+        Description: `Time slot exceeded: ${conflict.courseCode} (${conflict.occType}${conflict.occNumber ? ` Occ ${Array.isArray(conflict.occNumber) ? conflict.occNumber.join(', ') : conflict.occNumber}` : ''}) extends beyond available time slots (requires ${conflict.duration} hours but only ${conflict.availableSlots} slots available)`,
+        CourseCode: conflict.courseCode,
+        Day: conflict.day,
+        StartTime: conflict.startTime,
+        Priority: 'Medium',
+        Status: 'Pending'
+      };
+      conflictsToRecord.push(conflictData);
+    });
+
+    // Record all conflicts in batch
+    if (conflictsToRecord.length > 0) {
+      const token = localStorage.getItem('token');
+      
+      // Record each conflict
+      const recordPromises = conflictsToRecord.map(conflictData => 
+        axios.post(
+          "http://localhost:3001/analytics/record-conflict",
+          conflictData,
+          { headers: { Authorization: `Bearer ${token}` } }
+        ).catch(error => {
+          console.error("Error recording conflict:", error);
+          return null; // Continue with other conflicts
+        })
+      );
+      
+      const results = await Promise.all(recordPromises);
+      const successCount = results.filter(result => result !== null).length;
+      
+      console.log(`Successfully recorded ${successCount} out of ${conflictsToRecord.length} frontend-detected conflicts`);
+    }
+    
+  } catch (error) {
+    console.error("Error in recordFrontendConflicts:", error);
+  }
 };
 
 useEffect(() => {
@@ -886,9 +992,17 @@ useEffect(() => {
   }
 
   console.log("Detecting conflicts after timetable change...");
-  const { summary } = detectAllConflicts(timetable, courses, rooms);
+  const conflictResults = detectAllConflicts(timetable, courses, rooms);
+  const { summary, details } = conflictResults;
+  
   setConflictSummary(summary);
-}, [timetable, courses, rooms]);
+  
+  // AUTO-RECORD FRONTEND CONFLICTS
+  // if (summary.total > 0) {
+  //   recordFrontendConflicts(conflictResults);
+  // }
+  
+}, [timetable, courses, rooms, selectedYear, selectedSemester]);
 
   const handleContextMenu = (e, item, roomId, timeIdx, index) => {
   e.preventDefault();
@@ -1375,16 +1489,20 @@ conflicts.push({
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
 
-    const confirmed = await new Promise(resolve => {
-        showConfirm(
-          alertMessage,
-          "Conflicts Detected",
-          () => resolve(true),
-          () => resolve(false)
-        );
-      });
+    // const confirmed = await new Promise(resolve => {
+    //     showConfirm(
+    //       alertMessage,
+    //       "Conflicts Detected",
+    //       () => resolve(true),
+    //       () => resolve(false)
+    //     );
+    //   });
       
-      if (!confirmed) return;
+    //   if (!confirmed) return;
+
+      if (!confirm(alertMessage)) {
+  return;
+}
   }
 
   console.log("=== BEFORE REMOVAL ===");
@@ -1504,7 +1622,7 @@ conflicts.push({
           Priority: 'High',
           Status: 'Pending'
         };
-        await recordDragDropConflict(conflictData);
+        // await recordDragDropConflict(conflictData);
         
       } else if (conflict.type === 'Room Double Booking') {
         const conflictData = {
@@ -1525,7 +1643,7 @@ conflicts.push({
           Priority: 'High',
           Status: 'Pending'
         };
-        await recordDragDropConflict(conflictData);
+        // await recordDragDropConflict(conflictData);
         
       } else if (conflict.type === 'Time Slot Exceeded') {
         const conflictData = {
@@ -1546,7 +1664,7 @@ conflicts.push({
           Priority: 'High',
           Status: 'Pending'
         };
-        await recordDragDropConflict(conflictData);
+        // await recordDragDropConflict(conflictData);
         
       } else if (conflict.type === 'Instructor Conflict') {
   // FIXED: Calculate proper time range for overlap
@@ -1579,7 +1697,7 @@ conflicts.push({
     Priority: 'High',
     Status: 'Pending'
   };
-  await recordDragDropConflict(conflictData);
+  // await recordDragDropConflict(conflictData);
 }
     }
   }
@@ -1661,11 +1779,11 @@ const handleModalConfirm = async () => {
       Status: 'Pending'
     };
     
-    try {
-      await recordDragDropConflict(capacityConflictData);
-    } catch (error) {
-      console.error("Failed to record capacity conflict:", error);
-    }
+    // try {
+    //   await recordDragDropConflict(capacityConflictData);
+    // } catch (error) {
+    //   console.error("Failed to record capacity conflict:", error);
+    // }
   }
 
   // ✅ ADD THIS: Record Time Slot Exceeded conflicts
@@ -1690,11 +1808,11 @@ const handleModalConfirm = async () => {
         Status: 'Pending'
       };
       
-      try {
-        await recordDragDropConflict(timeSlotConflictData);
-      } catch (error) {
-        console.error("Failed to record time slot exceeded conflict:", error);
-      }
+      // try {
+      //   await recordDragDropConflict(timeSlotConflictData);
+      // } catch (error) {
+      //   console.error("Failed to record time slot exceeded conflict:", error);
+      // }
     }
   }
   
@@ -1858,11 +1976,11 @@ conflicts.push({
           Status: 'Pending'
         };
         
-        try {
-          await recordDragDropConflict(conflictData);
-        } catch (error) {
-          console.error("Failed to record double booking conflict:", error);
-        }
+        // try {
+        //   await recordDragDropConflict(conflictData);
+        // } catch (error) {
+        //   console.error("Failed to record double booking conflict:", error);
+        // }
       }
     }
   }
@@ -1901,11 +2019,11 @@ conflicts.push({
       Status: 'Pending'
     };
     
-    try {
-      await recordDragDropConflict(instructorConflictData);
-    } catch (error) {
-      console.error("Failed to record instructor conflict:", error);
-    }
+    // try {
+    //   await recordDragDropConflict(instructorConflictData);
+    // } catch (error) {
+    //   console.error("Failed to record instructor conflict:", error);
+    // }
   }
 }
 
@@ -1931,16 +2049,20 @@ conflicts.push({
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
     
-    const confirmed = await new Promise(resolve => {
-        showConfirm(
-          alertMessage,
-          "Conflicts Detected",
-          () => resolve(true),
-          () => resolve(false)
-        );
-      });
+    // const confirmed = await new Promise(resolve => {
+    //     showConfirm(
+    //       alertMessage,
+    //       "Conflicts Detected",
+    //       () => resolve(true),
+    //       () => resolve(false)
+    //     );
+    //   });
       
-      if (!confirmed) return;
+    //   if (!confirmed) return;
+
+    if (!confirm(alertMessage)) {
+  return;
+}
   } 
 
   // ALWAYS PERFORM THE MOVE (even with conflicts)
@@ -2014,40 +2136,70 @@ const handleGenerateTimetable = async () => {
       const duration = sch.Duration || 1;
       
       if (roomId && timeIdx !== -1) {
-  // Only place in the starting slot, let UI handle colspan for multi-hour events
-  newTimetable[sch.Day][roomId][timeIdx].push({
-    id: String(sch._id),
-    code: sch.CourseCode,
-    instructors: sch.OriginalInstructors || sch.Instructors || [],
-    selectedInstructor:
-      Array.isArray(sch.Instructors) && sch.Instructors.length === 1
-        ? sch.Instructors[0]
-        : "",
-    selectedInstructorId: sch.InstructorID || "",
-    raw: {
-      ...sch,
-      Duration: duration,
-    },
-  });
-}
+        // Only place in the starting slot, let UI handle colspan for multi-hour events
+        newTimetable[sch.Day][roomId][timeIdx].push({
+          id: String(sch._id),
+          code: sch.CourseCode,
+          instructors: sch.OriginalInstructors || sch.Instructors || [],
+          selectedInstructor:
+            Array.isArray(sch.Instructors) && sch.Instructors.length === 1
+              ? sch.Instructors[0]
+              : "",
+          selectedInstructorId: sch.InstructorID || "",
+          raw: {
+            ...sch,
+            Duration: duration,
+          },
+        });
+      }
     });
 
+    // Update timetable state first
     setTimetable(newTimetable);
     setIsGenerated(true);
     setIsModified(true);
 
+    // CLEAR EXISTING FRONTEND CONFLICTS BEFORE RECORDING NEW ONES
+    try {
+      await axios.delete(
+        `http://localhost:3001/analytics/clear-frontend-conflicts`,
+        { 
+          headers: { Authorization: `Bearer ${token}` },
+          data: { year: selectedYear, semester: selectedSemester }
+        }
+      );
+      console.log("Cleared existing frontend conflicts after generation");
+    } catch (clearError) {
+      console.warn("Could not clear existing conflicts after generation:", clearError.message);
+    }
+
+    // DETECT AND RECORD FRONTEND CONFLICTS RIGHT AFTER GENERATION
+    console.log("Detecting conflicts after timetable generation...");
+    const conflictResults = detectAllConflicts(newTimetable, courses, rooms);
+    const { summary } = conflictResults;
+    
+    // Update conflict summary in state
+    setConflictSummary(summary);
+    
+    // Record frontend-detected conflicts if any exist
+    if (summary.total > 0) {
+      console.log(`Found ${summary.total} frontend conflicts after generation, recording them...`);
+      await recordFrontendConflicts(conflictResults);
+    }
+
     // Show appropriate success/warning message based on conflicts
-    if (conflictsDetected) {
+    if (conflictsDetected || summary.total > 0) {
+      const totalConflicts = summary.total;
       showAlert(
-          `Timetable generated with ${totalSchedules} scheduled events.\n\n⚠️ Some conflicts were detected during generation and have been recorded in the Analytics section. Please review the conflict reports for details.`,
-          "warning",
-          8000
-        );
+        `Timetable generated with ${totalSchedules} scheduled events.\n\n⚠️ ${totalConflicts} conflict${totalConflicts !== 1 ? 's' : ''} detected and recorded in the Analytics section. Please review the conflict reports for details.`,
+        "warning",
+        8000
+      );
     } else {
       showAlert(
-          `Timetable generated successfully with ${totalSchedules} scheduled events!`,
-          "success"
-        );
+        `Timetable generated successfully with ${totalSchedules} scheduled events and no conflicts detected!`,
+        "success"
+      );
     }
     
   } catch (error) {
@@ -2056,7 +2208,75 @@ const handleGenerateTimetable = async () => {
   }
 };
 
-  const handleSaveTimetable = async () => {
+const generateConflictId = (conflict, conflictType) => {
+  switch (conflictType) {
+    case 'Room Capacity':
+      return `capacity_${conflict.courseCode}_${conflict.roomCode}_${conflict.day}_${conflict.time}`;
+    
+    case 'Room Double Booking':
+      // Sort course codes to ensure consistent ID regardless of order
+      const sortedCourses = conflict.conflictingEvents.map(e => e.courseCode).sort();
+      return `double_${sortedCourses.join('_')}_${conflict.roomCode}_${conflict.day}_${conflict.time}`;
+    
+    case 'Instructor Conflict':
+      // Sort course codes to ensure consistent ID regardless of order
+      const sortedInstructorCourses = conflict.conflictingEvents.map(e => e.courseCode).sort();
+      return `instructor_${conflict.instructorId}_${sortedInstructorCourses.join('_')}_${conflict.day}_${conflict.timeRange || conflict.time}`;
+    
+    case 'Time Slot Exceeded':
+      return `timeslot_${conflict.courseCode}_${conflict.day}_${conflict.startTime}`;
+    
+    default:
+      return `unknown_${Date.now()}_${Math.random()}`;
+  }
+};
+
+// Add a function to fetch existing ACTIVE conflicts from the backend
+const fetchExistingActiveConflicts = async () => {
+  try {
+    const token = localStorage.getItem('token');
+    
+    // Fetch only active/pending conflicts, not resolved ones
+    const response = await axios.get(
+      `http://localhost:3001/analytics/conflicts?year=${selectedYear}&semester=${selectedSemester}&status=active`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    // Ensure we always return an array
+    const data = response.data;
+    console.log("Raw response from active conflicts API:", data);
+    
+    let conflicts = [];
+    if (Array.isArray(data)) {
+      conflicts = data;
+    } else if (data && Array.isArray(data.conflicts)) {
+      conflicts = data.conflicts;
+    } else if (data && typeof data === 'object') {
+      console.warn("Expected array but got object:", data);
+      conflicts = [];
+    } else {
+      console.warn("Expected array but got:", typeof data, data);
+      conflicts = [];
+    }
+    
+    // Filter out resolved conflicts (in case backend doesn't support status filter)
+    const activeConflicts = conflicts.filter(conflict => 
+      conflict.Status !== 'Resolved' && 
+      conflict.Status !== 'Closed' && 
+      conflict.Status !== 'Dismissed'
+    );
+    
+    console.log(`Found ${conflicts.length} total conflicts, ${activeConflicts.length} are active/pending`);
+    return activeConflicts;
+    
+  } catch (error) {
+    console.error("Error fetching existing active conflicts:", error);
+    return [];
+  }
+};
+
+// Modified handleSaveTimetable function
+const handleSaveTimetable = async () => {
   try {
     const timetableArr = [];
     for (const day of DAYS) {
@@ -2095,12 +2315,257 @@ const handleGenerateTimetable = async () => {
     }
 
     const token = localStorage.getItem('token');
+    
+    // STEP 1: Fetch existing ACTIVE conflicts from the database (excluding resolved ones)
+    console.log("Fetching existing active conflicts...");
+    const existingActiveConflictsResponse = await fetchExistingActiveConflicts();
+    
+    // Ensure we have an array to work with
+    const existingActiveConflicts = Array.isArray(existingActiveConflictsResponse) ? existingActiveConflictsResponse : [];
+    console.log(`Found ${existingActiveConflicts.length} existing active conflicts`);
+    
+    // Create a set of existing ACTIVE conflict IDs for quick lookup
+    const existingActiveConflictIds = new Set();
+    
+    if (existingActiveConflicts.length > 0) {
+      existingActiveConflicts.forEach(conflict => {
+        // Only process if conflict has required properties and is not resolved
+        if (!conflict || !conflict.Type || 
+            conflict.Status === 'Resolved' || 
+            conflict.Status === 'Closed' || 
+            conflict.Status === 'Dismissed') {
+          console.log("Skipping resolved or invalid conflict:", conflict);
+          return;
+        }
+        
+        // Generate ID based on the conflict data from database
+        let conflictId;
+        try {
+          switch (conflict.Type) {
+            case 'Room Capacity':
+              conflictId = `capacity_${conflict.CourseCode}_${rooms.find(r => r._id === conflict.RoomID)?.code || 'Unknown'}_${conflict.Day}_${conflict.StartTime}`;
+              break;
+            case 'Room Double Booking':
+              // For existing conflicts, we need to parse the description to get course codes
+              const courseMatches = conflict.Description ? conflict.Description.match(/([A-Z]{3}\d{4})/g) : null;
+              if (courseMatches && courseMatches.length >= 2) {
+                const sortedCourses = courseMatches.slice(0, 2).sort();
+                conflictId = `double_${sortedCourses.join('_')}_${rooms.find(r => r._id === conflict.RoomID)?.code || 'Unknown'}_${conflict.Day}_${conflict.StartTime}`;
+              } else {
+                conflictId = `double_unknown_${conflict.Day}_${conflict.StartTime}`;
+              }
+              break;
+            case 'Instructor Conflict':
+              // Similar parsing for instructor conflicts
+              const instrCourseMatches = conflict.Description ? conflict.Description.match(/([A-Z]{3}\d{4})/g) : null;
+              if (instrCourseMatches && instrCourseMatches.length >= 2) {
+                const sortedInstrCourses = instrCourseMatches.slice(0, 2).sort();
+                conflictId = `instructor_${conflict.InstructorID}_${sortedInstrCourses.join('_')}_${conflict.Day}_${conflict.StartTime}`;
+              } else {
+                conflictId = `instructor_${conflict.InstructorID}_unknown_${conflict.Day}_${conflict.StartTime}`;
+              }
+              break;
+            case 'Time Slot Exceeded':
+              conflictId = `timeslot_${conflict.CourseCode}_${conflict.Day}_${conflict.StartTime}`;
+              break;
+            default:
+              conflictId = `existing_${conflict._id}`;
+          }
+          
+          if (conflictId) {
+            existingActiveConflictIds.add(conflictId);
+            console.log(`Active conflict ID: ${conflictId} (Status: ${conflict.Status})`);
+          }
+        } catch (err) {
+          console.error("Error processing existing active conflict:", conflict, err);
+        }
+      });
+    }
+    
+    console.log(`Generated ${existingActiveConflictIds.size} existing active conflict IDs`);
+
+
+
+    // STEP 2: Detect current conflicts
+    console.log("Detecting current conflicts...");
+    const conflictResults = detectAllConflicts(timetable, courses, rooms);
+    
+    console.log("=== SAVE: CONFLICT RESULTS ===");
+    console.log("Conflict Summary:", conflictResults.summary);
+    
+    let newConflictsCount = 0;
+    
+    if (conflictResults.summary.total > 0) {
+      console.log(`Checking ${conflictResults.summary.total} detected conflicts for new ones...`);
+      
+      // STEP 3: Check Room Capacity Conflicts for new ones
+      for (const conflict of conflictResults.details.roomCapacity) {
+        const conflictId = generateConflictId(conflict, 'Room Capacity');
+        
+        if (!existingActiveConflictIds.has(conflictId)) {
+          const conflictData = {
+            Year: selectedYear,
+            Semester: selectedSemester,
+            Type: 'Room Capacity',
+            Description: `Room capacity exceeded: ${conflict.courseCode} (${conflict.occType}${conflict.occNumber ? ` Occ ${Array.isArray(conflict.occNumber) ? conflict.occNumber.join(', ') : conflict.occNumber}` : ''}) requires ${conflict.requiredCapacity} seats but ${conflict.roomCode} only has ${conflict.roomCapacity}`,
+            CourseCode: conflict.courseCode,
+            RoomID: rooms.find(r => r.code === conflict.roomCode)?._id || null,
+            Day: conflict.day,
+            StartTime: conflict.time,
+            Priority: 'High',
+            Status: 'Pending'
+          };
+          
+          try {
+            await recordDragDropConflict(conflictData);
+            newConflictsCount++;
+            console.log(`NEW Room Capacity Conflict: ${conflictId}`);
+          } catch (error) {
+            console.error("Failed to record new room capacity conflict:", error);
+          }
+        } else {
+          console.log(`EXISTING ACTIVE Room Capacity Conflict: ${conflictId}`);
+        }
+      }
+
+      // STEP 4: Check Room Double Booking Conflicts for new ones
+      for (const conflict of conflictResults.details.roomDoubleBooking) {
+        const conflictId = generateConflictId(conflict, 'Room Double Booking');
+        
+        if (!existingActiveConflictIds.has(conflictId)) {
+          const conflictData = {
+            Year: selectedYear,
+            Semester: selectedSemester,
+            Type: 'Room Double Booking',
+            Description: `Room double booking detected: ${conflict.conflictingEvents.map(e => 
+              `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''})`
+            ).join(' and ')} in ${conflict.roomCode} on ${conflict.day} at ${conflict.time}`,
+            CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+            RoomID: rooms.find(r => r.code === conflict.roomCode)?._id || null,
+            Day: conflict.day,
+            StartTime: conflict.time,
+            Priority: 'High',
+            Status: 'Pending'
+          };
+          
+          try {
+            await recordDragDropConflict(conflictData);
+            newConflictsCount++;
+            console.log(`NEW Room Double Booking Conflict: ${conflictId}`);
+          } catch (error) {
+            console.error("Failed to record new room double booking conflict:", error);
+          }
+        } else {
+          console.log(`EXISTING ACTIVE Room Double Booking Conflict: ${conflictId}`);
+        }
+      }
+
+      // STEP 5: Check Instructor Conflicts for new ones
+      for (const conflict of conflictResults.details.instructorConflict) {
+        const conflictId = generateConflictId(conflict, 'Instructor Conflict');
+        
+        if (!existingActiveConflictIds.has(conflictId)) {
+          const conflictTimeRange = conflict.timeRange || conflict.time;
+          
+          const conflictData = {
+            Year: selectedYear,
+            Semester: selectedSemester,
+            Type: 'Instructor Conflict',
+            Description: `Instructor conflict: ${conflict.instructorName} assigned to multiple events (${conflict.conflictingEvents.map(e => 
+              `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''}) in ${e.roomCode}`
+            ).join(' and ')}) on ${conflict.day} at ${conflictTimeRange}`,
+            CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+            InstructorID: conflict.instructorId,
+            Day: conflict.day,
+            StartTime: conflictTimeRange,
+            Priority: 'High',
+            Status: 'Pending'
+          };
+          
+          try {
+            await recordDragDropConflict(conflictData);
+            newConflictsCount++;
+            console.log(`NEW Instructor Conflict: ${conflictId}`);
+          } catch (error) {
+            console.error("Failed to record new instructor conflict:", error);
+          }
+        } else {
+          console.log(`EXISTING ACTIVE Instructor Conflict: ${conflictId}`);
+        }
+      }
+
+      // STEP 6: Check Time Slot Exceeded Conflicts for new ones
+      for (const conflict of conflictResults.details.timeSlotExceeded) {
+        const conflictId = generateConflictId(conflict, 'Time Slot Exceeded');
+        
+        if (!existingActiveConflictIds.has(conflictId)) {
+          const conflictData = {
+            Year: selectedYear,
+            Semester: selectedSemester,
+            Type: 'Time Slot Exceeded',
+            Description: `Time slot exceeded: ${conflict.courseCode} (${conflict.occType}${conflict.occNumber ? ` Occ ${Array.isArray(conflict.occNumber) ? conflict.occNumber.join(', ') : conflict.occNumber}` : ''}) extends beyond available time slots (requires ${conflict.duration} hours but only ${conflict.availableSlots} slots available)`,
+            CourseCode: conflict.courseCode,
+            Day: conflict.day,
+            StartTime: conflict.startTime,
+            Priority: 'Medium',
+            Status: 'Pending'
+          };
+          
+          try {
+            await recordDragDropConflict(conflictData);
+            newConflictsCount++;
+            console.log(`NEW Time Slot Exceeded Conflict: ${conflictId}`);
+          } catch (error) {
+            console.error("Failed to record new time slot exceeded conflict:", error);
+          }
+        } else {
+          console.log(`EXISTING ACTIVE Time Slot Exceeded Conflict: ${conflictId}`);
+        }
+      }
+      
+      console.log(`Successfully recorded ${newConflictsCount} new conflicts. ${existingActiveConflicts.length} existing active conflicts were preserved.`);
+    }
+
+    // STEP 7: Save the timetable
     await axios.post(
       "http://localhost:3001/home/save-timetable",
       { year: selectedYear, semester: selectedSemester, timetable: timetableArr },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    showAlert("Timetable saved to database!", "success");
+    
+    // STEP 8: Show appropriate message based on conflicts
+    if (conflictResults.summary.total > 0) {
+      if (newConflictsCount > 0) {
+        showAlert(
+          `Timetable saved successfully!\n\n${newConflictsCount} new conflict${newConflictsCount !== 1 ? 's' : ''} detected and recorded.`,
+          "warning",
+          6000
+        );
+      } else {
+        // showAlert(
+        //   `Timetable saved successfully!\n\nNo new conflicts detected. ${existingActiveConflicts.length} existing active conflicts were preserved.`,
+        //   "success"
+        // );
+        showAlert(
+          `Timetable saved successfully!`,
+          "success"
+        );
+      }
+    } else {
+      if (existingActiveConflicts.length > 0) {
+        // showAlert(
+        //   `Timetable saved successfully!\n\nAll conflicts have been resolved! Previously there were ${existingActiveConflicts.length} active conflicts.`,
+        //   "success"
+        // );
+        showAlert(
+          `Timetable saved successfully!`,
+          "success"
+        );
+      } else {
+        showAlert("Timetable saved to database with no conflicts!", "success");
+      }
+    }
+    
     setIsModified(false);
     setIsGenerated(true);
   } catch (error) {
@@ -3123,151 +3588,96 @@ const handleGenerateTimetable = async () => {
                                     <select
   value={event.selectedInstructorId || ""}
   onChange={async (e) => {
-    const selectedId = e.target.value;
-    const selectedInstructorObj = instructors.find(inst => inst._id === selectedId);
-    const selectedName = selectedInstructorObj ? selectedInstructorObj.name : "";
+  const selectedId = e.target.value;
+  const selectedInstructorObj = instructors.find(inst => inst._id === selectedId);
+  const selectedName = selectedInstructorObj ? selectedInstructorObj.name : "";
+  
+  // Check for occurrence restriction violations
+  if (selectedId && selectedId.trim() !== "") {
+    const occurrenceViolation = checkOccurrenceRestriction(event, selectedId, timetable);
     
-    // Check for occurrence restriction violations
-    if (selectedId && selectedId.trim() !== "") {
-      const occurrenceViolation = checkOccurrenceRestriction(event, selectedId, timetable);
+    if (occurrenceViolation && occurrenceViolation.isViolation) {
+      let violationMessage = `Occurrence Restriction Violation:\n\n${occurrenceViolation.message}\n\n`;
       
-      if (occurrenceViolation && occurrenceViolation.isViolation) {
-        let violationMessage = `Occurrence Restriction Violation:\n\n${occurrenceViolation.message}\n\n`;
-        
-        if (occurrenceViolation.instructorLectures.length > 0) {
-          violationMessage += "This instructor teaches lectures for the following occurrences:\n";
-          occurrenceViolation.instructorLectures.forEach((lecture, index) => {
-            violationMessage += `${index + 1}. Occurrences [${lecture.occurrences.join(', ')}] on ${lecture.day} at ${lecture.time}\n`;
-          });
-          violationMessage += "\nTo assign this instructor to this tutorial, they must also teach a lecture covering the same occurrences.";
-        }
-        
-        violationMessage += "\n\nDo you want to proceed anyway? This will create a scheduling violation.";
-        
-        if (!confirm(violationMessage)) {
-          return; // Don't apply the change
-        }
-        
-        // Record the occurrence restriction violation
-        const violationData = {
-          Year: selectedYear,
-          Semester: selectedSemester,
-          Type: 'Instructor Conflict', // Using existing conflict type
-          Description: `Occurrence restriction violation: ${selectedName} assigned to teach tutorial ${event.code} (${event.raw.OccType}) for occurrences [${Array.isArray(event.raw.OccNumber) ? event.raw.OccNumber.join(', ') : event.raw.OccNumber}] but only teaches lectures for different occurrences`,
-          CourseCode: event.code,
-          InstructorID: selectedId,
-          RoomID: room._id,
-          Day: selectedDay,
-          StartTime: event.raw.StartTime,
-          Priority: 'Medium',
-          Status: 'Pending',
-          OccNumber: event.raw.OccNumber
-        };
-        
-        try {
-          await recordDragDropConflict(violationData);
-          console.log("Occurrence restriction violation recorded:", violationData);
-        } catch (error) {
-          console.error("Failed to record occurrence restriction violation:", error);
-        }
-      }
-      
-      // Check for standard instructor conflicts (existing logic)
-      const eventStartIdx = TIMES.findIndex(t => t === event.raw.StartTime);
-      const eventDuration = event.raw?.Duration || 1;
-      
-      const tempEvent = {
-        ...event,
-        selectedInstructorId: selectedId,
-        selectedInstructor: selectedName
-      };
-      
-      const timeConflicts = checkInstructorConflicts(
-        timetable,
-        tempEvent,
-        selectedDay,
-        eventStartIdx,
-        eventDuration
-      );
-      
-      if (timeConflicts.length > 0) {
-        let conflictMessage = `Warning: ${selectedName} is already assigned to:\n\n`;
-        timeConflicts.forEach((conflict, index) => {
-          const occText = conflict.conflictingOccNumber 
-            ? Array.isArray(conflict.conflictingOccNumber)
-              ? ` (Occ ${conflict.conflictingOccNumber.join(", ")})`
-              : ` (Occ ${conflict.conflictingOccNumber})`
-            : "";
-          conflictMessage += `${index + 1}. ${conflict.conflictingCourse} (${conflict.conflictingCourseType})${occText} in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
+      if (occurrenceViolation.instructorLectures.length > 0) {
+        violationMessage += "This instructor teaches lectures for the following occurrences:\n";
+        occurrenceViolation.instructorLectures.forEach((lecture, index) => {
+          violationMessage += `${index + 1}. Occurrences [${lecture.occurrences.join(', ')}] on ${lecture.day} at ${lecture.time}\n`;
         });
-        conflictMessage += "\nThis will create scheduling conflicts. Do you want to proceed anyway?";
-        
-         const confirmed = await showConfirm(
-          conflictMessage, 
-          "Instructor Conflicts Detected"
-        );
-        if (!confirmed) {
-          return;
-        }
-        
-        // Record the time conflicts (existing logic)
-        for (const conflict of timeConflicts) {
-          const conflictData = {
-            Year: selectedYear,
-            Semester: selectedSemester,
-            Type: 'Instructor Conflict',
-            Description: `${selectedName} assigned to both ${event.code} (${event.raw.OccType}) ${
-              event.raw.OccNumber
-                ? Array.isArray(event.raw.OccNumber)
-                  ? `(Occ ${event.raw.OccNumber.join(", ")})`
-                  : `(Occ ${event.raw.OccNumber})`
-                : ""
-            } in ${room.code} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${
-              conflict.conflictingOccNumber
-                ? Array.isArray(conflict.conflictingOccNumber)
-                  ? `(Occ ${conflict.conflictingOccNumber.join(", ")})`
-                  : `(Occ ${conflict.conflictingOccNumber})`
-                : "(Occ Unknown)"
-            } in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.timeSlot}`,
-            CourseCode: event.code,
-            InstructorID: selectedId,
-            RoomID: room._id,
-            Day: selectedDay,
-            StartTime: conflict.timeSlot,
-            Priority: 'High',
-            Status: 'Pending',
-            OccNumber: event.raw.OccNumber
-          };
-          
-          try {
-            await recordDragDropConflict(conflictData);
-          } catch (error) {
-            console.error("Failed to record instructor conflict:", error);
-          }
-        }
+        violationMessage += "\nTo assign this instructor to this tutorial, they must also teach a lecture covering the same occurrences.";
       }
+      
+      violationMessage += "\n\nDo you want to proceed anyway? This will create a scheduling violation that will be recorded when you save the timetable.";
+      
+      if (!confirm(violationMessage)) {
+        return; // Don't apply the change
+      }
+      
+      // NOTE: Removed recordDragDropConflict call - conflicts will be recorded on save
     }
     
-    // Update the event in all time slots it occupies
-    const newTimetable = JSON.parse(JSON.stringify(timetable));
+    // Check for standard instructor conflicts (existing logic)
+    const eventStartIdx = TIMES.findIndex(t => t === event.raw.StartTime);
+    const eventDuration = event.raw?.Duration || 1;
     
-    // Find and update all instances of this event
-    DAYS.forEach(day => {
-      Object.keys(newTimetable[day] || {}).forEach(roomId => {
-        newTimetable[day][roomId].forEach(slot => {
-          slot.forEach(item => {
-            if (item.id === event.id) {
-              item.selectedInstructorId = selectedId;
-              item.selectedInstructor = selectedName;
-            }
-          });
+    const tempEvent = {
+      ...event,
+      selectedInstructorId: selectedId,
+      selectedInstructor: selectedName
+    };
+    
+    const timeConflicts = checkInstructorConflicts(
+      timetable,
+      tempEvent,
+      selectedDay,
+      eventStartIdx,
+      eventDuration
+    );
+    
+    if (timeConflicts.length > 0) {
+      let conflictMessage = `Warning: ${selectedName} is already assigned to:\n\n`;
+      timeConflicts.forEach((conflict, index) => {
+        const occText = conflict.conflictingOccNumber 
+          ? Array.isArray(conflict.conflictingOccNumber)
+            ? ` (Occ ${conflict.conflictingOccNumber.join(", ")})`
+            : ` (Occ ${conflict.conflictingOccNumber})`
+          : "";
+        conflictMessage += `${index + 1}. ${conflict.conflictingCourse} (${conflict.conflictingCourseType})${occText} in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
+      });
+      conflictMessage += "\nThis will create scheduling conflicts that will be recorded when you save the timetable. Do you want to proceed anyway?";
+      
+      const confirmed = await showConfirm(
+        conflictMessage, 
+        "Instructor Conflicts Detected"
+      );
+      if (!confirmed) {
+        return;
+      }
+      
+      // NOTE: Removed recordDragDropConflict loop - conflicts will be recorded on save
+    }
+  }
+  
+  // Update the event in all time slots it occupies
+  const newTimetable = JSON.parse(JSON.stringify(timetable));
+  
+  // Find and update all instances of this event
+  DAYS.forEach(day => {
+    Object.keys(newTimetable[day] || {}).forEach(roomId => {
+      newTimetable[day][roomId].forEach(slot => {
+        slot.forEach(item => {
+          if (item.id === event.id) {
+            item.selectedInstructorId = selectedId;
+            item.selectedInstructor = selectedName;
+          }
         });
       });
     });
-    
-    setTimetable(newTimetable);
-    setIsModified(true);
-  }}
+  });
+  
+  setTimetable(newTimetable);
+  setIsModified(true);
+}}
   style={{
     width: "100%",
     fontSize: "12px",
