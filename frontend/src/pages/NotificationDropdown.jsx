@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom'; // Add this import
+import { io } from 'socket.io-client';
 import axios from 'axios';
 import CIcon from '@coreui/icons-react';
 import { cilBell } from '@coreui/icons';
+
+const socket = io('http://localhost:3001', {
+  autoConnect: false,
+  transports: ['websocket']
+});
 
 const NotificationDropdown = () => {
   const [notifications, setNotifications] = useState([]);
@@ -10,6 +17,45 @@ const NotificationDropdown = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const dropdownRef = useRef(null);
+  const navigate = useNavigate(); // Initialize navigate
+
+  // Map notification types to routes (only 2 types for now)
+  const getNotificationRoute = (notification) => {
+    switch (notification.type) {
+      case 'timetable_published':
+        // Navigate to user home page with year and semester query params
+        return `/user/home?year=${notification.academicYear}&semester=${notification.semester}`;
+      
+      case 'feedback':
+        // Navigate to feedback page (not detail, just feedback list)
+        return `/user/feedback`;
+      
+      default:
+        // Fallback to user home for any other type
+        return `/user/home`;
+    }
+  };
+
+  // Handle notification click
+  const handleNotificationClick = async (notification) => {
+    try {
+      // Mark as read first
+      if (!notification.isRead) {
+        await markAsRead(notification._id);
+      }
+
+      // Close dropdown
+      setIsOpen(false);
+
+      // Navigate to relevant page
+      const route = getNotificationRoute(notification);
+      navigate(route);
+      
+      console.log(`✅ Navigated to: ${route}`);
+    } catch (error) {
+      console.error('❌ Error handling notification click:', error);
+    }
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -23,7 +69,49 @@ const NotificationDropdown = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Function to decode JWT token and extract user ID
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role');
+    const userId = localStorage.getItem('userId');
+    if (token && userId && role) {
+      socket.connect();
+      socket.emit('identify', { userId, role });
+    }
+
+    socket.on('notification', (data) => {
+      if (data.recipients.includes(role)) {
+        setNotifications(prev => [data.notification, ...prev]);
+        setUnreadCount(prev => prev + 1);
+        
+        // Optional: Show browser notification
+        showBrowserNotification(data.notification);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+      socket.off('notification');
+    };
+  }, []);
+
+  // Optional: Browser notification for real-time alerts
+  const showBrowserNotification = (notification) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(notification.title, {
+        body: notification.message,
+        icon: '/notification-icon.png', // Add your icon path
+        tag: notification._id,
+      });
+    }
+  };
+
+  // Request browser notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   const decodeToken = (token) => {
     try {
       const base64Url = token.split('.')[1];
@@ -33,7 +121,6 @@ const NotificationDropdown = () => {
       }).join(''));
       
       const decoded = JSON.parse(jsonPayload);
-      console.log('Decoded token:', decoded);
       return decoded.id || decoded.userId || decoded.sub;
     } catch (error) {
       console.error('Error decoding token:', error);
@@ -44,19 +131,14 @@ const NotificationDropdown = () => {
   const getUserCredentials = () => {
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('role');
-    
-    // Try multiple ways to get userId
     let userId = localStorage.getItem('userId') || 
                  localStorage.getItem('id') || 
                  localStorage.getItem('user_id');
     
-    // If no userId in localStorage, try to decode from token
     if (!userId && token) {
       userId = decodeToken(token);
       if (userId) {
-        // Store it for future use
         localStorage.setItem('userId', userId);
-        console.log('âœ… Extracted and stored userId from token:', userId);
       }
     }
     
@@ -70,14 +152,6 @@ const NotificationDropdown = () => {
       
       const { token, userId, role } = getUserCredentials();
 
-      console.log('=== NOTIFICATION FETCH DEBUG ===');
-      console.log('All localStorage keys:', Object.keys(localStorage));
-      Object.keys(localStorage).forEach(key => {
-        console.log(`${key}: ${localStorage.getItem(key)}`);
-      });
-      console.log('Extracted credentials:', { token: !!token, userId, role });
-      console.log('================================');
-
       if (!token || !userId || !role) {
         throw new Error(`Missing credentials: token=${!!token}, userId=${!!userId}, role=${!!role}`);
       }
@@ -89,18 +163,14 @@ const NotificationDropdown = () => {
           'x-user-role': role
         }
       });
-
-      console.log('âœ… Notifications response:', response.data);
       
       if (response.data && Array.isArray(response.data.notifications)) {
         setNotifications(response.data.notifications);
       } else {
-        console.error('âŒ Invalid notifications response format:', response.data);
         setNotifications([]);
       }
     } catch (error) {
-      console.error('âŒ Error fetching notifications:', error);
-      console.error('Error response:', error.response?.data);
+      console.error('❌ Error fetching notifications:', error);
       setError(error.response?.data?.error || error.message || 'Failed to fetch notifications');
       setNotifications([]);
     } finally {
@@ -113,7 +183,6 @@ const NotificationDropdown = () => {
       const { token, userId, role } = getUserCredentials();
 
       if (!token || !userId || !role) {
-        console.warn(`Missing credentials for unread count: token=${!!token}, userId=${!!userId}, role=${!!role}`);
         return;
       }
 
@@ -124,13 +193,10 @@ const NotificationDropdown = () => {
           'x-user-role': role
         }
       });
-
-      console.log('Unread count response:', response.data);
       
       if (response.data && typeof response.data.unreadCount === 'number') {
         setUnreadCount(response.data.unreadCount);
       } else {
-        console.error('Invalid unread count response:', response.data);
         setUnreadCount(0);
       }
     } catch (error) {
@@ -144,7 +210,6 @@ const NotificationDropdown = () => {
       const { token, userId } = getUserCredentials();
 
       if (!token || !userId) {
-        console.error(`Missing credentials for mark as read: token=${!!token}, userId=${!!userId}`);
         return;
       }
 
@@ -155,7 +220,6 @@ const NotificationDropdown = () => {
         }
       });
 
-      // Update local state
       setNotifications(prev => 
         prev.map(notif => 
           notif._id === notificationId 
@@ -165,24 +229,19 @@ const NotificationDropdown = () => {
       );
       
       setUnreadCount(prev => Math.max(0, prev - 1));
-      console.log('âœ… Notification marked as read successfully');
     } catch (error) {
-      console.error('âŒ Error marking notification as read:', error);
+      console.error('❌ Error marking notification as read:', error);
     }
   };
 
   useEffect(() => {
-    console.log('ðŸ"" NotificationDropdown mounted');
     fetchUnreadCount();
-    
-    // Poll for new notifications every 30 seconds
     const interval = setInterval(fetchUnreadCount, 30000);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     if (isOpen) {
-      console.log('Dropdown opened, fetching notifications');
       fetchNotifications();
     }
   }, [isOpen]);
@@ -201,7 +260,6 @@ const NotificationDropdown = () => {
       if (diffMinutes > 0) return `${diffMinutes}m ago`;
       return 'Just now';
     } catch (error) {
-      console.error('Error formatting date:', error);
       return 'Unknown time';
     }
   };
@@ -209,13 +267,20 @@ const NotificationDropdown = () => {
   const handleToggleClick = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('ðŸ–±ï¸ Toggle clicked, current isOpen:', isOpen);
     setIsOpen(!isOpen);
+  };
+
+  // Get icon for notification type (only 2 types)
+  const getNotificationIcon = (type) => {
+    const iconMap = {
+      timetable_published: '📅',
+      feedback: '💬'
+    };
+    return iconMap[type] || '🔔';
   };
 
   return (
     <>
-      {/* Enhanced Styles */}
       <style jsx>{`
         @keyframes fadeInDown {
           from {
@@ -258,9 +323,9 @@ const NotificationDropdown = () => {
         }
 
         .notification-item:hover {
-          background-color: rgba(1, 85, 81, 0.02) !important;
+          background-color: rgba(1, 85, 81, 0.05) !important;
           transform: translateX(2px);
-          border-left-color: rgba(1, 85, 81, 0.3);
+          border-left-color: rgba(1, 85, 81, 0.5);
         }
 
         .notification-item.unread {
@@ -271,10 +336,21 @@ const NotificationDropdown = () => {
         .loading-spinner {
           border-top-color: #015551;
         }
+
+        .notification-icon {
+          font-size: 20px;
+          width: 40px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(1, 85, 81, 0.08);
+          border-radius: 10px;
+          flex-shrink: 0;
+        }
       `}</style>
 
       <div className="position-relative" ref={dropdownRef}>
-        {/* Enhanced Notification Bell Button */}
         <button
           className="btn p-1 border-0 bg-transparent position-relative bell-button"
           onClick={handleToggleClick}
@@ -299,13 +375,12 @@ const NotificationDropdown = () => {
           )}
         </button>
 
-        {/* Enhanced Dropdown Menu */}
         {isOpen && (
           <div
             className="position-absolute top-100 end-0 bg-white border-0 rounded-3 shadow-lg notification-dropdown"
             style={{ 
-              width: '380px', 
-              maxHeight: '450px', 
+              width: '400px', 
+              maxHeight: '500px', 
               overflowY: 'auto',
               zIndex: 1050,
               marginTop: '6px',
@@ -313,7 +388,6 @@ const NotificationDropdown = () => {
               border: '1px solid rgba(0, 0, 0, 0.05)'
             }}
           >
-            {/* Enhanced Header */}
             <div 
               className="px-4 py-4 border-bottom"
               style={{ 
@@ -335,7 +409,6 @@ const NotificationDropdown = () => {
               </div>
             </div>
             
-            {/* Enhanced Content */}
             {error ? (
               <div className="text-center py-5 px-4">
                 <div className="mb-3" style={{ fontSize: '3rem', opacity: '0.3' }}>⚠️</div>
@@ -373,13 +446,16 @@ const NotificationDropdown = () => {
                     cursor: 'pointer',
                     borderBottom: index === notifications.length - 1 ? 'none' : '1px solid rgba(0, 0, 0, 0.05)'
                   }}
-                  onClick={() => !notification.isRead && markAsRead(notification._id)}
+                  onClick={() => handleNotificationClick(notification)}
                 >
-                  <div className="d-flex justify-content-between align-items-start">
-                    <div className="flex-grow-1 me-3">
-                      <div className="d-flex align-items-center mb-2">
+                  <div className="d-flex align-items-start gap-3">
+                    <div className="notification-icon">
+                      {getNotificationIcon(notification.type)}
+                    </div>
+                    <div className="flex-grow-1">
+                      <div className="d-flex justify-content-between align-items-start mb-1">
                         <div 
-                          className="fw-bold mb-0" 
+                          className="fw-bold" 
                           style={{ 
                             fontSize: '15px',
                             color: notification.isRead ? '#6b7280' : '#1f2937',
@@ -391,39 +467,39 @@ const NotificationDropdown = () => {
                         {!notification.isRead && (
                           <div 
                             className="bg-primary rounded-circle ms-2"
-                            style={{ width: '8px', height: '8px' }}
+                            style={{ width: '8px', height: '8px', marginTop: '6px' }}
                           />
                         )}
                       </div>
                       <div 
                         className="text-muted mb-2" 
                         style={{ 
-                          fontSize: '14px',
+                          fontSize: '13px',
                           lineHeight: '1.4',
                           opacity: notification.isRead ? '0.7' : '0.9'
                         }}
                       >
                         {notification.message || 'No message'}
                       </div>
-                      <div 
-                        className="small text-muted d-flex align-items-center"
-                        style={{ fontSize: '12px' }}
-                      >
-                        <span>{formatDate(notification.createdAt)}</span>
-                      </div>
-                    </div>
-                    <div className="text-end">
-                      {!notification.isRead && (
-                        <span 
-                          className="badge bg-primary rounded-pill"
-                          style={{ 
-                            fontSize: '10px',
-                            padding: '4px 8px'
-                          }}
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div 
+                          className="small text-muted"
+                          style={{ fontSize: '12px' }}
                         >
-                          New
-                        </span>
-                      )}
+                          {formatDate(notification.createdAt)}
+                        </div>
+                        {!notification.isRead && (
+                          <span 
+                            className="badge bg-primary rounded-pill"
+                            style={{ 
+                              fontSize: '10px',
+                              padding: '4px 8px'
+                            }}
+                          >
+                            New
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

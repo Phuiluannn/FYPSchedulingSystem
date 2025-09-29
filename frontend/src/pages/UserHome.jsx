@@ -6,6 +6,7 @@ import { BiExport, BiSearch, BiX } from "react-icons/bi";
 import Papa from "papaparse";
 import html2canvas from "html2canvas";
 import { useAlert } from './AlertContext';
+import { useSearchParams } from 'react-router-dom';
 
 const TIMES = [
   "8.00 AM - 9.00 AM",
@@ -24,7 +25,7 @@ function UserHome() {
   const [rooms, setRooms] = useState([]);
   const [roomsReady, setRoomsReady] = useState(false);
   const [selectedDay, setSelectedDay] = useState("Monday");
-  const [selectedYear, setSelectedYear] = useState("2024/2025");
+  const [selectedYear, setSelectedYear] = useState("2025/2026");
   const [selectedSemester, setSelectedSemester] = useState("1");
   const [timetable, setTimetable] = useState({});
   const [showExportModal, setShowExportModal] = useState(false);
@@ -46,6 +47,22 @@ function UserHome() {
   const exportButtonRef = useRef(null);
   const role = localStorage.getItem('role') || 'student';
   const { showAlert, showConfirm } = useAlert();
+  const [searchParams] = useSearchParams();
+  
+  useEffect(() => {
+    const yearFromUrl = searchParams.get('year');
+    const semesterFromUrl = searchParams.get('semester');
+    
+    if (yearFromUrl) {
+      console.log('📅 Year from notification:', yearFromUrl);
+      setSelectedYear(yearFromUrl);
+    }
+    
+    if (semesterFromUrl) {
+      console.log('📅 Semester from notification:', semesterFromUrl);
+      setSelectedSemester(semesterFromUrl);
+    }
+  }, [searchParams]);
 
   // Check if event matches search query
   const isEventMatchingSearch = (item) => {
@@ -795,7 +812,7 @@ useEffect(() => {
                 onChange={e => setSelectedYear(e.target.value)}
               >
                 <option value="" disabled>Academic Year</option>
-                <option value="2024/2025">2024/2025</option>
+                {/* <option value="2024/2025">2024/2025</option> */}
                 <option value="2025/2026">2025/2026</option>
                 <option value="2026/2027">2026/2027</option>
                 <option value="2027/2028">2027/2028</option>

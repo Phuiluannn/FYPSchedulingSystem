@@ -26,7 +26,7 @@ function Home() {
   const [rooms, setRooms] = useState([]);
   const [roomsReady, setRoomsReady] = useState(false);
   const [selectedDay, setSelectedDay] = useState("Monday");
-  const [selectedYear, setSelectedYear] = useState("2024/2025");
+  const [selectedYear, setSelectedYear] = useState("2025/2026");
   const [selectedSemester, setSelectedSemester] = useState("1");
   const [timetable, setTimetable] = useState({});
   const [isGenerated, setIsGenerated] = useState(false);
@@ -3175,7 +3175,7 @@ const handleSaveTimetable = async () => {
       onChange={e => setSelectedYear(e.target.value)}
     >
       <option value="" disabled>Academic Year</option>
-      <option value="2024/2025">2024/2025</option>
+      {/* <option value="2024/2025">2024/2025</option> */}
       <option value="2025/2026">2025/2026</option>
       <option value="2026/2027">2026/2027</option>
       <option value="2027/2028">2027/2028</option>

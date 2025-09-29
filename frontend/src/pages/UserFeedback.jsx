@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
+import { io } from "socket.io-client";
 import axios from "axios";
 import SideBar from "./SideBar";
 import ProtectedRoute from "./ProtectedRoute";
+import { BiSort, BiSortUp, BiSortDown } from "react-icons/bi";
 
+const socket = io('http://localhost:3001', { transports: ['websocket'] });
 const statusTabs = ["All", "Pending", "In Progress", "Resolved"];
 
 function UserFeedback() {
@@ -18,6 +21,7 @@ function UserFeedback() {
   });
   const [errorMessage, setErrorMessage] = useState("");
   const [deleteErrorMessage, setDeleteErrorMessage] = useState("");
+  const [sortOrder, setSortOrder] = useState("desc");
   const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
 
   // Fetch feedback on mount and when activeTab changes
@@ -42,6 +46,31 @@ function UserFeedback() {
   }, [activeTab]);
 
   useEffect(() => {
+  socket.connect();
+
+  socket.on('feedback:new', (newFeedback) => {
+    setFeedbackList(prev => [newFeedback, ...prev]);
+  });
+
+  socket.on('feedback:update', (updatedFeedback) => {
+    setFeedbackList(prev =>
+      prev.map(fb => fb._id === updatedFeedback._id ? updatedFeedback : fb)
+    );
+  });
+
+  socket.on('feedback:delete', ({ _id }) => {
+    setFeedbackList(prev => prev.filter(fb => fb._id !== _id));
+  });
+
+  return () => {
+    socket.disconnect();
+    socket.off('feedback:new');
+    socket.off('feedback:update');
+    socket.off('feedback:delete');
+  };
+}, []);
+
+  useEffect(() => {
     if (showModal || showDeleteModal) {
       document.body.style.overflow = "hidden";
     } else {
@@ -52,7 +81,13 @@ function UserFeedback() {
     };
   }, [showModal, showDeleteModal]);
 
-  const filteredFeedback = feedbackList; // Backend handles filtering by status
+  const sortedFeedback = [...feedbackList].sort((a, b) => {
+  const dateA = new Date(a.submitted);
+  const dateB = new Date(b.submitted);
+  return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+});
+
+const filteredFeedback = sortedFeedback; // Backend handles filtering by status
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -60,37 +95,42 @@ function UserFeedback() {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim() || !form.feedback.trim()) {
-      setErrorMessage("Please fill in both Subject and Description fields.");
-      return;
+  e.preventDefault();
+  if (!form.title.trim() || !form.feedback.trim()) {
+    setErrorMessage("Please fill in both Subject and Description fields.");
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem("token");
+
+    // Set priority based on feedback type
+    let priority = "Low";
+    if (form.type === "Schedule Issue") {
+      priority = "High";
+    } else if (form.type === "Bug") {
+      priority = "Medium";
     }
-    
-    try {
-      const token = localStorage.getItem("token");
-      
-      // Automatically set priority based on feedback type
-      const priority = form.type === "Schedule Issue" ? "High" : "Low";
-      
-      const response = await axios.post(
-        "http://localhost:3001/user/feedback",
-        {
-          title: form.title,
-          type: form.type,
-          feedback: form.feedback,
-          priority: priority
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      setFeedbackList([response.data, ...feedbackList]);
-      setShowModal(false);
-      setForm({ title: "", type: "", feedback: "" });
-      setErrorMessage("");
-    } catch (error) {
-      setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
-    }
-  };
+
+    const response = await axios.post(
+      "http://localhost:3001/user/feedback",
+      {
+        title: form.title,
+        type: form.type,
+        feedback: form.feedback,
+        priority: priority
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    setFeedbackList([response.data, ...feedbackList]);
+    setShowModal(false);
+    setForm({ title: "", type: "", feedback: "" });
+    setErrorMessage("");
+  } catch (error) {
+    setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
+  }
+};
 
   const handleDeleteClick = (feedback) => {
     setFeedbackToDelete(feedback);
@@ -143,28 +183,59 @@ function UserFeedback() {
             }}
           >
             <div className="d-flex justify-content-between align-items-start mb-4">
-              <h2 className="fw-bold mb-0">Feedback</h2>
-              <button
-                className="btn"
-                style={{
-                  background: "#015551",
-                  color: "#fff",
-                  fontWeight: 500,
-                  borderRadius: 8,
-                  minWidth: 160,
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 12px",
-                  fontSize: 16,
-                  marginTop: 18,
-                }}
-                onClick={() => setShowModal(true)}
-              >
-                <span style={{ fontSize: 18 }}>+</span> Submit Feedback
-              </button>
-            </div>
+  <h2 className="fw-bold mb-0">Feedback</h2>
+  <div className="d-flex gap-2">
+    <button
+      className="btn"
+      style={{
+        background: "#f8f9fa",
+        color: "#495057",
+        fontWeight: 500,
+        borderRadius: 8,
+        minWidth: 140,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 12px",
+        fontSize: 14,
+        marginTop: 18,
+        border: "1px solid #dee2e6"
+      }}
+      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+    >
+      {sortOrder === "asc" ? (
+        <>
+          <BiSortUp size={18} /> Oldest First
+        </>
+      ) : (
+        <>
+          <BiSortDown size={18} /> Newest First
+        </>
+      )}
+    </button>
+    <button
+      className="btn"
+      style={{
+        background: "#015551",
+        color: "#fff",
+        fontWeight: 500,
+        borderRadius: 8,
+        minWidth: 160,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 12px",
+        fontSize: 16,
+        marginTop: 18,
+      }}
+      onClick={() => setShowModal(true)}
+    >
+      <span style={{ fontSize: 18 }}>+</span> Submit Feedback
+    </button>
+  </div>
+</div>
             {/* Tabs */}
             <div className="d-flex mb-4" style={{ gap: 2 }}>
               {statusTabs.map((tab) => (

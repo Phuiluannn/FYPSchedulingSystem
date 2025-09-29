@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
+import { io } from "socket.io-client";
 import axios from "axios";
 import SideBar from "./SideBar";
 import ProtectedRoute from "./ProtectedRoute";
 import CIcon from '@coreui/icons-react';
 import { cilWarning, cilClock, cilCheckCircle } from '@coreui/icons';
-import { BiSearch } from "react-icons/bi";
+import { BiSearch, BiSort, BiSortUp, BiSortDown } from "react-icons/bi";
 
 const statusTabs = ["All", "Open", "In Progress", "Resolved"];
 const statusMap = {
@@ -12,6 +13,8 @@ const statusMap = {
   "In Progress": "In Progress",
   Resolved: "Resolved",
 };
+
+const socket = io('http://localhost:3001', { transports: ['websocket'] });
 
 function AdminFeedback() {
   const [activeTab, setActiveTab] = useState("All");
@@ -34,6 +37,7 @@ function AdminFeedback() {
 const [selectedPriorities, setSelectedPriorities] = useState(["All"]);
 const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
 const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+const [sortOrder, setSortOrder] = useState("asc"); // "asc" for oldest first, "desc" for newest first
 
   // Fetch all feedback for admin
   useEffect(() => {
@@ -50,6 +54,31 @@ const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
     };
     fetchFeedback();
   }, []);
+
+  useEffect(() => {
+  socket.connect();
+
+  socket.on('feedback:new', (newFeedback) => {
+    setFeedbackList(prev => [newFeedback, ...prev]);
+  });
+
+  socket.on('feedback:update', (updatedFeedback) => {
+    setFeedbackList(prev =>
+      prev.map(fb => fb._id === updatedFeedback._id ? updatedFeedback : fb)
+    );
+  });
+
+  socket.on('feedback:delete', ({ _id }) => {
+    setFeedbackList(prev => prev.filter(fb => fb._id !== _id));
+  });
+
+  return () => {
+    socket.disconnect();
+    socket.off('feedback:new');
+    socket.off('feedback:update');
+    socket.off('feedback:delete');
+  };
+}, []);
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -105,24 +134,27 @@ useEffect(() => {
 }, [showPriorityDropdown]);
 
   // Filter feedback by tab, search, category, and priority
-  const filteredFeedback = feedbackList.filter((fb) => {
-  const matchesStatus =
-    activeTab === "All" ||
-    (statusMap[activeTab] ? fb.status === statusMap[activeTab] : true);
-  
-  // Updated category filter - check if selectedCategories includes "All" or the feedback type
-  const matchesCategory = selectedCategories.includes("All") || selectedCategories.includes(fb.type);
-  
-  // Updated priority filter - check if selectedPriorities includes "All" or the feedback priority
-  const matchesPriority = selectedPriorities.includes("All") || selectedPriorities.includes(fb.priority);
-  
-  const matchesSearch =
-    !search ||
-    fb.title.toLowerCase().includes(search.toLowerCase()) ||
-    fb.feedback.toLowerCase().includes(search.toLowerCase());
+const filteredAndSortedFeedback = feedbackList
+  .filter((fb) => {
+    const matchesStatus =
+      activeTab === "All" ||
+      (statusMap[activeTab] ? fb.status === statusMap[activeTab] : true);
     
-  return matchesStatus && matchesCategory && matchesPriority && matchesSearch;
-});
+    const matchesCategory = selectedCategories.includes("All") || selectedCategories.includes(fb.type);
+    const matchesPriority = selectedPriorities.includes("All") || selectedPriorities.includes(fb.priority);
+    
+    const matchesSearch =
+      !search ||
+      fb.title.toLowerCase().includes(search.toLowerCase()) ||
+      fb.feedback.toLowerCase().includes(search.toLowerCase());
+      
+    return matchesStatus && matchesCategory && matchesPriority && matchesSearch;
+  })
+  .sort((a, b) => {
+    const dateA = new Date(a.submitted);
+    const dateB = new Date(b.submitted);
+    return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+  });
 
   const openCount = feedbackList.filter((fb) => fb.status === "Pending").length;
   const inProgressCount = feedbackList.filter((fb) => fb.status === "In Progress").length;
@@ -562,6 +594,34 @@ const handleModalSubmit = async (e) => {
     </div>
   )}
 </div>
+<button
+    className="btn"
+    style={{
+      background: "#f8f9fa",
+      color: "#495057",
+      fontWeight: 500,
+      borderRadius: 8,
+      minWidth: 140,
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      gap: 8,
+      padding: "8px 12px",
+      fontSize: 14,
+      border: "1px solid #dee2e6"
+    }}
+    onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+  >
+    {sortOrder === "asc" ? (
+      <>
+        <BiSortUp size={18} /> Oldest First
+      </>
+    ) : (
+      <>
+        <BiSortDown size={18} /> Newest First
+      </>
+    )}
+  </button>
             </div>
             {/* Status Tabs */}
             <div className="d-flex mb-4" style={{ gap: 2 }}>
@@ -588,10 +648,10 @@ const handleModalSubmit = async (e) => {
             </div>
             {/* Feedback List */}
             <div className="d-flex flex-column gap-4">
-              {filteredFeedback.length === 0 ? (
+              {filteredAndSortedFeedback.length === 0 ? (
                 <div className="text-center text-muted py-5">No feedback found.</div>
               ) : (
-                filteredFeedback.map((fb) => (
+                filteredAndSortedFeedback.map((fb) => (
                   <div
                     key={fb._id}
                     className="p-4"

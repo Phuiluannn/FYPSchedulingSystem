@@ -29,7 +29,7 @@ const allYears = ["1", "2", "3", "4"];
 
 function Courses() {
   // Filters
-  const [filterYear, setFilterYear] = useState("2024/2025");
+  const [filterYear, setFilterYear] = useState("2025/2026");
   const [filterSemester, setFilterSemester] = useState("1");
   const [courseSearch, setCourseSearch] = useState("");
   const [selectedCourseTypes, setSelectedCourseTypes] = useState(new Set());
@@ -67,7 +67,7 @@ function Courses() {
 
   // Copy Courses Modal
   const [showCopyModal, setShowCopyModal] = useState(false);
-  const [copyFromYear, setCopyFromYear] = useState("2024/2025");
+  const [copyFromYear, setCopyFromYear] = useState("2025/2026");
   const [copyFromSemester, setCopyFromSemester] = useState("1");
   const [copyError, setCopyError] = useState(null);
   const [copyLoading, setCopyLoading] = useState(false);
@@ -422,7 +422,7 @@ function Courses() {
                 onChange={(e) => setFilterYear(e.target.value)}
               >
                 <option value="" disabled>Academic Year</option>
-                <option value="2024/2025">2024/2025</option>
+                {/* <option value="2024/2025">2024/2025</option> */}
                 <option value="2025/2026">2025/2026</option>
                 <option value="2026/2027">2026/2027</option>
                 <option value="2027/2028">2027/2028</option>
@@ -704,7 +704,7 @@ function Courses() {
                           disabled={editCourseId === null}
                         >
                           <option value="" disabled>Select Year</option>
-                          <option value="2024/2025">2024/2025</option>
+                          {/* <option value="2024/2025">2024/2025</option> */}
                           <option value="2025/2026">2025/2026</option>
                           <option value="2026/2027">2026/2027</option>
                           <option value="2027/2028">2027/2028</option>
@@ -954,7 +954,7 @@ function Courses() {
                         value={copyFromYear}
                         onChange={e => setCopyFromYear(e.target.value)}
                       >
-                        <option value="2024/2025">2024/2025</option>
+                        {/* <option value="2024/2025">2024/2025</option> */}
                         <option value="2025/2026">2025/2026</option>
                         <option value="2026/2027">2026/2027</option>
                         <option value="2027/2028">2027/2028</option>

@@ -21,7 +21,7 @@ const TIMES = [
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 function InstructorTimetable() {
-  const [selectedYear, setSelectedYear] = useState("2024/2025");
+  const [selectedYear, setSelectedYear] = useState("2025/2026");
   const [selectedSemester, setSelectedSemester] = useState("1");
   const [timetable, setTimetable] = useState({});
   const [instructorInfo, setInstructorInfo] = useState(null);
@@ -415,7 +415,7 @@ if (noDataMessage) {
                 value={selectedYear}
                 onChange={e => setSelectedYear(e.target.value)}
               >
-                <option value="2024/2025">2024/2025</option>
+                {/* <option value="2024/2025">2024/2025</option> */}
                 <option value="2025/2026">2025/2026</option>
                 <option value="2026/2027">2026/2027</option>
                 <option value="2027/2028">2027/2028</option>
@@ -556,7 +556,7 @@ if (noDataMessage) {
                 onChange={e => setSelectedYear(e.target.value)}
               >
                 <option value="">Year</option>
-                <option value="2024/2025">2024/2025</option>
+                {/* <option value="2024/2025">2024/2025</option> */}
                 <option value="2025/2026">2025/2026</option>
                 <option value="2026/2027">2026/2027</option>
                 <option value="2027/2028">2027/2028</option>

@@ -1,4 +1,5 @@
 import * as feedbackService from '../services/feedbackService.js';
+import { io } from '../index.js';
 
 // Get all feedback (admin sees all, user sees own)
 export const getAllFeedback = async (req, res) => {
@@ -34,9 +35,10 @@ export const createFeedback = async (req, res) => {
     const data = {
       ...req.body,
       user: req.user.id,
-    //   submitted: new Date(),
     };
     const feedback = await feedbackService.createFeedback(data);
+    // Emit to all clients
+    io.emit('feedback:new', feedback);
     res.status(201).json(feedback);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -50,11 +52,12 @@ export const updateFeedback = async (req, res) => {
     if (!feedback) {
       return res.status(404).json({ message: "Feedback not found" });
     }
-    // Only admin can update status/response/priority
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Unauthorized" });
     }
     const updatedFeedback = await feedbackService.updateFeedback(req.params.id, req.body);
+    // Emit to all clients
+    io.emit('feedback:update', updatedFeedback);
     res.status(200).json(updatedFeedback);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -75,6 +78,8 @@ export const deleteFeedback = async (req, res) => {
       return res.status(403).json({ message: "Unauthorized" });
     }
     await feedbackService.deleteFeedback(req.params.id);
+    // Emit to all clients
+    io.emit('feedback:delete', { _id: req.params.id });
     res.status(200).json({ message: "Feedback deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -1,9 +1,20 @@
 import Notification from '../models/Notification.js';
+import { io } from '../index.js';
 
 export const createNotification = async (notificationData) => {
   try {
     const notification = new Notification(notificationData);
-    return await notification.save();
+    const saved = await notification.save();
+
+    // Emit to all relevant users
+    if (notificationData.recipients && Array.isArray(notificationData.recipients)) {
+      io.emit('notification', {
+        recipients: notificationData.recipients,
+        notification: saved
+      });
+    }
+
+    return saved;
   } catch (error) {
     console.error("Error creating notification:", error);
     throw error;

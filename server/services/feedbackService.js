@@ -25,7 +25,9 @@ export const getFeedbackById = async (id) => {
 // Create a new feedback
 export const createFeedback = async (data) => {
   const feedback = new FeedbackModel(data);
-  return await feedback.save();
+  const savedFeedback = await feedback.save();
+  // Populate the user data before returning
+  return await FeedbackModel.findById(savedFeedback._id).populate("user", "name email role");
 };
 
 // Update a feedback

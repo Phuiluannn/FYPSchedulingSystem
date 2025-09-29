@@ -12,6 +12,8 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,6 +42,34 @@ app.use('/home', homeRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/api', notificationRoutes);
 
-app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
+const server = http.createServer(app);
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: "http://localhost:5173", // your frontend origin
+    methods: ["GET", "POST"]
+  }
+});
+
+// Store connected users (optional)
+const connectedUsers = new Map();
+
+io.on('connection', (socket) => {
+  console.log('🔔 User connected:', socket.id);
+
+  socket.on('identify', ({ userId, role }) => {
+    connectedUsers.set(socket.id, { userId, role });
+    console.log(`User identified: ${userId} (${role})`);
+  });
+
+  socket.on('disconnect', () => {
+    connectedUsers.delete(socket.id);
+    console.log('User disconnected:', socket.id);
+  });
+});
+
+// Export io for use in notificationService.js
+export { io };
+
+server.listen(PORT, () => {
+  console.log(`Server started on port ${PORT}`);
 });

@@ -9,10 +9,10 @@ import { useAlert } from './AlertContext';
 function Analytics() {
   const [activeTab, setActiveTab] = useState("workload");
   const [workloadSemester, setWorkloadSemester] = useState("Semester 1");
-  const [workloadYear, setWorkloadYear] = useState("2024/2025");
+  const [workloadYear, setWorkloadYear] = useState("2025/2026");
   const [workloadData, setWorkloadData] = useState([]);
   const [conflictSemester, setConflictSemester] = useState("Semester 1");
-  const [conflictYear, setConflictYear] = useState("2024/2025");
+  const [conflictYear, setConflictYear] = useState("2025/2026");
   const [conflictData, setConflictData] = useState([]);
   const [conflictStats, setConflictStats] = useState({
     total: 0,
@@ -416,7 +416,7 @@ const exportConflictData = () => {
                       onChange={e => setWorkloadYear(e.target.value)}
                     >
                       <option value="" disabled>Academic Year</option>
-                      <option value="2024/2025">2024/2025</option>
+                      {/* <option value="2024/2025">2024/2025</option> */}
                       <option value="2025/2026">2025/2026</option>
                       <option value="2026/2027">2026/2027</option>
                       <option value="2027/2028">2027/2028</option>
@@ -551,7 +551,7 @@ const exportConflictData = () => {
           onChange={e => setConflictYear(e.target.value)}
         >
           <option value="" disabled>Academic Year</option>
-          <option value="2024/2025">2024/2025</option>
+          {/* <option value="2024/2025">2024/2025</option> */}
           <option value="2025/2026">2025/2026</option>
           <option value="2026/2027">2026/2027</option>
           <option value="2027/2028">2027/2028</option>
