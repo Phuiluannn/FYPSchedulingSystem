@@ -20,42 +20,34 @@ const NotificationDropdown = () => {
   const navigate = useNavigate(); // Initialize navigate
 
   // Map notification types to routes (only 2 types for now)
-  const getNotificationRoute = (notification) => {
-    switch (notification.type) {
-      case 'timetable_published':
-        // Navigate to user home page with year and semester query params
-        return `/user/home?year=${notification.academicYear}&semester=${notification.semester}`;
-      
-      case 'feedback':
-        // Navigate to feedback page (not detail, just feedback list)
-        return `/user/feedback`;
-      
-      default:
-        // Fallback to user home for any other type
-        return `/user/home`;
-    }
-  };
-
-  // Handle notification click
   const handleNotificationClick = async (notification) => {
-    try {
-      // Mark as read first
-      if (!notification.isRead) {
-        await markAsRead(notification._id);
-      }
-
-      // Close dropdown
-      setIsOpen(false);
-
-      // Navigate to relevant page
-      const route = getNotificationRoute(notification);
-      navigate(route);
-      
-      console.log(`✅ Navigated to: ${route}`);
-    } catch (error) {
-      console.error('❌ Error handling notification click:', error);
+  try {
+    // Mark as read first
+    if (!notification.isRead) {
+      await markAsRead(notification._id);
     }
-  };
+
+    // Close dropdown
+    setIsOpen(false);
+
+    // Navigate to user home without changing URL, just update state
+    if (notification.type === 'timetable_published') {
+      navigate('/user/home', { 
+        replace: true,
+        state: { 
+          year: notification.academicYear, 
+          semester: notification.semester 
+        } 
+      });
+    } else {
+      navigate('/user/feedback');
+    }
+    
+    console.log(`✅ Navigated to user home with state`);
+  } catch (error) {
+    console.error('❌ Error handling notification click:', error);
+  }
+};
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -270,7 +262,6 @@ const NotificationDropdown = () => {
     setIsOpen(!isOpen);
   };
 
-  // Get icon for notification type (only 2 types)
   const getNotificationIcon = (type) => {
     const iconMap = {
       timetable_published: '📅',

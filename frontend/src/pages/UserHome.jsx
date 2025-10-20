@@ -6,7 +6,7 @@ import { BiExport, BiSearch, BiX } from "react-icons/bi";
 import Papa from "papaparse";
 import html2canvas from "html2canvas";
 import { useAlert } from './AlertContext';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 
 const TIMES = [
   "8.00 AM - 9.00 AM",
@@ -48,21 +48,36 @@ function UserHome() {
   const role = localStorage.getItem('role') || 'student';
   const { showAlert, showConfirm } = useAlert();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   
   useEffect(() => {
+    // Check navigation state first (from notification click)
+    const stateYear = location.state?.year;
+    const stateSemester = location.state?.semester;
+    
+    // Then check URL params (for direct links)
     const yearFromUrl = searchParams.get('year');
     const semesterFromUrl = searchParams.get('semester');
     
-    if (yearFromUrl) {
-      console.log('📅 Year from notification:', yearFromUrl);
-      setSelectedYear(yearFromUrl);
+    // Prioritize state over URL params
+    const targetYear = stateYear || yearFromUrl;
+    const targetSemester = stateSemester || semesterFromUrl;
+    
+    if (targetYear) {
+      console.log('📅 Year from notification:', targetYear);
+      setSelectedYear(targetYear);
     }
     
-    if (semesterFromUrl) {
-      console.log('📅 Semester from notification:', semesterFromUrl);
-      setSelectedSemester(semesterFromUrl);
+    if (targetSemester) {
+      console.log('📅 Semester from notification:', targetSemester);
+      setSelectedSemester(targetSemester);
     }
-  }, [searchParams]);
+    
+    // Clear state after using it
+    if (location.state) {
+      window.history.replaceState({}, document.title);
+    }
+  }, [searchParams, location.state]);
 
   // Check if event matches search query
   const isEventMatchingSearch = (item) => {
