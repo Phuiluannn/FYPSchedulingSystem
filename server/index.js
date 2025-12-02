@@ -10,6 +10,7 @@ import feedbackRoutes from './routes/feedbackRoutes.js';
 import homeRoutes from './routes/homeRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import studentRoutes from './routes/studentRoutes.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
@@ -41,6 +42,7 @@ app.use('/feedback', feedbackRoutes);
 app.use('/home', homeRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/api', notificationRoutes);
+app.use('/students', studentRoutes);
 
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {

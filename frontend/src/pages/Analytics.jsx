@@ -345,7 +345,7 @@ const exportConflictData = () => {
       <SideBar>
         <div
           style={{
-            maxWidth: 1700,
+            maxWidth: 1380,
             margin: "0 auto 0 auto",
             padding: "0 10px 0px 2px"
           }}

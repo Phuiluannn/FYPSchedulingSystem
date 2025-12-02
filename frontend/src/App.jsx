@@ -13,6 +13,7 @@ import ProtectedRoute from './pages/ProtectedRoute';
 import AdminFeedback from './pages/AdminFeedback';
 import Analytics from './pages/Analytics';
 import InstructorTimetable from './pages/InstructorTimetable';
+import Students from './pages/Students';
 import { AlertProvider } from './pages/AlertContext';
 
 function App() {
@@ -49,6 +50,11 @@ function App() {
         <Route path="/analytics" element={
           <ProtectedRoute allowedRoles={['admin']}>
             <Analytics />
+          </ProtectedRoute>
+        }/>
+        <Route path="/students" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <Students />
           </ProtectedRoute>
         }/>
 

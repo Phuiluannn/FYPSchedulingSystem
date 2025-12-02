@@ -203,7 +203,7 @@ function Rooms() {
   return (
     <ProtectedRoute>
       <SideBar role="admin">
-        <div style={{ maxWidth: 1700, margin: "0 auto 0 auto", padding: "0 10px 0px 5px" }}>
+        <div style={{ maxWidth: 1300, margin: "0 auto 0 auto", padding: "0 10px 0px 5px" }}>
           <h2 className="fw-bold mb-4">Rooms</h2>
           {/* {error && (
             <div className="alert alert-danger mt-3" role="alert">

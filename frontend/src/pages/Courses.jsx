@@ -65,6 +65,9 @@ function Courses() {
   const [instructors, setInstructors] = useState([]);
   const [instructorSearch, setInstructorSearch] = useState("");
 
+  // Students data for auto-calculating target students
+  const [students, setStudents] = useState([]);
+
   // Copy Courses Modal
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [copyFromYear, setCopyFromYear] = useState("2025/2026");
@@ -94,6 +97,23 @@ function Courses() {
       }
     };
     fetchInstructors();
+  }, []);
+
+  // Fetch students
+  useEffect(() => {
+    const fetchStudents = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const response = await axios.get("http://localhost:3001/students", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setStudents(response.data || []);
+      } catch (error) {
+        console.error("Failed to fetch students:", error);
+      }
+    };
+    fetchStudents();
   }, []);
 
   // Fetch courses
@@ -144,6 +164,48 @@ function Courses() {
     document.removeEventListener('mousedown', handleClickOutside);
   };
 }, [showCourseTypeDropdown]);
+
+  // Auto-calculate targetStudent based on year, courseType, and department
+  useEffect(() => {
+    if (!form.academicYear || !form.semester || form.year.length === 0 || !form.courseType) {
+      return; // Don't calculate if required fields are missing
+    }
+
+    const calculateTargetStudent = () => {
+      // Filter students for the selected academic year and semester
+      const relevantStudents = students.filter(
+        (s) => s.academicYear === form.academicYear && String(s.semester) === String(form.semester)
+      );
+
+      let total = 0;
+
+      // For each selected year
+      form.year.forEach((selectedYear) => {
+        const studentRecord = relevantStudents.find((s) => String(s.year) === selectedYear);
+        if (!studentRecord) return;
+
+        if (form.courseType === "Faculty Core") {
+          // Faculty Core: All students in that year
+          total += studentRecord.totalStudents || 0;
+        } else if (form.courseType === "Programme Core" || form.courseType === "Elective") {
+          // Programme Core or Elective: Sum of selected departments
+          if (form.department.length > 0) {
+            form.department.forEach((dept) => {
+              total += studentRecord.counts?.[dept] || 0;
+            });
+          }
+        }
+      });
+
+      // Update targetStudent if calculated value is different
+      // Clear field when total is 0 (all departments unchecked)
+      if (total !== Number(form.targetStudent)) {
+        setForm((prev) => ({ ...prev, targetStudent: total > 0 ? String(total) : "" }));
+      }
+    };
+
+    calculateTargetStudent();
+  }, [form.year, form.courseType, form.department, form.academicYear, form.semester, students]);
 
   // Handle form changes
   const handleChange = (e) => {
@@ -386,7 +448,7 @@ function Courses() {
   return (
     <ProtectedRoute>
       <SideBar>
-        <div style={{margin: "0 auto 0 auto", padding: "0 30px 0 0px", marginLeft: "50px" }}>
+        <div style={{margin: "0 auto 0 auto", padding: "0 30px 0 0px", marginLeft: "80px" }}>
           <h2 className="fw-bold mb-4">Courses</h2>
           <div className="d-flex align-items-center mb-3">
             <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
@@ -493,61 +555,61 @@ function Courses() {
                     <th style={{ width: "6%" }}>Code</th>
                     <th style={{ width: "11%" }}>Name</th>
                     <th style={{ width: "6%" }}>Credit Hour</th>
-                    <th style={{ width: "7%" }}>Target Student</th>
                     <th style={{ width: "9%" }}>Year</th>
                     <th style={{ width: "9%", position: "relative" }} ref={courseTypeRef}>
-  Course Type{" "}
-  <button
-    className="btn btn-sm btn-link"
-    onClick={() => setShowCourseTypeDropdown((prev) => !prev)}
-  >
-    <CIcon icon={cilFilter} />
-  </button>
-  {showCourseTypeDropdown && (
-    <div
-      className="dropdown-menu show"
-      style={{
-        position: "absolute",
-        top: "100%",
-        left: "0",  // Changed from hardcoded left: 20
-        right: "0", // This ensures it spans the column width
-        minWidth: "160px", // Minimum width for readability
-        maxHeight: "200px",
-        overflowY: "auto",
-        padding: "5px",
-        zIndex: 1050 // Ensure it appears above other elements
-      }}
-    >
-      <div className="form-check d-flex align-items-center mb-1">
-        <input
-          type="checkbox"
-          className="form-check-input"
-          checked={selectedCourseTypes.size === 0}
-          onChange={() => setSelectedCourseTypes(new Set())}
-          style={{ marginTop: "0" }}
-        />
-        <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>
-          All
-        </label>
-      </div>
-      {["Faculty Core", "Programme Core", "Elective"].map((courseType) => (
-        <div key={courseType} className="form-check d-flex align-items-center mb-1">
-          <input
-            type="checkbox"
-            className="form-check-input"
-            checked={selectedCourseTypes.has(courseType)}
-            onChange={() => toggleCourseType(courseType)}
-            style={{ marginTop: "0" }}
-          />
-          <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>
-            {courseType}
-          </label>
-        </div>
-      ))}
-    </div>
-  )}
-</th>
+                      Course Type{" "}
+                      <button
+                        className="btn btn-sm btn-link"
+                        onClick={() => setShowCourseTypeDropdown((prev) => !prev)}
+                      >
+                        <CIcon icon={cilFilter} />
+                      </button>
+                      {showCourseTypeDropdown && (
+                        <div
+                          className="dropdown-menu show"
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: "0",  // Changed from hardcoded left: 20
+                            right: "0", // This ensures it spans the column width
+                            minWidth: "160px", // Minimum width for readability
+                            maxHeight: "200px",
+                            overflowY: "auto",
+                            padding: "5px",
+                            zIndex: 1050 // Ensure it appears above other elements
+                          }}
+                        >
+                          <div className="form-check d-flex align-items-center mb-1">
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={selectedCourseTypes.size === 0}
+                              onChange={() => setSelectedCourseTypes(new Set())}
+                              style={{ marginTop: "0" }}
+                            />
+                            <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>
+                              All
+                            </label>
+                          </div>
+                          {["Faculty Core", "Programme Core", "Elective"].map((courseType) => (
+                            <div key={courseType} className="form-check d-flex align-items-center mb-1">
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                checked={selectedCourseTypes.has(courseType)}
+                                onChange={() => toggleCourseType(courseType)}
+                                style={{ marginTop: "0" }}
+                              />
+                              <label className="form-check-label" style={{ marginLeft: 8, verticalAlign: "middle", fontWeight: 600 }}>
+                                {courseType}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </th>
                     <th style={{ width: "11%" }}>Department</th>
+                    <th style={{ width: "7%" }}>Target Student</th>
                     <th style={{ width: "11%" }}>Instructors</th>
                     <th style={{ width: "9%" }}>Room Type</th>
                     <th style={{ width: "7%" }}>Lecture @ Tutorial</th>
@@ -588,7 +650,6 @@ function Courses() {
             {course.name}
           </td>
           <td>{course.creditHour}</td>
-          <td>{course.targetStudent}</td>
           <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
             {isYearsExpanded
               ? course.year.length > 0
@@ -622,6 +683,7 @@ function Courses() {
               </span>
             )}
           </td>
+          <td>{course.targetStudent}</td>
           <td style={{ whiteSpace: "normal", wordWrap: "break-word" }}>
             {isInstructorsExpanded
               ? course.instructors.length > 0
@@ -740,10 +802,6 @@ function Courses() {
                         <input className="form-control" type="number" name="creditHour" value={form.creditHour} min="0" onChange={handleChange} />
                       </div>
                       <div className="mb-3">
-                        <label className="form-label fw-bold">Target Student <RequiredMark /></label>
-                        <input className="form-control" type="number" name="targetStudent" value={form.targetStudent} min="0" onChange={handleChange} />
-                      </div>
-                      <div className="mb-3">
                         <label className="form-label fw-bold">Year (Select one or more) <RequiredMark /></label>
                         <div className="d-flex flex-wrap gap-2">
                           {allYears.map((year, idx) => (
@@ -796,6 +854,23 @@ function Courses() {
                           </div>
                         </div>
                       )}
+                      <div className="mb-3">
+                        <label className="form-label fw-bold">
+                          Target Student <RequiredMark />
+                          {form.targetStudent && (
+                            <small className="text-muted ms-2">(Auto-calculated based on student enrollment)</small>
+                          )}
+                        </label>
+                        <input 
+                          className="form-control" 
+                          type="number" 
+                          name="targetStudent" 
+                          value={form.targetStudent} 
+                          min="0" 
+                          onChange={handleChange}
+                          placeholder="Will auto-calculate when year and course type are selected"
+                        />
+                      </div>
                       <div className="mb-3">
                         <label className="form-label fw-bold">Instructor List (Select one or more): <RequiredMark /></label>
                         <div className="mb-3">

@@ -19,6 +19,7 @@ import {
 } from '@coreui/icons';
 import NotificationDropdown from './NotificationDropdown'; // Import the new component
 import '../index.css';
+import { BsPersonVcard } from "react-icons/bs";
 
 const SideBar = ({ children, role = "admin", feedbackBadge }) => {
   const location = useLocation();
@@ -85,8 +86,9 @@ const SidebarUnfoldableExample = ({ currentPath, role, feedbackBadge }) => {
   if (role === "admin") {
     navItems = [
       { href: "/home", icon: cilHome, label: "Home" },
+      { href: "/students", icon: cilPeople, label: "Students" },
       { href: "/courses", icon: cilBook, label: "Courses" },
-      { href: "/instructors", icon: cilPeople, label: "Instructors" },
+      { href: "/instructors", icon: BsPersonVcard, label: "Instructors" },
       { href: "/rooms", icon: cilBuilding, label: "Rooms" },
       { href: "/analytics", icon: cilChartLine, label: "Analytics" },
       { href: "/feedback", icon: cilCommentSquare, label: "Feedback", badge: localStorage.getItem('feedbackBadge') || feedbackBadge || 0 },
@@ -109,16 +111,22 @@ const SidebarUnfoldableExample = ({ currentPath, role, feedbackBadge }) => {
       <CSidebarNav className="mt-5">
         <hr className="mx-3" />
         <div className="flex-grow-1">
-          {navItems.map((item) => (
-            <CNavItem
-              key={item.href}
-              href={item.href}
-              className={`text-white custom-nav-item ${currentPath === item.href ? 'active' : ''}`}
-            >
-              <CIcon customClassName="nav-icon text-white" icon={item.icon} /> {item.label}
-              {item.badge && <CBadge color="primary ms-auto">{item.badge}</CBadge>}
-            </CNavItem>
-          ))}
+          {navItems.map((item) => {
+            const IconComp = item.icon;
+            return (
+              <CNavItem
+                key={item.href}
+                href={item.href}
+                className={`text-white custom-nav-item ${currentPath === item.href ? 'active' : ''}`}
+              >
+                {typeof IconComp === 'function'
+                  ? <IconComp className="nav-icon text-white" />
+                  : <CIcon customClassName="nav-icon text-white" icon={IconComp} />
+                } {item.label}
+                {item.badge && <CBadge color="primary ms-auto">{item.badge}</CBadge>}
+              </CNavItem>
+            );
+          })}
         </div>
         <div className="mb-3">
           <CNavItem
