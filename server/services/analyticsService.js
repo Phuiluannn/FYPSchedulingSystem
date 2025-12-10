@@ -484,7 +484,6 @@ const validateRoomDoubleBookingConflict = async (conflict, schedules) => {
 const validateRoomCapacityConflict = async (conflict, schedules) => {
   const { CourseCode, RoomID, Day, StartTime } = conflict;
   
-  // FIXED: Check if this specific course event (same course, room, day, time) still exists
   const specificEvent = schedules.find(sch => 
     sch.CourseCode === CourseCode && 
     sch.RoomID?.toString() === RoomID?.toString() &&
@@ -494,32 +493,76 @@ const validateRoomCapacityConflict = async (conflict, schedules) => {
 
   if (!specificEvent) {
     console.log(`Room capacity conflict auto-resolved: Course ${CourseCode} no longer scheduled in room ${RoomID} at ${Day} ${StartTime}`);
-    return false; // Specific event no longer exists, conflict is resolved
+    return false;
   }
 
-  // If the event still exists at the same time/room, recheck capacity requirements
   const room = await Room.findById(RoomID);
-  const course = await Course.findOne({ code: CourseCode });
-
-  if (!room || !course) {
-    console.log(`Room capacity conflict auto-resolved: Room or course not found for ${CourseCode}`);
-    return false; // Room or course not found
+  
+  if (!room) {
+    console.log(`Room capacity conflict auto-resolved: Room not found for ${CourseCode}`);
+    return false;
   }
 
-  // Recalculate required capacity for this specific event
-  const requiredCapacity = calculateRequiredCapacity(
-    CourseCode, 
-    specificEvent.OccType, 
-    specificEvent.OccNumber, 
-    [course]
-  );
+  // ✅ FIX: Always prioritize EstimatedStudents from the schedule
+  let requiredCapacity;
+  
+  if (specificEvent.EstimatedStudents !== undefined && specificEvent.EstimatedStudents !== null) {
+    requiredCapacity = specificEvent.EstimatedStudents;
+    console.log(`Using EstimatedStudents from schedule: ${requiredCapacity}`);
+  } else {
+    // ✅ NEW FIX: If EstimatedStudents is missing, get it from the course's groupings
+    const course = await Course.findOne({ code: CourseCode });
+    if (!course) {
+      console.log(`Room capacity conflict auto-resolved: Course not found for ${CourseCode}`);
+      return false;
+    }
+    
+    // Get the specific occurrence number(s)
+    const occNumbers = Array.isArray(specificEvent.OccNumber) 
+      ? specificEvent.OccNumber 
+      : [specificEvent.OccNumber];
+    
+    if (specificEvent.OccType === "Lecture" && course.lectureGroupings) {
+      // Find the matching lecture grouping
+      const matchingGrouping = course.lectureGroupings.find(group => 
+        occNumbers.includes(group.occNumber)
+      );
+      
+      if (matchingGrouping) {
+        requiredCapacity = matchingGrouping.estimatedStudents;
+        console.log(`Found lecture grouping capacity: ${requiredCapacity} for Occ ${occNumbers.join(', ')}`);
+      } else {
+        // Fallback to simple division if grouping not found
+        requiredCapacity = Math.ceil(course.targetStudent / (course.lectureOccurrence || 1));
+        console.log(`Fallback lecture capacity calculation: ${requiredCapacity}`);
+      }
+    } else if (specificEvent.OccType === "Tutorial" && course.tutorialGroupings) {
+      // Find the matching tutorial grouping
+      const matchingGrouping = course.tutorialGroupings.find(group => 
+        occNumbers.includes(group.occNumber)
+      );
+      
+      if (matchingGrouping) {
+        requiredCapacity = matchingGrouping.estimatedStudents;
+        console.log(`Found tutorial grouping capacity: ${requiredCapacity} for Occ ${occNumbers.join(', ')}`);
+      } else {
+        // Fallback to simple division if grouping not found
+        requiredCapacity = Math.ceil(course.targetStudent / (course.tutorialOcc || 1));
+        console.log(`Fallback tutorial capacity calculation: ${requiredCapacity}`);
+      }
+    } else {
+      // Last resort fallback
+      requiredCapacity = course.targetStudent;
+      console.log(`Using full target student count: ${requiredCapacity}`);
+    }
+  }
 
   const stillHasCapacityIssue = room.capacity < requiredCapacity;
   
   if (!stillHasCapacityIssue) {
     console.log(`Room capacity conflict auto-resolved: Capacity issue resolved for ${CourseCode} in room ${room.code}`);
   } else {
-    console.log(`Room capacity conflict still valid: ${CourseCode} still needs ${requiredCapacity} seats but room ${room.code} only has ${room.capacity}`);
+    console.log(`Room capacity conflict still valid: ${CourseCode} needs ${requiredCapacity} seats but room ${room.code} only has ${room.capacity}`);
   }
 
   return stillHasCapacityIssue;

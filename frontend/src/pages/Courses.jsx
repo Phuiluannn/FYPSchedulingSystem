@@ -57,6 +57,9 @@ function Courses() {
     tutorialOcc: "", // New field for tutorial occurrences
     year: [],
     department: [],
+      departmentStudents: {},      // Map of department -> student count
+  lectureGroupings: [],         // Array of lecture grouping objects
+  tutorialGroupings: []         // Array of tutorial grouping objects
   });
   const [courses, setCourses] = useState([]);
   const [error, setError] = useState(null);
@@ -74,6 +77,8 @@ function Courses() {
   const [copyFromSemester, setCopyFromSemester] = useState("1");
   const [copyError, setCopyError] = useState(null);
   const [copyLoading, setCopyLoading] = useState(false);
+  const [showDepartmentStudents, setShowDepartmentStudents] = useState(false);
+const [selectedCourseForStudents, setSelectedCourseForStudents] = useState(null);
 
   // Fetch instructors
   useEffect(() => {
@@ -208,74 +213,104 @@ function Courses() {
   }, [form.year, form.courseType, form.department, form.academicYear, form.semester, students]);
 
   // Handle form changes
-  const handleChange = (e) => {
-    const { name, value, type, selectedOptions, checked } = e.target;
-    if (type === "select-multiple") {
-      setForm({
-        ...form,
-        [name]: Array.from(selectedOptions, (option) => option.value),
-      });
-    } else if (name === "hasTutorial") {
-      setHasTutorial(value);
-      setForm({
-        ...form,
-        hasTutorial: value,
-        lectureHour: value === "No" ? "" : form.lectureHour,
-        lectureOccurrence: value === "No" ? "" : form.lectureOccurrence,
-        tutorialOcc: value === "No" ? "" : form.tutorialOcc, // Reset tutorialOcc when hasTutorial changes
-      });
-    } else if (type === "checkbox" && (name === "year" || name === "department")) {
-      const currentArray = form[name];
-      if (checked) {
-        setForm({
-          ...form,
-          [name]: [...currentArray, value],
-        });
-      } else {
-        setForm({
-          ...form,
-          [name]: currentArray.filter((item) => item !== value),
-        });
-      }
+const handleChange = async (e) => {
+  const { name, value, type, selectedOptions, checked } = e.target;
+  let newForm = { ...form };
+  
+  if (type === "select-multiple") {
+    newForm[name] = Array.from(selectedOptions, (option) => option.value);
+  } else if (name === "hasTutorial") {
+    setHasTutorial(value);
+    newForm = {
+      ...newForm,
+      hasTutorial: value,
+      lectureHour: value === "No" ? "" : newForm.lectureHour,
+      lectureOccurrence: value === "No" ? "" : newForm.lectureOccurrence,
+      tutorialOcc: value === "No" ? "" : newForm.tutorialOcc,
+    };
+  } else if (type === "checkbox" && (name === "year" || name === "department")) {
+    const currentArray = newForm[name];
+    if (checked) {
+      newForm[name] = [...currentArray, value];
     } else {
-      setForm({
-        ...form,
-        [name]: value,
-      });
+      newForm[name] = currentArray.filter((item) => item !== value);
     }
-  };
+  } else {
+    newForm[name] = value;
+  }
+  
+  // NEW: Recalculate department students and groupings when relevant fields change
+  if (name === "year" || name === "department" || name === "courseType" || 
+      name === "academicYear" || name === "semester" || name === "lectureOccurrence") {
+    await recalculateDepartmentData(newForm);
+  }
+  
+  setForm(newForm);
+};
 
   // Open modal for add or edit
-  const openModal = (course = null, idx = null) => {
-    setError(null);
-    if (course) {
-      setForm({ ...course, lectureOccurrence: course.lectureOccurrence || "", tutorialOcc: course.tutorialOcc || "" });
+  const openModal = async (course = null, idx = null) => {
+  setError(null);
+  if (course) {
+    // When editing, fetch fresh data including department groupings
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`http://localhost:3001/courses/${course._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      setForm({ 
+        ...response.data, 
+        lectureOccurrence: response.data.lectureOccurrence || "", 
+        tutorialOcc: response.data.tutorialOcc || "",
+        departmentStudents: response.data.departmentStudents || {},
+        lectureGroupings: response.data.lectureGroupings || [],
+        tutorialGroupings: response.data.tutorialGroupings || []
+      });
+      setHasTutorial(response.data.hasTutorial);
+      setEditCourseId(response.data._id);
+    } catch (error) {
+      console.error("Error fetching course details:", error);
+      // Fallback to existing course data
+      setForm({ 
+        ...course, 
+        lectureOccurrence: course.lectureOccurrence || "", 
+        tutorialOcc: course.tutorialOcc || "",
+        departmentStudents: course.departmentStudents || {},
+        lectureGroupings: course.lectureGroupings || [],
+        tutorialGroupings: course.tutorialGroupings || []
+      });
       setHasTutorial(course.hasTutorial);
       setEditCourseId(course._id);
-    } else {
-      setForm({
-        academicYear: filterYear,
-        semester: filterSemester,
-        code: "",
-        name: "",
-        creditHour: "",
-        targetStudent: "",
-        courseType: "",
-        instructors: [],
-        roomTypes: [],
-        hasTutorial: "",
-        lectureHour: "",
-        lectureOccurrence: "",
-        tutorialOcc: "", // Initialize tutorialOcc
-        year: [],
-        department: [],
-      });
-      setHasTutorial("");
-      setEditCourseId(null);
     }
-    setInstructorSearch("");
-    setShowModal(true);
-  };
+  } else {
+    // New course
+    setForm({
+      academicYear: filterYear,
+      semester: filterSemester,
+      code: "",
+      name: "",
+      creditHour: "",
+      targetStudent: "",
+      courseType: "",
+      instructors: [],
+      roomTypes: [],
+      hasTutorial: "",
+      lectureHour: "",
+      lectureOccurrence: "",
+      tutorialOcc: "",
+      year: [],
+      department: [],
+      departmentStudents: {},
+      lectureGroupings: [],
+      tutorialGroupings: []
+    });
+    setHasTutorial("");
+    setEditCourseId(null);
+  }
+  setInstructorSearch("");
+  setShowModal(true);
+};
 
   // Save course (add or edit)
   const handleSave = async () => {
@@ -291,7 +326,7 @@ function Courses() {
       !form.hasTutorial ||
       !form.year.length ||
       ((form.courseType === "Programme Core" || form.courseType === "Elective") && !form.department.length) ||
-      (form.hasTutorial === "Yes" && (!form.lectureHour || !form.lectureOccurrence || !form.tutorialOcc))
+      (form.hasTutorial === "Yes" && (!form.lectureHour || !form.lectureOccurrence))
     ) {
       setError("Please fill in all required fields.");
       return;
@@ -307,9 +342,9 @@ function Courses() {
 
     if (
       form.hasTutorial === "Yes" &&
-      (Number(form.lectureOccurrence) <= 0 || Number(form.tutorialOcc) <= 0)
+      (Number(form.lectureOccurrence) <= 0)
     ) {
-      setError("Lecture occurrence and tutorial occurrence must be positive numbers.");
+      setError("Lecture occurrence must be a positive number.");
       return;
     }
 
@@ -444,6 +479,137 @@ function Courses() {
       setCopyLoading(false);
     }
   };
+
+  const recalculateDepartmentData = async (currentForm) => {
+  if (!currentForm.academicYear || !currentForm.semester || 
+      currentForm.year.length === 0 || !currentForm.courseType) {
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem("token");
+    
+    // Fetch student data
+    const studentPromises = currentForm.year.map(yearLevel =>
+      axios.get(
+        `http://localhost:3001/students?academicYear=${currentForm.academicYear}&semester=${currentForm.semester}&year=${yearLevel}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+    );
+    
+    const studentResponses = await Promise.all(studentPromises);
+    
+    // Calculate department students
+    const departmentStudents = {};
+    const relevantDepts = currentForm.courseType === "Faculty Core" 
+      ? ["Artificial Intelligence", "Computer System and Network", "Data Science", 
+         "Information Systems", "Multimedia Computing", "Software Engineering"]
+      : (currentForm.department || []);
+    
+    studentResponses.forEach(response => {
+      const studentData = response.data[0];
+      if (studentData && studentData.counts) {
+        relevantDepts.forEach(dept => {
+          const count = studentData.counts[dept] || 0;
+          departmentStudents[dept] = (departmentStudents[dept] || 0) + count;
+        });
+      }
+    });
+    
+    const totalStudents = Object.values(departmentStudents).reduce((sum, count) => sum + count, 0);
+    
+    // Generate lecture groupings (distribute departments evenly)
+    let lectureGroupings = [];
+    if (currentForm.lectureOccurrence > 0) {
+      const deptArray = relevantDepts
+        .filter(dept => departmentStudents[dept] > 0)
+        .sort((a, b) => departmentStudents[b] - departmentStudents[a]);
+      
+      const deptsPerLecture = Math.ceil(deptArray.length / currentForm.lectureOccurrence);
+      
+      for (let i = 0; i < currentForm.lectureOccurrence; i++) {
+        const startIdx = i * deptsPerLecture;
+        const endIdx = Math.min(startIdx + deptsPerLecture, deptArray.length);
+        const lectureDepts = deptArray.slice(startIdx, endIdx);
+        
+        if (lectureDepts.length > 0) {
+          const estimatedStudents = lectureDepts.reduce((sum, dept) => 
+            sum + (departmentStudents[dept] || 0), 0
+          );
+          
+          lectureGroupings.push({
+            occNumber: i + 1,
+            departments: lectureDepts,
+            estimatedStudents
+          });
+        }
+      }
+    }
+    
+    // Calculate tutorial groupings (max 40 per tutorial)
+    let tutorialGroupings = [];
+    const maxStudentsPerTutorial = 40;
+    
+    if (currentForm.hasTutorial === "Yes") {
+      const deptEntries = Object.entries(departmentStudents)
+        .filter(([_, count]) => count > 0)
+        .sort((a, b) => b[1] - a[1]);
+      
+      let occNumber = 1;
+      let i = 0;
+      
+      while (i < deptEntries.length) {
+        const [dept, count] = deptEntries[i];
+        
+        if (count <= maxStudentsPerTutorial) {
+          // Try to pair with another small department
+          if (i + 1 < deptEntries.length) {
+            const [nextDept, nextCount] = deptEntries[i + 1];
+            if (count + nextCount <= maxStudentsPerTutorial) {
+              tutorialGroupings.push({
+                occNumber: occNumber++,
+                departments: [dept, nextDept],
+                estimatedStudents: count + nextCount
+              });
+              i += 2;
+              continue;
+            }
+          }
+          tutorialGroupings.push({
+            occNumber: occNumber++,
+            departments: [dept],
+            estimatedStudents: count
+          });
+          i++;
+        } else {
+          // Split large department
+          const numTutorials = Math.ceil(count / maxStudentsPerTutorial);
+          for (let j = 0; j < numTutorials; j++) {
+            tutorialGroupings.push({
+              occNumber: occNumber++,
+              departments: [dept],
+              estimatedStudents: Math.ceil(count / numTutorials)
+            });
+          }
+          i++;
+        }
+      }
+    }
+    
+    // Update form
+    setForm(prev => ({
+      ...prev,
+      departmentStudents,
+      targetStudent: totalStudents.toString(),
+      lectureGroupings,
+      tutorialGroupings,
+      tutorialOcc: tutorialGroupings.length.toString()
+    }));
+    
+  } catch (error) {
+    console.error("Error recalculating department data:", error);
+  }
+};
 
   return (
     <ProtectedRoute>
@@ -615,7 +781,10 @@ function Courses() {
                     <th style={{ width: "7%" }}>Lecture @ Tutorial</th>
                     <th style={{ width: "9%" }}>Lecture Hour</th>
                     <th style={{ width: "9%" }}>Lecture Occurrence</th>
-                    <th style={{ width: "9%" }}>Tutorial Occurrence</th> {/* New column */}
+                    <th style={{ width: "9%" }}>Tutorial Occurrence</th>
+                    <th style={{ width: "10%" }}>Dept. Students</th>
+                    <th style={{ width: "10%" }}>Lecture Groups</th>
+                    <th style={{ width: "10%" }}>Tutorial Groups</th>
                     <th style={{ width: "5%" }}>Actions</th>
                   </tr>
                 </thead>
@@ -720,6 +889,59 @@ function Courses() {
           <td>{course.lectureHour || "N/A"}</td>
           <td>{course.lectureOccurrence || "N/A"}</td>
           <td>{course.tutorialOcc || "N/A"}</td>
+          {/* Department Students Column */}
+<td>
+  {course.departmentStudents && Object.keys(course.departmentStudents).length > 0 ? (
+    <button
+      className="btn btn-sm btn-link"
+      onClick={() => {
+        setSelectedCourseForStudents(course);
+        setShowDepartmentStudents(true);
+      }}
+    >
+      View ({Object.keys(course.departmentStudents).length} depts)
+    </button>
+  ) : (
+    "N/A"
+  )}
+</td>
+
+{/* Lecture Groupings Column */}
+<td>
+  {course.lectureGroupings && course.lectureGroupings.length > 0 ? (
+    <div style={{ fontSize: 13 }}>
+      {course.lectureGroupings.map((group, idx) => (
+        <div key={idx}>
+          Occ {group.occNumber}: {group.departments.join(", ")}
+          <br />
+          <small className="text-muted">({group.estimatedStudents} students)</small>
+        </div>
+      ))}
+    </div>
+  ) : (
+    "N/A"
+  )}
+</td>
+
+{/* Tutorial Groupings Column */}
+<td>
+  {course.tutorialGroupings && course.tutorialGroupings.length > 0 ? (
+    <div style={{ fontSize: 13 }}>
+      {course.tutorialGroupings.slice(0, 3).map((group, idx) => (
+        <div key={idx}>
+          Occ {group.occNumber}: {group.departments.join(", ")}
+        </div>
+      ))}
+      {course.tutorialGroupings.length > 3 && (
+        <small className="text-muted">
+          +{course.tutorialGroupings.length - 3} more...
+        </small>
+      )}
+    </div>
+  ) : (
+    "N/A"
+  )}
+</td>
           <td>
             <button className="btn btn-link p-0 me-2" onClick={() => openModal(course, idx)}>
               <CIcon icon={cilPen} />
@@ -956,42 +1178,105 @@ function Courses() {
                         </select>
                       </div>
                       {form.hasTutorial === "Yes" && (
-                        <>
-                          <div className="mb-3">
-                            <label className="form-label fw-bold">If yes, please state the lecture hours <RequiredMark /></label>
-                            <input
-                              className="form-control"
-                              type="number"
-                              min="0"
-                              name="lectureHour"
-                              value={form.lectureHour}
-                              onChange={handleChange}
-                            />
-                          </div>
-                          <div className="mb-3">
-                            <label className="form-label fw-bold">Number of lecture occurrences needed <RequiredMark /></label>
-                            <input
-                              className="form-control"
-                              type="number"
-                              min="1"
-                              name="lectureOccurrence"
-                              value={form.lectureOccurrence}
-                              onChange={handleChange}
-                            />
-                          </div>
-                          <div className="mb-3">
-                            <label className="form-label fw-bold">Number of tutorial occurrences needed <RequiredMark /></label>
-                            <input
-                              className="form-control"
-                              type="number"
-                              min="1"
-                              name="tutorialOcc"
-                              value={form.tutorialOcc}
-                              onChange={handleChange}
-                            />
-                          </div>
-                        </>
-                      )}
+  <>
+    <div className="mb-3">
+      <label className="form-label fw-bold">If yes, please state the lecture hours <RequiredMark /></label>
+      <input
+        className="form-control"
+        type="number"
+        min="0"
+        name="lectureHour"
+        value={form.lectureHour}
+        onChange={handleChange}
+      />
+    </div>
+    <div className="mb-3">
+      <label className="form-label fw-bold">Number of lecture occurrences needed <RequiredMark /></label>
+      <input
+        className="form-control"
+        type="number"
+        min="1"
+        name="lectureOccurrence"
+        value={form.lectureOccurrence}
+        onChange={handleChange}
+      />
+    </div>
+  </>
+)}
+{form.hasTutorial === "No" && (
+  <div className="alert alert-info" style={{ fontSize: 13 }}>
+    <strong>Note:</strong> This course will have tutorial sessions only (no separate lectures). 
+    Tutorial groupings will be generated automatically based on student enrollment.
+  </div>
+)}
+{(form.hasTutorial === "Yes" || form.hasTutorial === "No") && (
+  <div className="mb-3">
+    <label className="form-label fw-bold">
+      Number of tutorial occurrences 
+      <span className="text-muted ms-2" style={{ fontSize: 13, fontWeight: 400 }}>
+        (Auto-calculated based on department sizes)
+      </span>
+    </label>
+    <input
+      className="form-control"
+      type="number"
+      name="tutorialOcc"
+      value={form.tutorialOcc}
+      readOnly
+      style={{ backgroundColor: "#f0f0f0", cursor: "not-allowed" }}
+      title="This field is automatically calculated"
+    />
+  </div>
+)}
+                      {form.year.length > 0 && form.academicYear && form.semester && (
+  <div className="mb-3">
+    <label className="form-label fw-bold">Department Student Distribution</label>
+    <div className="alert alert-info" style={{ fontSize: 13 }}>
+      {Object.keys(form.departmentStudents || {}).length > 0 ? (
+        <>
+          {Object.entries(form.departmentStudents).map(([dept, count]) => (
+            <div key={dept}>
+              <strong>{dept}:</strong> {count} students
+            </div>
+          ))}
+          <hr />
+          <strong>Total: {form.targetStudent} students</strong>
+        </>
+      ) : (
+        "No student data available"
+      )}
+    </div>
+  </div>
+)}
+{form.lectureOccurrence > 0 && Object.keys(form.departmentStudents || {}).length > 0 && (
+  <div className="mb-3">
+    <label className="form-label fw-bold">Lecture Groupings Preview</label>
+    <div className="alert alert-secondary" style={{ fontSize: 13 }}>
+      {form.lectureGroupings && form.lectureGroupings.length > 0 ? (
+        form.lectureGroupings.map((group, idx) => (
+          <div key={idx} style={{ marginBottom: 8 }}>
+            <strong>Lecture {group.occNumber}:</strong> {group.departments.join(", ")}
+            <br />
+            <small>Estimated: {group.estimatedStudents} students</small>
+          </div>
+        ))
+      ) : (
+        "Will be generated automatically"
+      )}
+    </div>
+  </div>
+)}
+{form.tutorialGroupings && form.tutorialGroupings.length > 0 && (
+  <div className="alert alert-secondary mt-2" style={{ fontSize: 13 }}>
+    <strong>Tutorial Groupings:</strong>
+    {form.tutorialGroupings.map((group, idx) => (
+      <div key={idx} style={{ marginTop: 4 }}>
+        Tutorial {group.occNumber}: {group.departments.join(" + ")} 
+        <span className="text-muted"> ({group.estimatedStudents} students)</span>
+      </div>
+    ))}
+  </div>
+)}
                     </form>
                   </div>
                   <div className="modal-footer">
@@ -1006,6 +1291,50 @@ function Courses() {
               </div>
             </div>
           )}
+
+          {showDepartmentStudents && selectedCourseForStudents && (
+  <div className="modal fade show" style={{ display: "block", background: "rgba(0,0,0,0.3)" }}>
+    <div className="modal-dialog modal-dialog-centered">
+      <div className="modal-content">
+        <div className="modal-header">
+          <h5 className="fw-bold">
+            Department Students - {selectedCourseForStudents.code}
+          </h5>
+          <button 
+            type="button" 
+            className="btn-close" 
+            onClick={() => {
+              setShowDepartmentStudents(false);
+              setSelectedCourseForStudents(null);
+            }}
+          ></button>
+        </div>
+        <div className="modal-body">
+          <table className="table table-sm">
+            <thead>
+              <tr>
+                <th>Department</th>
+                <th className="text-end">Students</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(selectedCourseForStudents.departmentStudents || {}).map(([dept, count]) => (
+                <tr key={dept}>
+                  <td>{dept}</td>
+                  <td className="text-end">{count}</td>
+                </tr>
+              ))}
+              <tr className="fw-bold">
+                <td>Total</td>
+                <td className="text-end">{selectedCourseForStudents.targetStudent}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
           {/* Modal for Copy Courses */}
           {showCopyModal && (

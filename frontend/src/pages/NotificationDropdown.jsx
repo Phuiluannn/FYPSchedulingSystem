@@ -1,14 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom'; // Add this import
+import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 import CIcon from '@coreui/icons-react';
 import { cilBell } from '@coreui/icons';
-
-const socket = io('http://localhost:3001', {
-  autoConnect: false,
-  transports: ['websocket']
-});
 
 const NotificationDropdown = () => {
   const [notifications, setNotifications] = useState([]);
@@ -17,37 +12,93 @@ const NotificationDropdown = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const dropdownRef = useRef(null);
-  const navigate = useNavigate(); // Initialize navigate
+  const navigate = useNavigate();
+  const socketRef = useRef(null); // Use ref to persist socket across renders
 
-  // Map notification types to routes (only 2 types for now)
-  const handleNotificationClick = async (notification) => {
-  try {
-    // Mark as read first
-    if (!notification.isRead) {
-      await markAsRead(notification._id);
-    }
-
-    // Close dropdown
-    setIsOpen(false);
-
-    // Navigate to user home without changing URL, just update state
-    if (notification.type === 'timetable_published') {
-      navigate('/user/home', { 
-        replace: true,
-        state: { 
-          year: notification.academicYear, 
-          semester: notification.semester 
-        } 
-      });
-    } else {
-      navigate('/user/feedback');
-    }
+  // Initialize socket only once
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role');
+    const userId = localStorage.getItem('userId');
     
-    console.log(`✅ Navigated to user home with state`);
-  } catch (error) {
-    console.error('❌ Error handling notification click:', error);
-  }
-};
+    if (!token || !userId || !role) {
+      console.log('⚠️ Missing credentials, skipping socket connection');
+      return;
+    }
+
+    // Create socket instance only if it doesn't exist
+    if (!socketRef.current) {
+      console.log('🔌 Initializing socket connection...');
+      
+      socketRef.current = io('http://localhost:3001', {
+        transports: ['websocket'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 5
+      });
+
+      const socket = socketRef.current;
+
+      // Connection event handlers
+      socket.on('connect', () => {
+        console.log('✅ Socket connected:', socket.id);
+        socket.emit('identify', { userId, role });
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('❌ Socket connection error:', error.message);
+      });
+
+      socket.on('disconnect', (reason) => {
+        console.log('🔌 Socket disconnected:', reason);
+      });
+
+      // Notification handler
+      socket.on('notification', (data) => {
+        console.log('📬 Received notification:', data);
+        if (data.recipients.includes(role)) {
+          setNotifications(prev => [data.notification, ...prev]);
+          setUnreadCount(prev => prev + 1);
+          showBrowserNotification(data.notification);
+        }
+      });
+    }
+
+    // Cleanup function - only disconnect on unmount
+    return () => {
+      if (socketRef.current) {
+        console.log('🧹 Cleaning up socket connection');
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, []); // Empty array - run once on mount
+
+  const handleNotificationClick = async (notification) => {
+    try {
+      if (!notification.isRead) {
+        await markAsRead(notification._id);
+      }
+
+      setIsOpen(false);
+
+      if (notification.type === 'timetable_published') {
+        navigate('/user/home', { 
+          replace: true,
+          state: { 
+            year: notification.academicYear, 
+            semester: notification.semester 
+          } 
+        });
+      } else {
+        navigate('/user/feedback');
+      }
+      
+      console.log('✅ Navigated based on notification');
+    } catch (error) {
+      console.error('❌ Error handling notification click:', error);
+    }
+  };
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -61,37 +112,12 @@ const NotificationDropdown = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const role = localStorage.getItem('role');
-    const userId = localStorage.getItem('userId');
-    if (token && userId && role) {
-      socket.connect();
-      socket.emit('identify', { userId, role });
-    }
-
-    socket.on('notification', (data) => {
-      if (data.recipients.includes(role)) {
-        setNotifications(prev => [data.notification, ...prev]);
-        setUnreadCount(prev => prev + 1);
-        
-        // Optional: Show browser notification
-        showBrowserNotification(data.notification);
-      }
-    });
-
-    return () => {
-      socket.disconnect();
-      socket.off('notification');
-    };
-  }, []);
-
-  // Optional: Browser notification for real-time alerts
+  // Browser notification
   const showBrowserNotification = (notification) => {
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(notification.title, {
         body: notification.message,
-        icon: '/notification-icon.png', // Add your icon path
+        icon: '/notification-icon.png',
         tag: notification._id,
       });
     }
@@ -272,7 +298,7 @@ const NotificationDropdown = () => {
 
   return (
     <>
-      <style jsx>{`
+      <style>{`
         @keyframes fadeInDown {
           from {
             opacity: 0;

@@ -1191,7 +1191,12 @@ useEffect(() => {
         Array.isArray(event.raw.OccNumber)
           ? `(Occ ${event.raw.OccNumber.join(", ")})`
           : `(Occ ${event.raw.OccNumber})`
-      )} {event.instructorName}
+      )} 
+       {event.raw.Departments && event.raw.Departments.length > 0 && (
+    <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
+      {event.raw.Departments.join(", ")}
+    </div>
+  )}{event.instructorName}
     </div>
   </div>
 )}

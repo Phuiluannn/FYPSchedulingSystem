@@ -1,7 +1,7 @@
 import Course from '../models/Course.js';
 import Room from '../models/Room.js';
 import Schedule from '../models/Home.js';
-import Conflict from '../models/Conflict.js'; // Add this import
+import Conflict from '../models/Conflict.js';
 import mongoose from 'mongoose';
 
 const TIMES = [
@@ -28,19 +28,16 @@ const clearPreviousConflicts = async (year, semester) => {
       Year: year, 
       Semester: semester 
     });
-    console.log(`âœ… Cleared ${result.deletedCount} previous conflicts for ${year} Semester ${semester}`);
+    console.log(`✅ Cleared ${result.deletedCount} previous conflicts for ${year} Semester ${semester}`);
     return result.deletedCount;
   } catch (error) {
-    console.error("âŒ Error clearing previous conflicts:", error);
+    console.error("❌ Error clearing previous conflicts:", error);
     throw error;
   }
 };
 
-// FIXED: Replace fetch() with direct database insertion
-// FIXED: Replace the recordGenerationConflict function in homeService.js
 const recordGenerationConflict = async (conflictData) => {
   try {
-    // Validate and map conflict types to schema enum values
     const validConflictTypes = [
       'Room Capacity', 
       'Room Double Booking', 
@@ -49,7 +46,6 @@ const recordGenerationConflict = async (conflictData) => {
       'Time Slot Exceeded'
     ];
 
-    // Map generation conflict types to valid schema types
     let mappedType = conflictData.Type;
     switch (conflictData.Type) {
       case 'Insufficient Rooms':
@@ -78,7 +74,7 @@ const recordGenerationConflict = async (conflictData) => {
     const conflict = new Conflict(validatedConflictData);
     const savedConflict = await conflict.save();
     
-    console.log("âœ… Generation conflict recorded successfully:", {
+    console.log("✅ Generation conflict recorded successfully:", {
       id: savedConflict._id,
       type: savedConflict.Type,
       course: savedConflict.CourseCode
@@ -86,10 +82,9 @@ const recordGenerationConflict = async (conflictData) => {
     
     return savedConflict;
   } catch (error) {
-    console.error("âŒ Error recording generation conflict:", error);
+    console.error("❌ Error recording generation conflict:", error);
     console.error("Conflict data that failed:", conflictData);
     
-    // Log validation errors specifically
     if (error.name === 'ValidationError') {
       console.error("Validation errors:");
       Object.keys(error.errors).forEach(key => {
@@ -97,11 +92,10 @@ const recordGenerationConflict = async (conflictData) => {
       });
     }
     
-    throw error; // Re-throw to handle upstream if needed
+    throw error;
   }
 };
 
-// Utility function to shuffle an array
 const shuffleArray = (array) => {
   for (let i = array.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -116,8 +110,6 @@ export const generateTimetable = async (req) => {
   const rooms = await Room.find();
 
   console.log(`Starting timetable generation for ${courses.length} courses`);
-  
-  // Debug: Log raw room data to verify roomType values
   console.log("Raw room data from database:", rooms.map(r => ({ name: r.name, type: r.roomType, capacity: r.capacity })));
 
   try {
@@ -127,13 +119,12 @@ export const generateTimetable = async (req) => {
     console.warn("Warning: Could not clear previous conflicts, but continuing with generation:", error.message);
   }
   
-  // Clear previous schedules for this year/semester (only draft schedules)
   await Schedule.deleteMany({ 
     Year: year, 
     Semester: semester, 
     Published: { $ne: true }
   });
-  console.log("âœ… Cleared only draft schedules, keeping published timetables");
+  console.log("✅ Cleared only draft schedules, keeping published timetables");
 
   // Track room usage per day/time
   let usage = {};
@@ -167,379 +158,541 @@ export const generateTimetable = async (req) => {
     return TIMES[endTimeIdx].split(" - ")[1];
   };
 
-  // NEW HELPER: Force placement even with conflicts
-  const forceScheduleWithConflicts = async (course, occType, occurrences, duration, allowedRooms, year, semester) => {
-  console.log(`🔴 FORCE SCHEDULING: ${course.code} - ${occurrences} ${occType}(s) with ${duration}h each`);
-  
-  let scheduledCount = 0;
-  const maxAttempts = occurrences * 10;
-  let attempts = 0;
-
-  while (scheduledCount < occurrences && attempts < maxAttempts) {
-    let placed = false;
+  // Force placement with conflicts - UPDATED for department-based occurrences
+  const forceScheduleWithConflicts = async (course, occType, grouping, duration, allowedRooms, year, semester) => {
+    console.log(`🔴 FORCE SCHEDULING: ${course.code} - ${occType} Occ${grouping.occNumber} (Depts: ${grouping.departments.join(', ')}) with ${duration}h`);
     
-    for (const day of shuffleArray([...DAYS])) {
-      for (let timeIdx = 0; timeIdx <= TIMES.length - duration; timeIdx++) {
-        for (const room of shuffleArray([...allowedRooms])) {
-          
-          const conflicts = [];
-          
-          // Check time slot availability - DON'T RECORD, just check
-          const slotsAvailable = areConsecutiveSlotsAvailable(day, timeIdx, duration, room._id);
-          if (!slotsAvailable) {
-            // REMOVED: No longer recording Room Double Booking here
-            // Frontend detectAllConflicts() will handle this
-            console.log(`⚠️ Slots occupied in ${room.name || room.code} - will be detected by frontend`);
-          }
+    let placed = false;
+    const maxAttempts = 100;
+    let attempts = 0;
 
-          // Still record Room Capacity conflicts (these are important)
-          const requiredCapacity = occType === "Lecture"
-            ? Math.ceil(course.targetStudent / (course.lectureOccurrence || 1))
-            : Math.ceil(course.targetStudent / (course.tutorialOcc || 1));
-          
-          if (room.capacity < requiredCapacity) {
-            conflicts.push({
-              type: 'Room Capacity',
-              description: `${course.code} (${occType}) requires ${requiredCapacity} capacity but ${room.name || room.code} only has ${room.capacity}`
-            });
-          }
+    while (!placed && attempts < maxAttempts) {
+      for (const day of shuffleArray([...DAYS])) {
+        for (let timeIdx = 0; timeIdx <= TIMES.length - duration; timeIdx++) {
+          for (const room of shuffleArray([...allowedRooms])) {
+            
+            const conflicts = [];
+            
+            // Check room capacity for this specific grouping
+            if (room.capacity < grouping.estimatedStudents) {
+              conflicts.push({
+                type: 'Room Capacity',
+                description: `${course.code} (${occType} Occ${grouping.occNumber}) requires ${grouping.estimatedStudents} capacity but ${room.name || room.code} only has ${room.capacity}`
+              });
+            }
 
-          // Still record Time Slot Exceeded conflicts
-          if (timeIdx + duration > TIMES.length) {
-            conflicts.push({
-              type: 'Time Slot Exceeded',
-              description: `${course.code} (${occType}) extends beyond available time slots`
-            });
-          }
+            // Check time slot exceeded
+            if (timeIdx + duration > TIMES.length) {
+              conflicts.push({
+                type: 'Time Slot Exceeded',
+                description: `${course.code} (${occType} Occ${grouping.occNumber}) extends beyond available time slots`
+              });
+            }
 
-          // FORCE PLACEMENT REGARDLESS OF CONFLICTS
-          const groupsPerOccurrence = occType === "Lecture"
-            ? Math.ceil((course.tutorialOcc || 1) / occurrences)
-            : 1;
-          
-          const startOcc = scheduledCount * groupsPerOccurrence + 1;
-          const endOcc = occType === "Lecture"
-            ? Math.min((scheduledCount + 1) * groupsPerOccurrence, course.tutorialOcc || 1)
-            : scheduledCount + 1;
-          const occNumbers = Array.from({ length: endOcc - startOcc + 1 }, (_, j) => startOcc + j);
-
-          const newSchedule = {
-            _id: new mongoose.Types.ObjectId().toString(),
-            CourseID: course._id,
-            CourseCode: course.code,
-            Instructors: [],
-            OriginalInstructors: course.instructors,
-            InstructorID: null,
-            RoomID: room._id,
-            OccNumber: occNumbers,
-            OccType: occType,
-            Year: year,
-            Semester: semester,
-            Day: day,
-            StartTime: TIMES[timeIdx],
-            EndTime: getEndTime(timeIdx, duration),
-            Duration: duration,
-            Published: false
-          };
-
-          schedules.push(newSchedule);
-          
-          // Mark slots as used (even if there were conflicts)
-          markConsecutiveSlotsAsUsed(day, timeIdx, duration, room._id);
-          
-          // Record ONLY non-double-booking conflicts
-          for (const conflict of conflicts) {
-            const conflictData = {
+            // FORCE PLACEMENT
+            const newSchedule = {
+              _id: new mongoose.Types.ObjectId().toString(),
+              CourseID: course._id,
+              CourseCode: course.code,
+              Instructors: [],
+              OriginalInstructors: course.instructors,
+              InstructorID: null,
+              RoomID: room._id,
+              OccNumber: [grouping.occNumber],
+              OccType: occType,
+              Departments: grouping.departments, // NEW: Track which departments this is for
+              EstimatedStudents: grouping.estimatedStudents, // NEW: Track estimated students
               Year: year,
               Semester: semester,
-              Type: conflict.type,
-              Description: conflict.description,
-              CourseCode: course.code,
-              RoomID: room._id,
               Day: day,
               StartTime: TIMES[timeIdx],
-              Priority: 'High',
-              Status: 'Pending'
+              EndTime: getEndTime(timeIdx, duration),
+              Duration: duration,
+              Published: false
             };
-            await recordGenerationConflict(conflictData);
-          }
 
-          scheduledCount++;
-          placed = true;
-          console.log(`✅ FORCE PLACED: ${course.code} ${occType} ${scheduledCount}/${occurrences} with ${conflicts.length} non-double-booking conflicts`);
-          break;
+            schedules.push(newSchedule);
+            markConsecutiveSlotsAsUsed(day, timeIdx, duration, room._id);
+            
+            // Record non-double-booking conflicts
+            for (const conflict of conflicts) {
+              const conflictData = {
+                Year: year,
+                Semester: semester,
+                Type: conflict.type,
+                Description: conflict.description,
+                CourseCode: course.code,
+                RoomID: room._id,
+                Day: day,
+                StartTime: TIMES[timeIdx],
+                Priority: 'High',
+                Status: 'Pending'
+              };
+              await recordGenerationConflict(conflictData);
+            }
+
+            placed = true;
+            console.log(`✅ FORCE PLACED: ${course.code} ${occType} Occ${grouping.occNumber} with ${conflicts.length} conflicts`);
+            return 1; // Successfully placed
+          }
+          if (placed) break;
         }
         if (placed) break;
       }
-      if (placed) break;
+      attempts++;
     }
-    
-    if (!placed) {
-      console.warn(`⚠️ Could not force place ${course.code} ${occType} occurrence ${scheduledCount + 1}`);
-      break;
-    }
-    
-    attempts++;
-  }
 
-  console.log(`🔴 FORCE SCHEDULING COMPLETE: ${course.code} - ${scheduledCount}/${occurrences} ${occType}(s) scheduled`);
-  return scheduledCount;
-};
+    console.warn(`⚠️ Could not force place ${course.code} ${occType} Occ${grouping.occNumber}`);
+    return 0;
+  };
+
+  // Continue in Part 2...
 
   // Two-phase scheduling approach
   // Phase 1: Schedule ALL lectures first (beginning of week priority)
   // Phase 2: Schedule ALL tutorials after their lectures
 
+// PHASE 1: SCHEDULE ALL LECTURES (by department groupings)
   const shuffledCourses = shuffleArray([...courses]);
-  const lecturePriorityDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const lecturePriorityDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
   
-  // Store all lecture schedules globally to reference during tutorial scheduling
-  const allLectureSchedules = new Map(); // courseId -> lecture schedules array
+// PHASE 1: SCHEDULE ALL LECTURES (DEPARTMENT-BASED)
+// KEY FIX: All occurrences of the same course must be at the same time
 
-  console.log("=== PHASE 1: SCHEDULING ALL LECTURES ===");
+console.log("=== PHASE 1: SCHEDULING ALL LECTURES (DEPARTMENT-BASED) ===");
+
+for (const course of shuffledCourses) {
+  console.log(`Processing course: ${course.code}`);
   
-  for (const course of shuffledCourses) {
-    console.log(`Processing course: ${course.code}`);
-    
-    let lecturesScheduled = 0;
-    const { lectureOccurrence, tutorialOcc, roomTypes, instructors, targetStudent, code, _id, hasTutorial, creditHour, lectureHour } = course;
+  const { lectureOccurrence, lectureGroupings, roomTypes, instructors, code, _id, hasTutorial, creditHour, lectureHour } = course;
 
-    // Calculate durations based on credit hours
-    const lectureDuration = lectureHour || 1;
-    const tutorialDuration = Math.max(1, (creditHour || 1) - (lectureHour || 1));
-
-    console.log(`Course ${code}: creditHour=${creditHour}, lectureHour=${lectureHour}, lectureDuration=${lectureDuration}h, tutorialDuration=${tutorialDuration}h`);
-
-    const courseRoomTypes = Array.isArray(roomTypes) ? roomTypes : [roomTypes].filter(Boolean);
-
-    // PHASE 1: Schedule ONLY lectures for this course
-    if (lectureOccurrence && lectureOccurrence > 0) {
-      console.log(`Scheduling ${lectureOccurrence} lectures for ${code}`);
-      
-      const requiredCapacityPerOccurrence = Math.ceil(targetStudent / lectureOccurrence);
-      const suitableLectureRooms = rooms.filter(
-        room => room.capacity >= requiredCapacityPerOccurrence
-      );
-
-      console.log(`Suitable lecture rooms found: ${suitableLectureRooms.length}`);
-
-      if (suitableLectureRooms.length === 0) {
-        // If no suitable rooms by capacity, use ALL rooms and force with capacity conflicts
-        console.warn(`No suitable capacity rooms for ${code} lectures. Using all rooms with capacity conflicts.`);
-        await forceScheduleWithConflicts(course, "Lecture", lectureOccurrence, lectureDuration, rooms, year, semester);
-      } else {
-        // Create time slots prioritizing early days of the week
-        const lectureTimeSlots = [];
-        lecturePriorityDays.forEach(day => {
-          for (let timeIdx = 0; timeIdx <= TIMES.length - lectureDuration; timeIdx++) {
-            lectureTimeSlots.push({ day, timeIdx });
-          }
-        });
-
-        const actualLectureOccurrence = Math.min(lectureOccurrence, suitableLectureRooms.length);
-        
-        const courseLectureSchedules = []; // Store this course's lectures
-
-        // Try to schedule lectures in priority order (early in the week)
-        for (const slot of lectureTimeSlots) {
-          if (lecturesScheduled >= actualLectureOccurrence) break;
-          
-          const { day, timeIdx } = slot;
-          
-          const availableRooms = shuffleArray(
-            suitableLectureRooms.filter(
-              room => areConsecutiveSlotsAvailable(day, timeIdx, lectureDuration, room._id)
-            )
-          );
-
-          const roomsNeeded = actualLectureOccurrence - lecturesScheduled;
-          if (availableRooms.length >= roomsNeeded) {
-            const groupsPerLecture = Math.ceil(tutorialOcc / actualLectureOccurrence);
-
-            for (let i = 0; i < roomsNeeded && lecturesScheduled < actualLectureOccurrence; i++) {
-              const room = availableRooms[i];
-              const startOcc = lecturesScheduled * groupsPerLecture + 1;
-              const endOcc = Math.min((lecturesScheduled + 1) * groupsPerLecture, tutorialOcc);
-              const occNumbers = Array.from({ length: endOcc - startOcc + 1 }, (_, j) => startOcc + j);
-
-              const lectureSchedule = {
-                _id: new mongoose.Types.ObjectId().toString(),
-                CourseID: _id,
-                CourseCode: code,
-                Instructors: [],
-                OriginalInstructors: instructors,
-                InstructorID: null,
-                RoomID: room._id,
-                OccNumber: occNumbers,
-                OccType: "Lecture",
-                Year: year,
-                Semester: semester,
-                Day: day,
-                StartTime: TIMES[timeIdx],
-                EndTime: getEndTime(timeIdx, lectureDuration),
-                Duration: lectureDuration,
-                Published: false
-              };
-
-              schedules.push(lectureSchedule);
-              courseLectureSchedules.push({
-                ...lectureSchedule,
-                timeIdx,
-                endTimeIdx: timeIdx + lectureDuration - 1,
-                occNumbers
-              });
-
-              markConsecutiveSlotsAsUsed(day, timeIdx, lectureDuration, room._id);
-              lecturesScheduled++;
-            }
-            
-            if (lecturesScheduled >= actualLectureOccurrence) {
-              break;
-            }
-          }
-        }
-
-        // If normal scheduling didn't schedule all lectures, force the remaining
-        const remainingLectures = lectureOccurrence - lecturesScheduled;
-        if (remainingLectures > 0) {
-          console.warn(`âš ï¸ Normal scheduling only placed ${lecturesScheduled}/${lectureOccurrence} lectures for ${code}. Force scheduling remaining ${remainingLectures}.`);
-          const forcedCount = await forceScheduleWithConflicts(course, "Lecture", remainingLectures, lectureDuration, suitableLectureRooms, year, semester);
-          lecturesScheduled += forcedCount;
-        }
-
-        // Store this course's lecture schedules for tutorial phase
-        if (courseLectureSchedules.length > 0) {
-          allLectureSchedules.set(course._id.toString(), courseLectureSchedules);
-        }
-      }
-      
-      console.log(`Lectures scheduled for ${code}: ${lecturesScheduled}/${lectureOccurrence}`);
-    }
-    
-    console.log(`Finished processing lectures for course: ${course.code}`);
+  if (!lectureOccurrence || lectureOccurrence === 0 || !lectureGroupings || lectureGroupings.length === 0) {
+    console.log(`Skipping ${code} - no lectures to schedule`);
+    continue;
   }
 
-  console.log("=== PHASE 2: SCHEDULING ALL TUTORIALS ===");
+  const lectureDuration = lectureHour || 1;
+  console.log(`Course ${code}: ${lectureGroupings.length} lecture groupings, duration=${lectureDuration}h`);
 
-  // Phase 2: Now schedule ALL tutorials after their corresponding lectures
-  for (const course of courses) {
-    const { tutorialOcc, roomTypes, instructors, targetStudent, code, _id, hasTutorial, creditHour, lectureHour } = course;
-    
-    if (hasTutorial !== "Yes" || !tutorialOcc || tutorialOcc <= 0) {
-      continue; // Skip if no tutorials needed
+  // CRITICAL: Check if course requires CCNA Lab
+  const courseRoomTypes = Array.isArray(roomTypes) ? roomTypes : [roomTypes].filter(Boolean);
+  const requiresCCNALab = courseRoomTypes.includes("CCNA Lab");
+  
+  if (requiresCCNALab) {
+    console.log(`  ⚠️ ${code} requires CCNA Lab - lectures MUST be in CCNA Lab rooms`);
+  }
+
+  // Find rooms that can accommodate ALL lecture groupings
+  const roomsNeeded = lectureGroupings.length;
+  
+  // Create time slots prioritizing early days
+  const lectureTimeSlots = [];
+  lecturePriorityDays.forEach(day => {
+    for (let timeIdx = 0; timeIdx <= TIMES.length - lectureDuration; timeIdx++) {
+      lectureTimeSlots.push({ day, timeIdx });
     }
+  });
 
-    console.log(`Scheduling tutorials for course: ${course.code}`);
-    
-    const tutorialDuration = Math.max(1, (creditHour || 1) - (lectureHour || 1));
-    const courseRoomTypes = Array.isArray(roomTypes) ? roomTypes : [roomTypes].filter(Boolean);
+  let allOccurrencesPlaced = false;
 
-    // Get this course's lecture schedules from the schedules array
-    const courseLectureSchedules = schedules.filter(schedule => 
-      schedule.CourseID.toString() === _id.toString() && 
-      schedule.OccType === "Lecture"
-    );
+  // Try to find ONE time slot where ALL occurrences can be scheduled
+  for (const slot of lectureTimeSlots) {
+    if (allOccurrencesPlaced) break;
     
-    console.log(`Found ${courseLectureSchedules.length} lecture schedules for course ${code}`);
+    const { day, timeIdx } = slot;
     
-    if (courseLectureSchedules.length > 0) {
-      // Debug: Log all lectures for this course
-      courseLectureSchedules.forEach((lecture, idx) => {
-        console.log(`  Lecture ${idx + 1}: ${lecture.Day} ${lecture.StartTime}`);
+    // Find available rooms for THIS time slot that can fit each grouping
+    const availableRoomsForSlot = [];
+    
+    for (const grouping of lectureGroupings) {
+      let suitableRooms;
+      
+      // CRITICAL FIX: If course requires CCNA Lab, ONLY use CCNA Lab rooms
+      if (requiresCCNALab) {
+        suitableRooms = rooms.filter(
+          room => 
+            room.roomType === "CCNA Lab" &&
+            room.capacity >= grouping.estimatedStudents &&
+            areConsecutiveSlotsAvailable(day, timeIdx, lectureDuration, room._id)
+        );
+        
+        if (suitableRooms.length === 0) {
+          console.log(`    ⚠️ No available CCNA Lab rooms for grouping ${grouping.occNumber} at ${day} ${TIMES[timeIdx]}`);
+        }
+      } else {
+        // Normal room selection for other courses
+        suitableRooms = rooms.filter(
+          room => 
+            room.capacity >= grouping.estimatedStudents &&
+            areConsecutiveSlotsAvailable(day, timeIdx, lectureDuration, room._id)
+        );
+      }
+      
+      if (suitableRooms.length === 0) {
+        // Can't place all occurrences at this time slot
+        availableRoomsForSlot.length = 0;
+        break;
+      }
+      
+      availableRoomsForSlot.push({
+        grouping,
+        rooms: suitableRooms
       });
     }
+    
+    // If we found enough rooms for ALL occurrences at this time slot
+    if (availableRoomsForSlot.length === lectureGroupings.length) {
+      console.log(`✅ Found time slot for all ${lectureGroupings.length} occurrences: ${day} ${TIMES[timeIdx]}`);
+      
+      // Track which rooms have been assigned to avoid duplicates
+      const usedRoomsForThisCourse = new Set();
+      let canPlaceAllOccurrences = true;
+      const tentativeSchedules = [];
+      
+      // Schedule ALL occurrences at the SAME time but DIFFERENT rooms
+      for (const { grouping, rooms: suitableRooms } of availableRoomsForSlot) {
+        // Filter out rooms already used for this course at this time
+        const availableUniqueRooms = suitableRooms.filter(
+          room => !usedRoomsForThisCourse.has(room._id.toString())
+        );
+        
+        if (availableUniqueRooms.length === 0) {
+          // Can't place this occurrence - no unique room available
+          canPlaceAllOccurrences = false;
+          break;
+        }
+        
+        const room = shuffleArray([...availableUniqueRooms])[0];
+        usedRoomsForThisCourse.add(room._id.toString());
+        
+        const lectureSchedule = {
+          _id: new mongoose.Types.ObjectId().toString(),
+          CourseID: _id,
+          CourseCode: code,
+          Instructors: [],
+          OriginalInstructors: instructors,
+          InstructorID: null,
+          RoomID: room._id,
+          OccNumber: [grouping.occNumber],
+          OccType: "Lecture",
+          Departments: grouping.departments,
+          EstimatedStudents: grouping.estimatedStudents,
+          Year: year,
+          Semester: semester,
+          Day: day,
+          StartTime: TIMES[timeIdx],
+          EndTime: getEndTime(timeIdx, lectureDuration),
+          Duration: lectureDuration,
+          Published: false
+        };
 
-    const requiredCapacityPerTutorial = Math.ceil(targetStudent / tutorialOcc);
+        tentativeSchedules.push({ schedule: lectureSchedule, room, grouping });
+      }
+      
+      // Only commit if ALL occurrences can be placed in different rooms
+      if (canPlaceAllOccurrences) {
+        for (const { schedule, room, grouping } of tentativeSchedules) {
+          schedules.push(schedule);
+          markConsecutiveSlotsAsUsed(day, timeIdx, lectureDuration, room._id);
+          console.log(`  → Scheduled Lecture Occ${grouping.occNumber} in room ${room.name || room.code}`);
+        }
+        allOccurrencesPlaced = true;
+      }
+    }
+  }
 
-    // Get suitable tutorial rooms
+  // If normal scheduling failed for ALL occurrences together, force schedule them
+  if (!allOccurrencesPlaced) {
+    console.warn(`⚠️ Could not find time slot for all ${lectureGroupings.length} occurrences of ${code}. Force scheduling.`);
+    
+    // Force schedule all occurrences at the SAME arbitrary time slot with DIFFERENT rooms
+    const forcedDay = lecturePriorityDays[0];
+    const forcedTimeIdx = 0;
+    const usedForcedRooms = new Set();
+    
+    for (const grouping of lectureGroupings) {
+      let suitableRooms;
+      
+      // CRITICAL FIX: If course requires CCNA Lab, force schedule ONLY in CCNA Lab rooms
+      if (requiresCCNALab) {
+        suitableRooms = rooms.filter(
+          room => 
+            room.roomType === "CCNA Lab" &&
+            room.capacity >= grouping.estimatedStudents && 
+            !usedForcedRooms.has(room._id.toString())
+        );
+        
+        if (suitableRooms.length === 0) {
+          console.error(`  🔴 CRITICAL: No CCNA Lab rooms available for ${code}! Using any CCNA Lab regardless of capacity.`);
+          suitableRooms = rooms.filter(
+            room => 
+              room.roomType === "CCNA Lab" &&
+              !usedForcedRooms.has(room._id.toString())
+          );
+        }
+      } else {
+        // Normal force scheduling for other courses
+        suitableRooms = rooms.filter(
+          room => room.capacity >= grouping.estimatedStudents && 
+                  !usedForcedRooms.has(room._id.toString())
+        );
+      }
+      
+      if (suitableRooms.length === 0) {
+        // Use any available room that hasn't been used yet (respecting CCNA Lab requirement)
+        let anyUnusedRoom;
+        
+        if (requiresCCNALab) {
+          anyUnusedRoom = rooms.find(
+            room => room.roomType === "CCNA Lab" && !usedForcedRooms.has(room._id.toString())
+          );
+          
+          if (!anyUnusedRoom) {
+            console.error(`  🔴 ABSOLUTE CRITICAL: All CCNA Labs exhausted for ${code}!`);
+            // Last resort: reuse a CCNA Lab (will create double booking conflict)
+            anyUnusedRoom = rooms.find(room => room.roomType === "CCNA Lab");
+          }
+        } else {
+          anyUnusedRoom = rooms.find(
+            room => !usedForcedRooms.has(room._id.toString())
+          );
+        }
+        
+        if (anyUnusedRoom) {
+          usedForcedRooms.add(anyUnusedRoom._id.toString());
+          
+          const lectureSchedule = {
+            _id: new mongoose.Types.ObjectId().toString(),
+            CourseID: _id,
+            CourseCode: code,
+            Instructors: [],
+            OriginalInstructors: instructors,
+            InstructorID: null,
+            RoomID: anyUnusedRoom._id,
+            OccNumber: [grouping.occNumber],
+            OccType: "Lecture",
+            Departments: grouping.departments,
+            EstimatedStudents: grouping.estimatedStudents,
+            Year: year,
+            Semester: semester,
+            Day: forcedDay,
+            StartTime: TIMES[forcedTimeIdx],
+            EndTime: getEndTime(forcedTimeIdx, lectureDuration),
+            Duration: lectureDuration,
+            Published: false
+          };
+
+          schedules.push(lectureSchedule);
+          markConsecutiveSlotsAsUsed(forcedDay, forcedTimeIdx, lectureDuration, anyUnusedRoom._id);
+          
+          // Record capacity conflict if applicable
+          if (anyUnusedRoom.capacity < grouping.estimatedStudents) {
+            await recordGenerationConflict({
+              Year: year,
+              Semester: semester,
+              Type: 'Room Capacity',
+              Description: `${code} (Lecture Occ${grouping.occNumber}) requires ${grouping.estimatedStudents} capacity but ${anyUnusedRoom.name || anyUnusedRoom.code} only has ${anyUnusedRoom.capacity}`,
+              CourseCode: code,
+              RoomID: anyUnusedRoom._id,
+              Day: forcedDay,
+              StartTime: TIMES[forcedTimeIdx],
+              Priority: 'High',
+              Status: 'Pending'
+            });
+          }
+          
+          console.log(`  🔴 FORCE: Lecture Occ${grouping.occNumber} at ${forcedDay} ${TIMES[forcedTimeIdx]} in ${anyUnusedRoom.name || anyUnusedRoom.code} ${anyUnusedRoom.capacity < grouping.estimatedStudents ? '(capacity conflict)' : ''}`);
+        } else {
+          // Absolute last resort - use the generic force function
+          await forceScheduleWithConflicts(course, "Lecture", grouping, lectureDuration, requiresCCNALab ? rooms.filter(r => r.roomType === "CCNA Lab") : rooms, year, semester);
+        }
+      } else {
+        // Force at the same time with a unique room
+        const room = shuffleArray([...suitableRooms])[0];
+        usedForcedRooms.add(room._id.toString());
+        
+        const lectureSchedule = {
+          _id: new mongoose.Types.ObjectId().toString(),
+          CourseID: _id,
+          CourseCode: code,
+          Instructors: [],
+          OriginalInstructors: instructors,
+          InstructorID: null,
+          RoomID: room._id,
+          OccNumber: [grouping.occNumber],
+          OccType: "Lecture",
+          Departments: grouping.departments,
+          EstimatedStudents: grouping.estimatedStudents,
+          Year: year,
+          Semester: semester,
+          Day: forcedDay,
+          StartTime: TIMES[forcedTimeIdx],
+          EndTime: getEndTime(forcedTimeIdx, lectureDuration),
+          Duration: lectureDuration,
+          Published: false
+        };
+
+        schedules.push(lectureSchedule);
+        markConsecutiveSlotsAsUsed(forcedDay, forcedTimeIdx, lectureDuration, room._id);
+        
+        console.log(`  🔴 FORCE: Lecture Occ${grouping.occNumber} at ${forcedDay} ${TIMES[forcedTimeIdx]} in ${room.name || room.code}`);
+      }
+    }
+  }
+  
+  console.log(`Lectures scheduled for ${code}: ${lectureGroupings.length}/${lectureGroupings.length}`);
+}
+
+console.log("=== PHASE 2: SCHEDULING ALL TUTORIALS (DEPARTMENT-BASED) ===");
+
+// PHASE 2: Schedule tutorials based on tutorial groupings
+for (const course of courses) {
+  const { tutorialOcc, tutorialGroupings, roomTypes, instructors, code, _id, hasTutorial, creditHour, lectureHour } = course;
+  
+  // CRITICAL FIX: Schedule tutorials for ANY course that has tutorial occurrences
+  // This includes:
+  // 1. Courses with hasTutorial === "Yes" (has both lectures and tutorials)
+  // 2. Courses with hasTutorial === "No" (has ONLY tutorials, no separate lectures)
+  if (!tutorialOcc || tutorialOcc <= 0 || !tutorialGroupings || tutorialGroupings.length === 0) {
+    console.log(`Skipping ${code} - no tutorials to schedule (tutorialOcc=${tutorialOcc})`);
+    continue;
+  }
+
+  console.log(`Scheduling tutorials for course: ${code} (hasTutorial=${hasTutorial})`);
+  
+  // FIXED: For tutorial-only courses (hasTutorial === "No"), duration equals creditHour
+  // For courses with both (hasTutorial === "Yes"), duration = creditHour - lectureHour
+  let tutorialDuration;
+  if (hasTutorial === "No") {
+    // Tutorial-only courses: duration = credit hour (e.g., 2 credit hours = 2 hours of tutorial)
+    tutorialDuration = creditHour || 1;
+    console.log(`  ➡ Tutorial-only course: duration = ${tutorialDuration}h (credit hour)`);
+  } else {
+    // Courses with both lectures and tutorials
+    tutorialDuration = Math.max(1, (creditHour || 1) - (lectureHour || 1));
+    console.log(`  ➡ Course with lectures: duration = ${tutorialDuration}h (creditHour ${creditHour} - lectureHour ${lectureHour})`);
+  }
+  
+  const courseRoomTypes = Array.isArray(roomTypes) ? roomTypes : [roomTypes].filter(Boolean);
+
+  // Get this course's lecture schedules (will be empty for tutorial-only courses)
+  const courseLectureSchedules = schedules.filter(schedule => 
+    schedule.CourseID.toString() === _id.toString() && 
+    schedule.OccType === "Lecture"
+  );
+  
+  console.log(`  Found ${courseLectureSchedules.length} lecture schedules for course ${code}`);
+
+  let tutorialsScheduled = 0;
+
+  // Schedule each tutorial grouping separately
+  for (const grouping of tutorialGroupings) {
+    console.log(`  Scheduling Tutorial Occ${grouping.occNumber} for ${code}: Depts=[${grouping.departments.join(', ')}], Students=${grouping.estimatedStudents}`);
+    
+    // CRITICAL: Check if course requires CCNA Lab
+    const requiresCCNALab = courseRoomTypes.includes("CCNA Lab");
+    
+    // Find suitable rooms for this specific grouping
     let suitableTutorialRooms;
-    if (courseRoomTypes.length > 0) {
+    
+    if (requiresCCNALab) {
+      // CRITICAL FIX: If course requires CCNA Lab, tutorials MUST also be in CCNA Lab
+      console.log(`    ⚠️ ${code} requires CCNA Lab - tutorials MUST be in CCNA Lab rooms`);
       suitableTutorialRooms = rooms.filter(
-        room => room.capacity >= requiredCapacityPerTutorial && courseRoomTypes.includes(room.roomType)
+        room => 
+          room.roomType === "CCNA Lab" &&
+          room.capacity >= grouping.estimatedStudents
+      );
+      
+      if (suitableTutorialRooms.length === 0) {
+        console.warn(`    ⚠️ No CCNA Lab rooms meet capacity requirement. Using all CCNA Labs regardless of capacity.`);
+        suitableTutorialRooms = rooms.filter(room => room.roomType === "CCNA Lab");
+      }
+    } else if (courseRoomTypes.length > 0) {
+      // Normal room type filtering for non-CCNA courses
+      suitableTutorialRooms = rooms.filter(
+        room => room.capacity >= grouping.estimatedStudents && courseRoomTypes.includes(room.roomType)
       );
     } else {
+      // Default room selection logic
       const suitableNonLectureHallRooms = rooms.filter(
         room =>
-          room.capacity >= requiredCapacityPerTutorial &&
+          room.capacity >= grouping.estimatedStudents &&
           (room.roomType !== "Lecture Hall" || room.roomType === undefined)
       );
       
       const suitableAllRooms = rooms.filter(
-        room => room.capacity >= requiredCapacityPerTutorial
+        room => room.capacity >= grouping.estimatedStudents
       );
       
-      suitableTutorialRooms = suitableNonLectureHallRooms.length >= tutorialOcc 
+      suitableTutorialRooms = suitableNonLectureHallRooms.length > 0
         ? suitableNonLectureHallRooms 
         : suitableAllRooms;
     }
 
     if (suitableTutorialRooms.length === 0) {
-      // If no suitable rooms, use ALL rooms and force with conflicts
-      console.warn(`No suitable rooms for ${code} tutorials. Using all rooms with conflicts.`);
-      await forceScheduleWithConflicts(course, "Tutorial", tutorialOcc, tutorialDuration, rooms, year, semester);
+      console.warn(`  ⚠️ No suitable rooms for ${code} Tutorial Occ${grouping.occNumber}. ${requiresCCNALab ? 'Using CCNA Labs' : 'Using all rooms'} with conflicts.`);
+      await forceScheduleWithConflicts(
+        course, 
+        "Tutorial", 
+        grouping, 
+        tutorialDuration, 
+        requiresCCNALab ? rooms.filter(r => r.roomType === "CCNA Lab") : rooms, 
+        year, 
+        semester
+      );
+      tutorialsScheduled++;
       continue;
     }
 
-    let tutorialsScheduled = 0;
+    // FIXED: For tutorial-only courses, no need to avoid lecture conflicts
+    let latestLectureDayIdx = -1;
+    let latestLectureEndTimeIdx = -1;
 
-    // Schedule tutorials based on lecture schedule
     if (courseLectureSchedules.length > 0) {
-      console.log(`Scheduling tutorials for ${code} to follow its lectures`);
-      
-      // Find the chronologically LATEST lecture
-      let latestLectureDayIdx = -1;
-      let latestLectureEndTimeIdx = -1;
-      let latestLectureInfo = null;
-
+      // Only calculate lecture constraints if this course has lectures
       courseLectureSchedules.forEach(lecture => {
         const lectureDayIdx = DAYS.indexOf(lecture.Day);
         const lectureTimeIdx = TIMES.findIndex(time => time === lecture.StartTime);
         const lectureDuration = lecture.Duration || 1;
         const lectureEndTimeIdx = lectureTimeIdx + lectureDuration;
         
-        // Compare chronological position (day first, then time)
         const isLater = lectureDayIdx > latestLectureDayIdx || 
                        (lectureDayIdx === latestLectureDayIdx && lectureEndTimeIdx > latestLectureEndTimeIdx);
         
         if (isLater) {
           latestLectureDayIdx = lectureDayIdx;
           latestLectureEndTimeIdx = lectureEndTimeIdx;
-          latestLectureInfo = {
-            day: lecture.Day,
-            dayIdx: lectureDayIdx,
-            startTimeIdx: lectureTimeIdx,
-            endTimeIdx: lectureEndTimeIdx,
-            duration: lectureDuration
-          };
         }
       });
 
-      console.log(`Latest lecture for ${code} ends: ${latestLectureInfo.day} after time slot ${latestLectureEndTimeIdx - 1}`);
+      console.log(`  Latest lecture for ${code} ends at day index ${latestLectureDayIdx}, time index ${latestLectureEndTimeIdx - 1}`);
+    } else {
+      console.log(`  No lectures for ${code} - tutorial-only course, can schedule anywhere`);
+    }
 
-      // Create tutorial time slots starting from after the latest lecture
-      const availableTutorialSlots = [];
+    // Create tutorial time slots
+    const availableTutorialSlots = [];
+    
+    // FIXED: For tutorial-only courses, start from the beginning of the week
+    const startDayIdx = (hasTutorial === "Yes" && latestLectureDayIdx >= 0) ? latestLectureDayIdx : 0;
+    
+    for (let dayIdx = startDayIdx; dayIdx < DAYS.length; dayIdx++) {
+      const currentDay = DAYS[dayIdx];
       
-      // Search from the latest lecture day onwards (NEVER go to earlier days)
-      for (let dayIdx = latestLectureDayIdx; dayIdx < DAYS.length; dayIdx++) {
-        const currentDay = DAYS[dayIdx];
+      let startTimeIdx = 0;
+      
+      // Only apply lecture end time constraints if this course has lectures
+      if (hasTutorial === "Yes" && dayIdx === latestLectureDayIdx && latestLectureEndTimeIdx > 0) {
+        startTimeIdx = latestLectureEndTimeIdx;
+        if (startTimeIdx >= TIMES.length) continue;
+      }
+      
+      for (let timeIdx = startTimeIdx; timeIdx <= TIMES.length - tutorialDuration; timeIdx++) {
+        let conflictsWithOwnLecture = false;
         
-        // Determine starting time for this day
-        let startTimeIdx = 0;
-        if (dayIdx === latestLectureDayIdx) {
-          // Same day as latest lecture - start after it ends
-          startTimeIdx = latestLectureEndTimeIdx;
-          if (startTimeIdx >= TIMES.length) {
-            continue; // No time left on this day
-          }
-        }
-        // For subsequent days, start from beginning (startTimeIdx = 0)
-        
-        console.log(`Checking ${currentDay} for tutorials starting from time index ${startTimeIdx}`);
-        
-        for (let timeIdx = startTimeIdx; timeIdx <= TIMES.length - tutorialDuration; timeIdx++) {
-          // Check if this time slot conflicts with any lecture of the same course
-          let conflictsWithOwnLecture = false;
-          
+        // Only check lecture conflicts if this course has lectures
+        if (hasTutorial === "Yes") {
           for (const lecture of courseLectureSchedules) {
             if (lecture.Day === currentDay) {
               const lectureStartIdx = TIMES.findIndex(time => time === lecture.StartTime);
@@ -547,154 +700,88 @@ export const generateTimetable = async (req) => {
               const tutorialStartIdx = timeIdx;
               const tutorialEndIdx = timeIdx + tutorialDuration - 1;
               
-              // Check for time overlap
               if (!(tutorialEndIdx < lectureStartIdx || tutorialStartIdx > lectureEndIdx)) {
                 conflictsWithOwnLecture = true;
                 break;
               }
             }
           }
-          
-          if (!conflictsWithOwnLecture) {
-            suitableTutorialRooms.forEach(room => {
-              availableTutorialSlots.push({ 
-                day: currentDay, 
-                timeIdx, 
-                room
-              });
-            });
-          }
         }
-      }
-
-      // Shuffle the available tutorial slots to add randomization while maintaining chronological constraint
-      shuffleArray(availableTutorialSlots);
-
-      console.log(`Available tutorial slots for ${code}: ${availableTutorialSlots.length}`);
-      if (availableTutorialSlots.length > 0) {
-        console.log(`Tutorial slots are randomized but all come after lectures chronologically`);
-      }
-
-      // Schedule tutorials
-      for (const slot of availableTutorialSlots) {
-        if (tutorialsScheduled >= tutorialOcc) break;
         
-        const { day, timeIdx, room } = slot;
-        
-        if (areConsecutiveSlotsAvailable(day, timeIdx, tutorialDuration, room._id)) {
-          const tutorialOccNumber = tutorialsScheduled + 1;
-
-          const tutorialSchedule = {
-            _id: new mongoose.Types.ObjectId().toString(),
-            CourseID: _id,
-            CourseCode: code,
-            Instructors: [],
-            OriginalInstructors: instructors,
-            InstructorID: null,
-            RoomID: room._id,
-            OccNumber: [tutorialOccNumber],
-            OccType: "Tutorial",
-            Year: year,
-            Semester: semester,
-            Day: day,
-            StartTime: TIMES[timeIdx],
-            EndTime: getEndTime(timeIdx, tutorialDuration),
-            Duration: tutorialDuration,
-            Published: false
-          };
-
-          schedules.push(tutorialSchedule);
-          markConsecutiveSlotsAsUsed(day, timeIdx, tutorialDuration, room._id);
-          tutorialsScheduled++;
-
-          console.log(`âœ… Tutorial ${tutorialsScheduled} scheduled for ${code}: ${day} ${TIMES[timeIdx]} (after latest lecture on ${latestLectureInfo.day})`);
-        }
-      }
-
-      // If normal scheduling didn't schedule all tutorials, force the remaining
-      const remainingTutorials = tutorialOcc - tutorialsScheduled;
-      if (remainingTutorials > 0) {
-        console.warn(`âš ï¸ Normal scheduling only placed ${tutorialsScheduled}/${tutorialOcc} tutorials for ${code}. Force scheduling remaining ${remainingTutorials}.`);
-        const forcedCount = await forceScheduleWithConflicts(course, "Tutorial", remainingTutorials, tutorialDuration, suitableTutorialRooms, year, semester);
-        tutorialsScheduled += forcedCount;
-      }
-    } else {
-      // No lectures scheduled, schedule tutorials normally (anywhere in the week)
-      console.log(`No lectures scheduled for ${code}, using standard tutorial scheduling`);
-      
-      const allTimeSlots = [];
-      DAYS.forEach(day => {
-        for (let timeIdx = 0; timeIdx <= TIMES.length - tutorialDuration; timeIdx++) {
+        if (!conflictsWithOwnLecture) {
           suitableTutorialRooms.forEach(room => {
-            allTimeSlots.push({ day, timeIdx, room });
+            availableTutorialSlots.push({ 
+              day: currentDay, 
+              timeIdx, 
+              room
+            });
           });
         }
-      });
-
-      shuffleArray(allTimeSlots);
-
-      for (const slot of allTimeSlots) {
-        if (tutorialsScheduled >= tutorialOcc) break;
-        
-        const { day, timeIdx, room } = slot;
-        
-        if (areConsecutiveSlotsAvailable(day, timeIdx, tutorialDuration, room._id)) {
-          schedules.push({
-            _id: new mongoose.Types.ObjectId().toString(),
-            CourseID: _id,
-            CourseCode: code,
-            Instructors: [],
-            OriginalInstructors: instructors,
-            InstructorID: null,
-            RoomID: room._id,
-            OccNumber: [tutorialsScheduled + 1],
-            OccType: "Tutorial",
-            Year: year,
-            Semester: semester,
-            Day: day,
-            StartTime: TIMES[timeIdx],
-            EndTime: getEndTime(timeIdx, tutorialDuration),
-            Duration: tutorialDuration,
-            Published: false
-          });
-
-          markConsecutiveSlotsAsUsed(day, timeIdx, tutorialDuration, room._id);
-          tutorialsScheduled++;
-        }
-      }
-
-      // If normal scheduling didn't schedule all tutorials, force the remaining
-      const remainingTutorials = tutorialOcc - tutorialsScheduled;
-      if (remainingTutorials > 0) {
-        console.warn(`âš ï¸ Normal scheduling only placed ${tutorialsScheduled}/${tutorialOcc} tutorials for ${code}. Force scheduling remaining ${remainingTutorials}.`);
-        const forcedCount = await forceScheduleWithConflicts(course, "Tutorial", remainingTutorials, tutorialDuration, suitableTutorialRooms, year, semester);
-        tutorialsScheduled += forcedCount;
       }
     }
-    
-    console.log(`Tutorials scheduled for ${code}: ${tutorialsScheduled}/${tutorialOcc}`);
-    console.log(`Finished processing tutorials for course: ${course.code}`);
-  }
 
-  console.log("=== GENERATION COMPLETE ===");
-  console.log("Courses processed:", courses.length);
-  console.log("Rooms available:", rooms.length);
-  console.log("Total schedules generated:", schedules.length);
+    shuffleArray(availableTutorialSlots);
+
+    let placed = false;
+
+    // Try to schedule this tutorial occurrence
+    for (const slot of availableTutorialSlots) {
+      if (placed) break;
+      
+      const { day, timeIdx, room } = slot;
+      
+      if (areConsecutiveSlotsAvailable(day, timeIdx, tutorialDuration, room._id)) {
+        const tutorialSchedule = {
+          _id: new mongoose.Types.ObjectId().toString(),
+          CourseID: _id,
+          CourseCode: code,
+          Instructors: [],
+          OriginalInstructors: instructors,
+          InstructorID: null,
+          RoomID: room._id,
+          OccNumber: [grouping.occNumber],
+          OccType: "Tutorial",
+          Departments: grouping.departments,
+          EstimatedStudents: grouping.estimatedStudents,
+          Year: year,
+          Semester: semester,
+          Day: day,
+          StartTime: TIMES[timeIdx],
+          EndTime: getEndTime(timeIdx, tutorialDuration),
+          Duration: tutorialDuration,
+          Published: false
+        };
+
+        schedules.push(tutorialSchedule);
+        markConsecutiveSlotsAsUsed(day, timeIdx, tutorialDuration, room._id);
+        tutorialsScheduled++;
+        placed = true;
+
+        console.log(`  ✅ Scheduled Tutorial Occ${grouping.occNumber} for ${code} on ${day} ${TIMES[timeIdx]} in ${room.name || room.code}`);
+      }
+    }
+
+    // If normal scheduling failed, force schedule
+    if (!placed) {
+      console.warn(`  ⚠️ Normal scheduling failed for ${code} Tutorial Occ${grouping.occNumber}. Force scheduling.`);
+      const forcedCount = await forceScheduleWithConflicts(
+        course, 
+        "Tutorial", 
+        grouping, 
+        tutorialDuration, 
+        requiresCCNALab ? suitableTutorialRooms : suitableTutorialRooms, 
+        year, 
+        semester
+      );
+      tutorialsScheduled += forcedCount;
+    }
+  }
   
-  if (schedules.length > 0) {
-    console.log("Sample schedules:", schedules.slice(0, 3));
-  }
+  console.log(`Tutorials scheduled for ${code}: ${tutorialsScheduled}/${tutorialGroupings.length}`);
+}
 
-  // Calculate expected vs actual schedules
-  const expectedSchedules = courses.reduce((total, course) => {
-    let expected = 0;
-    if (course.lectureOccurrence > 0) expected += course.lectureOccurrence;
-    if (course.hasTutorial === "Yes" && course.tutorialOcc > 0) expected += course.tutorialOcc;
-    return total + expected;
-  }, 0);
-
-  console.log(`Expected schedules: ${expectedSchedules}, Generated: ${schedules.length}`);
-  console.log("âœ… All courses have been scheduled (with conflicts recorded where necessary)");
+console.log("=== GENERATION COMPLETE ===");
+console.log("Total schedules generated:", schedules.length);
 
   const schedulesWithStringIds = schedules.map(sch => ({
     ...sch,
@@ -705,50 +792,18 @@ export const generateTimetable = async (req) => {
 
   return { 
     schedules: schedulesWithStringIds,
-    conflictsDetected: true, // Always true since we're allowing conflicts when needed
+    conflictsDetected: true,
     totalSchedules: schedules.length
   };
 };
 
-// Add this function in homeService.js, above the generateTimetable function
-const generateDetailedErrorReport = (course, lectureOccurrence, lectureDuration, rooms) => {
-  console.log("=== Detailed Error Report ===");
-  console.log("Course Details:");
-  console.log(`  Code: ${course.code}`);
-  console.log(`  Academic Year: ${course.academicYear}`);
-  console.log(`  Semester: ${course.semester}`);
-  console.log(`  Target Students: ${course.targetStudent}`);
-  console.log(`  Lecture Occurrences Required: ${lectureOccurrence}`);
-  console.log(`  Lecture Duration: ${lectureDuration} hour(s)`);
-  console.log(`  Required Room Types: ${Array.isArray(course.roomTypes) ? course.roomTypes.join(', ') : course.roomTypes || 'None'}`);
-  console.log(`  Required Capacity per Lecture: ${Math.ceil(course.targetStudent / lectureOccurrence)}`);
-
-  console.log("Available Rooms:");
-  rooms.forEach(room => {
-    console.log(`  Room: ${room.name || room.code}, Type: ${room.roomType}, Capacity: ${room.capacity}`);
-  });
-
-  console.log("Room Availability Analysis:");
-  const suitableRooms = rooms.filter(room => room.capacity >= Math.ceil(course.targetStudent / lectureOccurrence));
-  console.log(`  Suitable Rooms Found: ${suitableRooms.length}`);
-  suitableRooms.forEach(room => {
-    console.log(`    - ${room.name || room.code} (Capacity: ${room.capacity})`);
-  });
-
-  console.log("Scheduling Constraints:");
-  console.log(`  Total Time Slots Available: ${DAYS.length * (TIMES.length - lectureDuration + 1)}`);
-  console.log("  Days: ", DAYS);
-  console.log("  Time Slots: ", TIMES);
-  console.log("============================");
-};
-
+// Keep the existing getTimetable and saveTimetable functions...
 export const getTimetable = async (year, semester, onlyPublished = false) => {
   console.log("=== BACKEND GET TIMETABLE DEBUG ===");
   console.log(`Fetching timetable for year: ${year}, semester: ${semester}, onlyPublished=${onlyPublished}`);
 
   const filter = { Year: year, Semester: semester };
   
-  // CRITICAL FIX: Only add Published filter when onlyPublished is true
   if (onlyPublished === true) {
     filter.Published = true;
     console.log("Adding Published=true filter for user-side request");
@@ -756,15 +811,8 @@ export const getTimetable = async (year, semester, onlyPublished = false) => {
     console.log("No Published filter applied - fetching all schedules for admin");
   }
 
-  console.log("Database filter being used:", filter);
-
   const schedules = await Schedule.find(filter).lean();
-
   console.log(`Found ${schedules.length} schedules in database`);
-  console.log("Sample schedules with Published status:");
-  schedules.slice(0, 3).forEach((sch, index) => {
-    console.log(`DB Schedule ${index}: CourseCode=${sch.CourseCode}, Published=${sch.Published}, Duration=${sch.Duration}`);
-  });
 
   const schedulesWithStringIds = schedules.map(sch => ({
     ...sch,
@@ -777,22 +825,15 @@ export const getTimetable = async (year, semester, onlyPublished = false) => {
   return { schedules: schedulesWithStringIds };
 };
 
-
 export const saveTimetable = async (year, semester, timetable) => {
   console.log("=== BACKEND SAVE TIMETABLE DEBUG ===");
   console.log(`Saving timetable for year: ${year}, semester: ${semester}`);
   console.log(`Received ${timetable.length} items`);
-  
-  // Debug: Log each item's Duration before processing
-  timetable.forEach((item, index) => {
-    console.log(`Item ${index}: CourseCode=${item.CourseCode}, Duration=${item.Duration}, Type=${typeof item.Duration}`);
-  });
 
   await Schedule.deleteMany({ Year: year, Semester: semester });
 
-  const timetableWithObjectIds = timetable.map((item, index) => {
-    // IMPROVED: Better Duration handling
-    let duration = 1; // Default value
+  const timetableWithObjectIds = timetable.map((item) => {
+    let duration = 1;
     if (item.Duration !== undefined && item.Duration !== null && item.Duration !== '') {
       const parsedDuration = parseInt(item.Duration);
       if (!isNaN(parsedDuration) && parsedDuration > 0) {
@@ -800,40 +841,19 @@ export const saveTimetable = async (year, semester, timetable) => {
       }
     }
 
-    const processedItem = {
+    return {
       ...item,
       CourseID: mongoose.Types.ObjectId(item.CourseID),
       RoomID: mongoose.Types.ObjectId(item.RoomID),
       InstructorID: item.InstructorID && item.InstructorID.length === 24
         ? mongoose.Types.ObjectId(item.InstructorID)
         : null,
-      Duration: duration, // Now properly preserved with schema support
+      Duration: duration,
       Year: year,
       Semester: semester,
     };
-
-    console.log(`Processed item ${index}: CourseCode=${processedItem.CourseCode}, Duration=${processedItem.Duration} (type: ${typeof processedItem.Duration})`);
-    return processedItem;
   });
 
-  console.log("=== FINAL DATA BEING SAVED TO DATABASE ===");
-  timetableWithObjectIds.forEach((item, index) => {
-    console.log(`Final item ${index}: CourseCode=${item.CourseCode}, Duration=${item.Duration}, StartTime=${item.StartTime}`);
-  });
-
-  try {
-    await Schedule.insertMany(timetableWithObjectIds);
-    
-    console.log("=== VERIFYING SAVED DATA ===");
-    // Immediately fetch what was just saved to verify
-    const savedData = await Schedule.find({ Year: year, Semester: semester }).lean();
-    savedData.forEach((item, index) => {
-      console.log(`Verified in DB ${index}: CourseCode=${item.CourseCode}, Duration=${item.Duration}, StartTime=${item.StartTime}`);
-    });
-
-    return { success: true };
-  } catch (error) {
-    console.error("Error saving timetable:", error);
-    throw error;
-  }
+  await Schedule.insertMany(timetableWithObjectIds);
+  return { success: true };
 };

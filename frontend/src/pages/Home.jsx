@@ -402,94 +402,101 @@ const detectAllConflicts = (currentTimetable, currentCourses, currentRooms) => {
   console.log(`Found ${allEvents.length} events to check for conflicts`);
 
   // 1. Check Room Capacity Conflicts
-  allEvents.forEach(event => {
-    const room = currentRooms.find(r => r._id === event.roomId);
-    if (room && event.raw) {
-      const requiredCapacity = calculateRequiredCapacity(
-        event.code,
-        event.raw.OccType,
-        event.raw.OccNumber,
-        currentCourses
-      );
-      
-      if (room.capacity < requiredCapacity) {
-        conflicts.roomCapacity.push({
-          id: `capacity-${event.id}`,
-          eventId: event.id,
-          courseCode: event.code,
-          roomCode: room.code,
-          roomCapacity: room.capacity,
-          requiredCapacity,
-          day: event.day,
-          time: TIMES[event.timeIdx],
-          occType: event.raw.OccType,
-          occNumber: event.raw.OccNumber
-        });
-      }
+// 1. Check Room Capacity Conflicts
+allEvents.forEach(event => {
+  const room = currentRooms.find(r => r._id === event.roomId);
+  if (room && event.raw) {
+    // ✅ FIX: Pass EstimatedStudents from the event
+    const requiredCapacity = calculateRequiredCapacity(
+      event.code,
+      event.raw.OccType,
+      event.raw.OccNumber,
+      currentCourses,
+      event.raw.EstimatedStudents  // ✅ CRITICAL FIX: Pass this parameter
+    );
+    
+    if (room.capacity < requiredCapacity) {
+      conflicts.roomCapacity.push({
+        id: `capacity-${event.id}`,
+        eventId: event.id,
+        courseCode: event.code,
+        roomCode: room.code,
+        roomCapacity: room.capacity,
+        requiredCapacity,
+        day: event.day,
+        time: TIMES[event.timeIdx],
+        occType: event.raw.OccType,
+        occNumber: event.raw.OccNumber
+      });
     }
-  });
+  }
+});
 
   // 2. FIXED: Check Room Double Booking Conflicts - Group by conflicting event pairs
   const roomConflictGroups = new Map();
 
-  // Find all overlapping event pairs in the same room
-  allEvents.forEach(event1 => {
-    allEvents.forEach(event2 => {
-      if (event1.id >= event2.id) return; // Avoid duplicates and self-comparison
-      if (event1.roomId !== event2.roomId || event1.day !== event2.day) return;
+// Find all overlapping event pairs in the same room
+allEvents.forEach(event1 => {
+  allEvents.forEach(event2 => {
+    if (event1.id >= event2.id) return;
+    if (event1.roomId !== event2.roomId || event1.day !== event2.day) return;
 
-      // Calculate overlap between the two events
-      const event1Start = event1.timeIdx;
-      const event1Duration = event1.raw?.Duration || 1;
-      const event1End = event1Start + event1Duration - 1;
+    const event1Start = event1.timeIdx;
+    const event1Duration = event1.raw?.Duration || 1;
+    const event1End = event1Start + event1Duration - 1;
 
-      const event2Start = event2.timeIdx;
-      const event2Duration = event2.raw?.Duration || 1;
-      const event2End = event2Start + event2Duration - 1;
+    const event2Start = event2.timeIdx;
+    const event2Duration = event2.raw?.Duration || 1;
+    const event2End = event2Start + event2Duration - 1;
 
-      // Check if they overlap
-      const hasOverlap = !(event1End < event2Start || event1Start > event2End);
+    const hasOverlap = !(event1End < event2Start || event1Start > event2End);
 
-      if (hasOverlap) {
-        // Create a unique key for this conflict group (sorted event IDs)
-        const conflictKey = `${event1.roomId}-${event1.day}-${[event1.id, event2.id].sort().join('-')}`;
+    if (hasOverlap) {
+      const conflictKey = `${event1.roomId}-${event1.day}-${[event1.id, event2.id].sort().join('-')}`;
+      
+      if (!roomConflictGroups.has(conflictKey)) {
+        const room = currentRooms.find(r => r._id === event1.roomId);
+        const overlapStart = Math.max(event1Start, event2Start);
+        const overlapEnd = Math.min(event1End, event2End);
         
-        if (!roomConflictGroups.has(conflictKey)) {
-          const room = currentRooms.find(r => r._id === event1.roomId);
-          const overlapStart = Math.max(event1Start, event2Start);
-          const overlapEnd = Math.min(event1End, event2End);
-          
-          roomConflictGroups.set(conflictKey, {
-            id: `double-${conflictKey}`,
-            type: 'Room Double Booking',
-            roomCode: room?.code || 'Unknown',
-            day: event1.day,
-            time: TIMES[overlapStart] || `Time ${overlapStart}`,
-            overlapStart,
-            overlapEnd,
-            conflictingEvents: [
-              {
-                id: event1.id,
-                courseCode: event1.code,
-                occType: event1.raw.OccType,
-                occNumber: event1.raw.OccNumber
-              },
-              {
-                id: event2.id,
-                courseCode: event2.code,
-                occType: event2.raw.OccType,
-                occNumber: event2.raw.OccNumber
-              }
-            ],
-            description: `${event1.code} and ${event2.code} overlap in ${room?.code || 'Unknown'} on ${event1.day}`
-          });
-        }
+        // ✅ FIX: Create proper full time range for the overlap
+        const overlapStartTime = TIMES[overlapStart];
+        const overlapEndTime = TIMES[overlapEnd];
+        
+        const fullTimeRange = overlapStartTime.includes(' - ') 
+          ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+          : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+        
+        roomConflictGroups.set(conflictKey, {
+          id: `double-${conflictKey}`,
+          type: 'Room Double Booking',
+          roomCode: room?.code || 'Unknown',
+          day: event1.day,
+          time: fullTimeRange, // ✅ CRITICAL: Store the full overlap time range here
+          overlapStart,
+          overlapEnd,
+          conflictingEvents: [
+            {
+              id: event1.id,
+              courseCode: event1.code,
+              occType: event1.raw.OccType,
+              occNumber: event1.raw.OccNumber
+            },
+            {
+              id: event2.id,
+              courseCode: event2.code,
+              occType: event2.raw.OccType,
+              occNumber: event2.raw.OccNumber
+            }
+          ],
+          description: `${event1.code} and ${event2.code} overlap in ${room?.code || 'Unknown'} on ${event1.day}`
+        });
       }
-    });
+    }
   });
+});
 
-  // Convert map to array
-  conflicts.roomDoubleBooking = Array.from(roomConflictGroups.values());
+conflicts.roomDoubleBooking = Array.from(roomConflictGroups.values());
 
   // 3. Check Instructor Conflicts - Group by instructor-day-timeslot
   const instructorConflictGroups = new Map();
@@ -1098,9 +1105,21 @@ const updateModalPosition = () => {
 };
   // Helper function to calculate required capacity for an event
 // FIXED VERSION: Now properly uses occNumber to determine capacity calculation
-const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
+const calculateRequiredCapacity = (courseCode, occType, occNumber, courses, estimatedStudents = null) => {
   console.log("=== CAPACITY CALCULATION DEBUG ===");
-  console.log("Parameters:", { courseCode, occType, occNumber, coursesLength: courses.length });
+  console.log("Parameters:", { 
+    courseCode, 
+    occType, 
+    occNumber, 
+    coursesLength: courses.length,
+    estimatedStudents
+  });
+  
+  // CRITICAL FIX: If we have EstimatedStudents from the schedule, use it directly
+  if (estimatedStudents !== null && estimatedStudents !== undefined && estimatedStudents > 0) {
+    console.log(`✅ Using pre-calculated EstimatedStudents: ${estimatedStudents}`);
+    return estimatedStudents;
+  }
   
   const course = courses.find(c => c.code === courseCode);
   if (!course) {
@@ -1108,40 +1127,43 @@ const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
     return 0;
   }
   
-  const targetStudent = course.targetStudent || 0;
-  console.log("Course data:", {
-    targetStudent,
-    lectureOccurrence: course.lectureOccurrence,
-    tutorialOcc: course.tutorialOcc
-  });
+  // ✅ NEW: Try to find the specific grouping for this occurrence
+  const occNumbers = Array.isArray(occNumber) ? occNumber : [occNumber];
   
-  if (occType === "Lecture") {
+  if (occType === "Lecture" && course.lectureGroupings) {
+    const matchingGrouping = course.lectureGroupings.find(group => 
+      occNumbers.includes(group.occNumber)
+    );
+    
+    if (matchingGrouping && matchingGrouping.estimatedStudents) {
+      console.log(`✅ Using lecture grouping capacity: ${matchingGrouping.estimatedStudents}`);
+      return matchingGrouping.estimatedStudents;
+    }
+    
+    // Fallback to simple division
     const lectureOccurrence = course.lectureOccurrence || 1;
-    const capacityPerLecture = Math.ceil(targetStudent / lectureOccurrence);
-    console.log(`✅ Lecture: ${targetStudent} / ${lectureOccurrence} = ${capacityPerLecture}`);
+    const capacityPerLecture = Math.ceil((course.targetStudent || 0) / lectureOccurrence);
+    console.log(`✅ Lecture fallback: ${course.targetStudent} / ${lectureOccurrence} = ${capacityPerLecture}`);
     return capacityPerLecture;
   } 
-  else if (occType === "Tutorial") {
-    const tutorialOcc = course.tutorialOcc || 1;
+  else if (occType === "Tutorial" && course.tutorialGroupings) {
+    const matchingGrouping = course.tutorialGroupings.find(group => 
+      occNumbers.includes(group.occNumber)
+    );
     
-    // KEY FIX: Use occNumber to determine capacity calculation approach
-    if (Array.isArray(occNumber)) {
-      // Multiple occurrences in one event - capacity per occurrence
-      const capacityPerTutorial = Math.ceil(targetStudent / tutorialOcc);
-      console.log(`✅ Tutorial (multiple occ): ${targetStudent} / ${tutorialOcc} = ${capacityPerTutorial}`);
-      return capacityPerTutorial;
-    } else {
-      // Single occurrence - still capacity per occurrence
-      const capacityPerTutorial = Math.ceil(targetStudent / tutorialOcc);
-      console.log(`✅ Tutorial (single occ): ${targetStudent} / ${tutorialOcc} = ${capacityPerTutorial}`);
-      return capacityPerTutorial;
+    if (matchingGrouping && matchingGrouping.estimatedStudents) {
+      console.log(`✅ Using tutorial grouping capacity: ${matchingGrouping.estimatedStudents}`);
+      return matchingGrouping.estimatedStudents;
     }
+    
+    // Fallback to simple division
+    const tutorialOcc = course.tutorialOcc || 1;
+    const capacityPerTutorial = Math.ceil((course.targetStudent || 0) / tutorialOcc);
+    console.log(`✅ Tutorial fallback: ${course.targetStudent} / ${tutorialOcc} = ${capacityPerTutorial}`);
+    return capacityPerTutorial;
   }
   
-  // This fallback might be returning 300!
-  // console.log(`⚠️ FALLBACK CASE HIT! Returning full targetStudent: ${targetStudent}`);
-  // console.log("This might be where 300 is coming from!");
-  return targetStudent;
+  return course.targetStudent || 0;
 };
 
 // Alternative version that's more explicit about the issue
@@ -1320,25 +1342,27 @@ const calculateRequiredCapacity = (courseCode, occType, occNumber, courses) => {
   }
 
   // Check for room capacity conflict
-  const destRoomObj = rooms.find(r => r._id === destRoom);
-  if (destRoomObj) {
-    const requiredCapacity = calculateRequiredCapacity(
-      moved.code, 
-      moved.raw.OccType, 
-      moved.raw.OccNumber, 
-      courses
-    );
-    
-    if (destRoomObj.capacity < requiredCapacity) {
-      conflicts.push({
-        type: 'Room Capacity',
-        message: `Room ${destRoomObj.code} has capacity of ${destRoomObj.capacity}, but event requires ${requiredCapacity} seats`,
-        roomCode: destRoomObj.code,
-        roomCapacity: destRoomObj.capacity,
-        requiredCapacity: requiredCapacity
-      });
-    }
+const destRoomObj = rooms.find(r => r._id === destRoom);
+if (destRoomObj) {
+  // ✅ FIX: Pass EstimatedStudents from the moved event
+  const requiredCapacity = calculateRequiredCapacity(
+    moved.code, 
+    moved.raw.OccType, 
+    moved.raw.OccNumber, 
+    courses,
+    moved.raw.EstimatedStudents  // ✅ CRITICAL FIX: Pass this parameter
+  );
+  
+  if (destRoomObj.capacity < requiredCapacity) {
+    conflicts.push({
+      type: 'Room Capacity',
+      message: `Room ${destRoomObj.code} has capacity of ${destRoomObj.capacity}, but event requires ${requiredCapacity} seats`,
+      roomCode: destRoomObj.code,
+      roomCapacity: destRoomObj.capacity,
+      requiredCapacity: requiredCapacity
+    });
   }
+}
 
   // Check for room double booking conflicts
   rooms
@@ -1724,12 +1748,13 @@ const handleModalConfirm = async () => {
   const duration = item.raw.Duration || 1;
 
   // Calculate required capacity for this event
-  const requiredCapacity = calculateRequiredCapacity(
-    item.code, 
-    item.raw.OccType, 
-    item.raw.OccNumber, 
-    courses
-  );
+const requiredCapacity = calculateRequiredCapacity(
+  item.code, 
+  item.raw.OccType, 
+  item.raw.OccNumber, 
+  courses,
+  item.raw.EstimatedStudents  // ✅ CRITICAL FIX: Pass this parameter
+);
 
   // Find target room details
   const targetRoomObj = rooms.find(r => r._id === targetRoom);
@@ -2219,14 +2244,20 @@ const generateConflictId = (conflict, conflictType) => {
       return `capacity_${conflict.courseCode}_${conflict.roomCode}_${conflict.day}_${conflict.time}`;
     
     case 'Room Double Booking':
-      // Sort course codes to ensure consistent ID regardless of order
-      const sortedCourses = conflict.conflictingEvents.map(e => e.courseCode).sort();
+      // Use FULL course codes (including -1, -2 suffixes)
+      const sortedCourses = conflict.conflictingEvents
+        .map(e => e.courseCode)
+        .sort();
+      
       return `double_${sortedCourses.join('_')}_${conflict.roomCode}_${conflict.day}_${conflict.time}`;
     
     case 'Instructor Conflict':
-      // Sort course codes to ensure consistent ID regardless of order
-      const sortedInstructorCourses = conflict.conflictingEvents.map(e => e.courseCode).sort();
-      return `instructor_${conflict.instructorId}_${sortedInstructorCourses.join('_')}_${conflict.day}_${conflict.timeRange || conflict.time}`;
+      // Use FULL course codes (including -1, -2 suffixes)
+      const sortedInstrCourses = conflict.conflictingEvents
+        .map(e => e.courseCode)
+        .sort();
+      
+      return `instructor_${conflict.instructorId}_${sortedInstrCourses.join('_')}_${conflict.day}_${conflict.timeRange || conflict.time}`;
     
     case 'Time Slot Exceeded':
       return `timeslot_${conflict.courseCode}_${conflict.day}_${conflict.startTime}`;
@@ -2303,16 +2334,21 @@ const handleSaveTimetable = async () => {
               }
 
               timetableArr.push({
-                ...item.raw,
-                RoomID: roomId,
-                Day: day,
-                StartTime: TIMES[timeIdx],
-                EndTime: item.raw.EndTime || TIMES[Math.min(timeIdx + (item.raw.Duration || 1) - 1, TIMES.length - 1)].split(" - ")[1],
-                Duration: item.raw.Duration || 1,
-                Instructors: instructorsToSave,
-                InstructorID: instructorIdToSave && instructorIdToSave.length === 24 ? instructorIdToSave : null,
-                OriginalInstructors: item.instructors || item.raw.OriginalInstructors,
-              });
+  ...item.raw,
+  RoomID: roomId,
+  Day: day,
+  StartTime: TIMES[timeIdx],
+  EndTime: item.raw.EndTime || TIMES[Math.min(timeIdx + (item.raw.Duration || 1) - 1, TIMES.length - 1)].split(" - ")[1],
+  Duration: item.raw.Duration || 1,
+  Instructors: instructorsToSave,
+  InstructorID: instructorIdToSave && instructorIdToSave.length === 24 ? instructorIdToSave : null,
+  OriginalInstructors: item.instructors || item.raw.OriginalInstructors,
+  // ✅ CRITICAL: Ensure these fields are preserved
+  EstimatedStudents: item.raw.EstimatedStudents,
+  Departments: item.raw.Departments,
+  OccType: item.raw.OccType,
+  OccNumber: item.raw.OccNumber,
+});
             }
           });
         });
@@ -2333,61 +2369,73 @@ const handleSaveTimetable = async () => {
     const existingActiveConflictIds = new Set();
     
     if (existingActiveConflicts.length > 0) {
-      existingActiveConflicts.forEach(conflict => {
-        // Only process if conflict has required properties and is not resolved
-        if (!conflict || !conflict.Type || 
-            conflict.Status === 'Resolved' || 
-            conflict.Status === 'Closed' || 
-            conflict.Status === 'Dismissed') {
-          console.log("Skipping resolved or invalid conflict:", conflict);
-          return;
-        }
-        
-        // Generate ID based on the conflict data from database
-        let conflictId;
-        try {
-          switch (conflict.Type) {
-            case 'Room Capacity':
-              conflictId = `capacity_${conflict.CourseCode}_${rooms.find(r => r._id === conflict.RoomID)?.code || 'Unknown'}_${conflict.Day}_${conflict.StartTime}`;
-              break;
-            case 'Room Double Booking':
-              // For existing conflicts, we need to parse the description to get course codes
-              const courseMatches = conflict.Description ? conflict.Description.match(/([A-Z]{3}\d{4})/g) : null;
-              if (courseMatches && courseMatches.length >= 2) {
-                const sortedCourses = courseMatches.slice(0, 2).sort();
-                conflictId = `double_${sortedCourses.join('_')}_${rooms.find(r => r._id === conflict.RoomID)?.code || 'Unknown'}_${conflict.Day}_${conflict.StartTime}`;
-              } else {
-                conflictId = `double_unknown_${conflict.Day}_${conflict.StartTime}`;
-              }
-              break;
-            case 'Instructor Conflict':
-              // Similar parsing for instructor conflicts
-              const instrCourseMatches = conflict.Description ? conflict.Description.match(/([A-Z]{3}\d{4})/g) : null;
-              if (instrCourseMatches && instrCourseMatches.length >= 2) {
-                const sortedInstrCourses = instrCourseMatches.slice(0, 2).sort();
-                conflictId = `instructor_${conflict.InstructorID}_${sortedInstrCourses.join('_')}_${conflict.Day}_${conflict.StartTime}`;
-              } else {
-                conflictId = `instructor_${conflict.InstructorID}_unknown_${conflict.Day}_${conflict.StartTime}`;
-              }
-              break;
-            case 'Time Slot Exceeded':
-              conflictId = `timeslot_${conflict.CourseCode}_${conflict.Day}_${conflict.StartTime}`;
-              break;
-            default:
-              conflictId = `existing_${conflict._id}`;
-          }
-          
-          if (conflictId) {
-            existingActiveConflictIds.add(conflictId);
-            console.log(`Active conflict ID: ${conflictId} (Status: ${conflict.Status})`);
-          }
-        } catch (err) {
-          console.error("Error processing existing active conflict:", conflict, err);
-        }
-      });
+  existingActiveConflicts.forEach(conflict => {
+    if (!conflict || !conflict.Type || 
+        conflict.Status === 'Resolved' || 
+        conflict.Status === 'Closed' || 
+        conflict.Status === 'Dismissed') {
+      return;
     }
     
-    console.log(`Generated ${existingActiveConflictIds.size} existing active conflict IDs`);
+    let conflictId;
+    try {
+      switch (conflict.Type) {
+        case 'Room Capacity':
+          conflictId = `capacity_${conflict.CourseCode}_${rooms.find(r => r._id === conflict.RoomID)?.code || 'Unknown'}_${conflict.Day}_${conflict.StartTime}`;
+          break;
+          
+        case 'Room Double Booking':
+          // CRITICAL FIX: Extract FULL course codes from description
+          // Match patterns like "WIX2001-1", "WIX2001-2", or just "WIX2001"
+          const courseMatches = conflict.Description ? 
+            conflict.Description.match(/[A-Z]{3}\d{4}(?:-\d+)?/g) : null;
+          
+          if (courseMatches && courseMatches.length >= 2) {
+            // Take first 2 unique course codes and sort
+            const uniqueCourses = [...new Set(courseMatches.slice(0, 2))].sort();
+            conflictId = `double_${uniqueCourses.join('_')}_${rooms.find(r => r._id === conflict.RoomID)?.code || 'Unknown'}_${conflict.Day}_${conflict.StartTime}`;
+            
+            console.log(`📋 Parsed existing Room Double Booking: ${uniqueCourses.join(' & ')} -> ID: ${conflictId}`);
+          } else {
+            conflictId = `double_unknown_${conflict.Day}_${conflict.StartTime}`;
+          }
+          break;
+          
+        case 'Instructor Conflict':
+          // CRITICAL FIX: Extract FULL course codes from description
+          const instrCourseMatches = conflict.Description ? 
+            conflict.Description.match(/[A-Z]{3}\d{4}(?:-\d+)?/g) : null;
+          
+          if (instrCourseMatches && instrCourseMatches.length >= 2) {
+            // Take first 2 unique course codes and sort
+            const uniqueInstrCourses = [...new Set(instrCourseMatches.slice(0, 2))].sort();
+            conflictId = `instructor_${conflict.InstructorID}_${uniqueInstrCourses.join('_')}_${conflict.Day}_${conflict.StartTime}`;
+            
+            console.log(`📋 Parsed existing Instructor Conflict: ${uniqueInstrCourses.join(' & ')} -> ID: ${conflictId}`);
+          } else {
+            conflictId = `instructor_${conflict.InstructorID}_unknown_${conflict.Day}_${conflict.StartTime}`;
+          }
+          break;
+          
+        case 'Time Slot Exceeded':
+          conflictId = `timeslot_${conflict.CourseCode}_${conflict.Day}_${conflict.StartTime}`;
+          break;
+          
+        default:
+          conflictId = `existing_${conflict._id}`;
+      }
+      
+      if (conflictId) {
+        existingActiveConflictIds.add(conflictId);
+        console.log(`✅ Active conflict ID: ${conflictId}`);
+      }
+    } catch (err) {
+      console.error("Error processing existing active conflict:", conflict, err);
+    }
+  });
+}
+
+console.log(`Generated ${existingActiveConflictIds.size} existing active conflict IDs`)
 
 
 
@@ -2435,35 +2483,39 @@ const handleSaveTimetable = async () => {
 
       // STEP 4: Check Room Double Booking Conflicts for new ones
       for (const conflict of conflictResults.details.roomDoubleBooking) {
-        const conflictId = generateConflictId(conflict, 'Room Double Booking');
-        
-        if (!existingActiveConflictIds.has(conflictId)) {
-          const conflictData = {
-            Year: selectedYear,
-            Semester: selectedSemester,
-            Type: 'Room Double Booking',
-            Description: `Room double booking detected: ${conflict.conflictingEvents.map(e => 
-              `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''})`
-            ).join(' and ')} in ${conflict.roomCode} on ${conflict.day} at ${conflict.time}`,
-            CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
-            RoomID: rooms.find(r => r.code === conflict.roomCode)?._id || null,
-            Day: conflict.day,
-            StartTime: conflict.time,
-            Priority: 'High',
-            Status: 'Pending'
-          };
-          
-          try {
-            await recordDragDropConflict(conflictData);
-            newConflictsCount++;
-            console.log(`NEW Room Double Booking Conflict: ${conflictId}`);
-          } catch (error) {
-            console.error("Failed to record new room double booking conflict:", error);
-          }
-        } else {
-          console.log(`EXISTING ACTIVE Room Double Booking Conflict: ${conflictId}`);
-        }
-      }
+  const conflictId = generateConflictId(conflict, 'Room Double Booking');
+  
+  if (!existingActiveConflictIds.has(conflictId)) {
+    // ✅ FIX: Use conflict.time which already contains the full overlap range
+    // The detectAllConflicts function already calculates this correctly
+    const timeRange = conflict.time; // This is already the full range like "4.00 PM - 5.00 PM"
+    
+    const conflictData = {
+      Year: selectedYear,
+      Semester: selectedSemester,
+      Type: 'Room Double Booking',
+      Description: `Room double booking detected: ${conflict.conflictingEvents.map(e => 
+        `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''})`
+      ).join(' and ')} in ${conflict.roomCode} on ${conflict.day} at ${timeRange}`,
+      CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+      RoomID: rooms.find(r => r.code === conflict.roomCode)?._id || null,
+      Day: conflict.day,
+      StartTime: timeRange, // ✅ CRITICAL: Use the full time range, not just conflict.time
+      Priority: 'High',
+      Status: 'Pending'
+    };
+    
+    try {
+      await recordDragDropConflict(conflictData);
+      newConflictsCount++;
+      console.log(`NEW Room Double Booking Conflict: ${conflictId}`);
+    } catch (error) {
+      console.error("Failed to record new room double booking conflict:", error);
+    }
+  } else {
+    console.log(`EXISTING ACTIVE Room Double Booking Conflict: ${conflictId}`);
+  }
+}
 
       // STEP 5: Check Instructor Conflicts for new ones
       for (const conflict of conflictResults.details.instructorConflict) {
@@ -2587,7 +2639,7 @@ const handleSaveTimetable = async () => {
 
   if (format === "csv") {
     const csvData = [];
-    const headers = ["Day", "Time Slot", "End Time", "Duration (Hours)", "Room Code", "Room Capacity", "Course Code", "Occurrence Type", "Occurrence Number", "Instructors"];
+    const headers = ["Day", "Time Slot", "End Time", "Duration (Hours)", "Room Code", "Room Capacity", "Course Code", "Occurrence Type", "Occurrence Number", "Deparments", "Estimated Students", "Instructors"];
     csvData.push(headers);
 
     // FIXED: Add Set to track exported events and prevent duplicates
@@ -2638,6 +2690,8 @@ const handleSaveTimetable = async () => {
                 item.code || "N/A",
                 item.raw.OccType || "N/A",
                 Array.isArray(item.raw.OccNumber) ? item.raw.OccNumber.join(", ") : item.raw.OccNumber || "N/A",
+                item.raw.Departments ? item.raw.Departments.join(", ") : "N/A",  // NEW
+                item.raw.EstimatedStudents || "N/A",  // NEW
                 instructorName,
               ]);
             }
@@ -3577,19 +3631,27 @@ const handleSaveTimetable = async () => {
         }}
       >
                                   <div>
-                                    <strong>{event.code} ({event.raw.OccType})</strong>
-                                    {duration > 1 && (
-                                      <span style={{ fontSize: 12, color: "#666", marginLeft: 8 }}>
-                                        ({duration}h)
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div style={{ fontSize: 13 }}>
-                                    {event.raw.OccNumber && (
-                                      Array.isArray(event.raw.OccNumber)
-                                        ? `(Occ ${event.raw.OccNumber.join(", ")})`
-                                        : `(Occ ${event.raw.OccNumber})`
-                                    )}
+  <strong>{event.code} ({event.raw.OccType})</strong>
+  {duration > 1 && (
+    <span style={{ fontSize: 12, color: "#666", marginLeft: 8 }}>
+      ({duration}h)
+    </span>
+  )}
+</div>
+<div style={{ fontSize: 13 }}>
+  {/* Existing OccNumber display */}
+  {event.raw.OccNumber && (
+    Array.isArray(event.raw.OccNumber)
+      ? `(Occ ${event.raw.OccNumber.join(", ")})`
+      : `(Occ ${event.raw.OccNumber})`
+  )}
+  
+  {/* NEW: Show departments if available */}
+  {event.raw.Departments && event.raw.Departments.length > 0 && (
+    <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
+      {event.raw.Departments.join(", ")}
+    </div>
+  )}
                                     <select
   value={event.selectedInstructorId || ""}
   onChange={async (e) => {

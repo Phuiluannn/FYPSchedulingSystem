@@ -14,6 +14,7 @@ import AdminFeedback from './pages/AdminFeedback';
 import Analytics from './pages/Analytics';
 import InstructorTimetable from './pages/InstructorTimetable';
 import Students from './pages/Students';
+import ResetPassword from './pages/ResetPassword';
 import { AlertProvider } from './pages/AlertContext';
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
         <Route path="/signup" element={<SignUp />} />
         <Route path="/login" element={<LogIn />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path ="/reset-password/:token" element={<ResetPassword />} />
 
         {/* Admin-only routes */}
         <Route path="/courses" element={
