@@ -335,6 +335,8 @@ const exportConflictData = () => {
         return '👨‍🏫';
       case 'Course Overlap':
         return '📚';
+      case 'Department Tutorial Clash':
+        return '🏢';
       default:
         return '⚠️';
     }
@@ -786,7 +788,7 @@ const exportConflictData = () => {
                       <tr>
                         <th style={{ textAlign: "left", paddingLeft: 20 }}>Conflict Type</th>
                         <th style={{ textAlign: "left" }}>Description</th>
-                        <th style={{ textAlign: "center" }}>Time & Location</th>
+                        <th style={{ textAlign: "center" }}>Time</th>
                         <th style={{ textAlign: "center" }}>Status</th>
                         <th style={{ textAlign: "center" }}>Created</th>
                         <th style={{ textAlign: "center" }}>Action</th>

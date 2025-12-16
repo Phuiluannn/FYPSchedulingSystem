@@ -58,7 +58,7 @@ export const updateFeedback = async (id, data) => {
         title: "Feedback Response Received",
         message: `Your feedback "${originalFeedback.title}" has received ${isNewResponse ? 'a' : 'an updated'} response from the administrator.`,
         type: "feedback",
-        recipients: [originalFeedback.user.role], // Send to the user's role
+        // recipients: [originalFeedback.user.role], // Send to the user's role
         feedbackId: originalFeedback._id,
         feedbackTitle: originalFeedback.title,
         // Create a user-specific notification by using isRead Map

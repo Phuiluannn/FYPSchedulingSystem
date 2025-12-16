@@ -8,8 +8,18 @@ export const createNotification = async (notificationData) => {
 
     // Emit to all relevant users
     if (notificationData.recipients && Array.isArray(notificationData.recipients)) {
+      // Role-based notifications (timetable, announcements, etc.)
       io.emit('notification', {
         recipients: notificationData.recipients,
+        notification: saved
+      });
+    } else if (notificationData.type === "feedback" && notificationData.isRead) {
+      // User-specific feedback notifications
+      // Extract user IDs from the isRead Map
+      const userIds = Array.from(notificationData.isRead.keys());
+      
+      io.emit('notification', {
+        userIds: userIds, // Send specific user IDs instead of roles
         notification: saved
       });
     }
@@ -52,21 +62,23 @@ export const createFeedbackResponseNotification = async (feedbackId, feedbackTit
 
 export const getUserNotifications = async (userRole, userId, limit = 20) => {
   try {
-    // Get notifications for user role OR specific feedback notifications for this user
     const notifications = await Notification.find({
       $or: [
-        { recipients: userRole }, // General notifications for user role
+        { 
+          recipients: userRole,
+          type: { $ne: "feedback" } // Exclude feedback type from role-based notifications
+        },
         { 
           type: "feedback",
-          [`isRead.${userId}`]: { $exists: true } // Feedback notifications specifically for this user
+          [`isRead.${userId}`]: { $exists: true } // Only feedback notifications for this specific user
         }
       ],
-      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } // Last 30 days
+      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
     })
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
-
+    
     console.log(`Found ${notifications.length} notifications for role: ${userRole}, userId: ${userId}`);
 
     // 🔥 FIX: Properly handle isRead Map field

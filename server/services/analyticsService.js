@@ -93,6 +93,7 @@ export const getInstructorWorkload = async (year, semester, onlyPublished = fals
   return workload;
 };
 
+
 export const recordConflict = async (conflictData) => {
   console.log("=== RECORDING CONFLICT ===");
   console.log("Conflict data:", conflictData);
@@ -100,6 +101,25 @@ export const recordConflict = async (conflictData) => {
   // Validate required fields
   if (!conflictData.Year || !conflictData.Semester || !conflictData.Type || !conflictData.Description) {
     throw new Error("Missing required conflict data fields");
+  }
+
+  // 🔧 NEW: Check for existing duplicate conflict
+  const existingConflict = await Conflict.findOne({
+    Year: conflictData.Year,
+    Semester: conflictData.Semester,
+    Type: conflictData.Type,
+    Description: conflictData.Description,
+    Day: conflictData.Day,
+    StartTime: conflictData.StartTime,
+    Status: 'Pending' // Only check pending conflicts
+  });
+
+  if (existingConflict) {
+    console.log("⚠️ DUPLICATE CONFLICT DETECTED - Skipping:", {
+      type: existingConflict.Type,
+      description: existingConflict.Description
+    });
+    return existingConflict; // Return existing instead of creating duplicate
   }
 
   // Ensure RoomID is properly formatted for MongoDB
@@ -119,7 +139,7 @@ export const recordConflict = async (conflictData) => {
   });
 
   await conflict.save();
-  console.log("Conflict saved:", conflict);
+  console.log("✅ New conflict saved:", conflict);
   return conflict;
 };
 
@@ -289,6 +309,99 @@ export const checkAndRecordConflicts = async (timetable, year, semester) => {
   // Add instructor conflicts to the main conflicts array
   conflicts.push(...Array.from(instructorConflicts.values()));
 
+  // NEW: Check for Department Tutorial Clashes
+console.log("=== CHECKING DEPARTMENT TUTORIAL CLASHES ===");
+const departmentTutorialConflicts = new Map();
+
+// Group tutorial events by day
+const tutorialsByDay = {};
+
+for (const item of timetable) {
+  const { OccType, Day, StartTime, Duration, CourseCode, OccNumber, Departments } = item;
+  
+  // Only check tutorials
+  if (OccType !== 'Tutorial') continue;
+  if (!Departments || Departments.length === 0) continue;
+  
+  const startTimeIdx = TIMES.indexOf(StartTime);
+  if (startTimeIdx === -1) continue;
+  
+  if (!tutorialsByDay[Day]) {
+    tutorialsByDay[Day] = [];
+  }
+  
+  tutorialsByDay[Day].push({
+    ...item,
+    startTimeIdx,
+    endTimeIdx: startTimeIdx + (Duration || 1) - 1
+  });
+}
+
+// Check for department clashes within each day
+Object.entries(tutorialsByDay).forEach(([day, tutorials]) => {
+  for (let i = 0; i < tutorials.length; i++) {
+    for (let j = i + 1; j < tutorials.length; j++) {
+      const tutorial1 = tutorials[i];
+      const tutorial2 = tutorials[j];
+      
+      // Skip if same course
+      if (tutorial1.CourseCode === tutorial2.CourseCode) continue;
+      
+      // Check if time periods overlap
+      const hasOverlap = !(tutorial1.endTimeIdx < tutorial2.startTimeIdx || tutorial1.startTimeIdx > tutorial2.endTimeIdx);
+      
+      if (hasOverlap) {
+        // Check if they share any departments
+        const sharedDepartments = tutorial1.Departments.filter(dept => 
+          tutorial2.Departments.includes(dept)
+        );
+        
+        if (sharedDepartments.length > 0) {
+          // Create unique conflict ID
+          const sortedCourses = [tutorial1.CourseCode, tutorial2.CourseCode].sort();
+          const sortedDepts = sharedDepartments.sort();
+          const conflictId = `dept-${day}-${sortedDepts.join('-')}-${sortedCourses.join('-')}`;
+          
+          if (!departmentTutorialConflicts.has(conflictId)) {
+            const overlapStart = Math.max(tutorial1.startTimeIdx, tutorial2.startTimeIdx);
+            const overlapTimeSlot = TIMES[overlapStart];
+            
+            const tutorial1OccText = tutorial1.OccNumber 
+              ? Array.isArray(tutorial1.OccNumber) 
+                ? ` (Occ ${tutorial1.OccNumber.join(", ")})` 
+                : ` (Occ ${tutorial1.OccNumber})`
+              : "";
+              
+            const tutorial2OccText = tutorial2.OccNumber 
+              ? Array.isArray(tutorial2.OccNumber) 
+                ? ` (Occ ${tutorial2.OccNumber.join(", ")})` 
+                : ` (Occ ${tutorial2.OccNumber})`
+              : "";
+            
+            departmentTutorialConflicts.set(conflictId, {
+              Year: year,
+              Semester: semester,
+              Type: 'Department Tutorial Clash',
+              Description: `Department(s) ${sharedDepartments.join(', ')} have conflicting tutorials: ${tutorial1.CourseCode}${tutorial1OccText} and ${tutorial2.CourseCode}${tutorial2OccText} on ${day} at ${overlapTimeSlot}`,
+              CourseCode: tutorial1.CourseCode,
+              Day: day,
+              StartTime: overlapTimeSlot,
+              Priority: 'High',
+              Status: 'Pending'
+            });
+            
+            console.log(`📚 Department clash detected: ${sharedDepartments.join(', ')} - ${tutorial1.CourseCode} vs ${tutorial2.CourseCode}`);
+          }
+        }
+      }
+    }
+  }
+});
+
+// Add department tutorial conflicts to the main conflicts array
+conflicts.push(...Array.from(departmentTutorialConflicts.values()));
+console.log(`Department tutorial clashes found: ${departmentTutorialConflicts.size}`);
+
   // Save conflicts to database
   for (const conflict of conflicts) {
     await recordConflict(conflict);
@@ -438,6 +551,9 @@ const validateConflictStillExists = async (conflict, currentSchedules) => {
     
     case 'Time Slot Exceeded':
       return await validateTimeSlotExceededConflict(conflict, currentSchedules);
+
+    case 'Department Tutorial Clash':
+      return await validateDepartmentTutorialClashConflict(conflict, currentSchedules);
     
     default:
       // For unknown conflict types, assume they're still valid
@@ -622,6 +738,118 @@ const validateTimeSlotExceededConflict = async (conflict, schedules) => {
   const duration = event.Duration || 1;
   
   return startIdx + duration > TIMES.length;
+};
+
+const validateDepartmentTutorialClashConflict = async (conflict, schedules) => {
+  const { Day, Description, StartTime } = conflict;
+  
+  console.log("\n=== VALIDATING DEPARTMENT CLASH ===");
+  console.log("Conflict Description:", Description);
+  console.log("Conflict Day:", Day);
+  console.log("Conflict StartTime:", StartTime);
+  
+  // Extract course codes from description
+  const courseMatches = Description.match(/([A-Z]{3}\d{4}(?:-\d+)?)/g);
+  
+  if (!courseMatches || courseMatches.length < 2) {
+    console.log('❌ Could not extract course codes from department clash description');
+    return true; // Keep conflict if we can't parse it
+  }
+  
+  const course1Code = courseMatches[0];
+  const course2Code = courseMatches[1];
+  
+  console.log(`Extracted courses: ${course1Code} vs ${course2Code}`);
+  
+  // Extract departments
+  const deptMatch = Description.match(/Department\(s\)\s+(.+?)\s+have\s+conflicting/);
+  
+  if (!deptMatch || !deptMatch[1]) {
+    console.log('❌ Could not extract departments from description');
+    return true;
+  }
+  
+  const departments = deptMatch[1]
+    .split(',')
+    .map(d => d.trim())
+    .filter(d => d.length > 0);
+  
+  if (departments.length === 0) {
+    console.log('❌ No departments found after parsing');
+    return true;
+  }
+  
+  console.log(`Extracted departments: ${departments.join(', ')}`);
+  
+  // 🔧 FIX: Check conflicts in BOTH directions since they could be recorded either way
+  const checkConflictPair = (code1, code2) => {
+    const tutorial1Events = schedules.filter(sch => 
+      sch.CourseCode === code1 && 
+      sch.Day === Day && 
+      sch.OccType === 'Tutorial'
+    );
+    
+    const tutorial2Events = schedules.filter(sch => 
+      sch.CourseCode === code2 && 
+      sch.Day === Day && 
+      sch.OccType === 'Tutorial'
+    );
+    
+    console.log(`Found ${tutorial1Events.length} tutorial(s) for ${code1}`);
+    console.log(`Found ${tutorial2Events.length} tutorial(s) for ${code2}`);
+    
+    if (tutorial1Events.length === 0 || tutorial2Events.length === 0) {
+      return false; // One course no longer has tutorials
+    }
+    
+    // Check each combination for conflicts
+    for (const tutorial1 of tutorial1Events) {
+      for (const tutorial2 of tutorial2Events) {
+        const tutorial1Depts = tutorial1.Departments || [];
+        const tutorial2Depts = tutorial2.Departments || [];
+        
+        // Check if they share departments (case-insensitive)
+        const sharedDepts = departments.filter(dept => 
+          tutorial1Depts.some(t1Dept => t1Dept.toLowerCase() === dept.toLowerCase()) && 
+          tutorial2Depts.some(t2Dept => t2Dept.toLowerCase() === dept.toLowerCase())
+        );
+        
+        if (sharedDepts.length === 0) continue;
+        
+        console.log(`  ✓ Shared departments found: ${sharedDepts.join(', ')}`);
+        
+        // Check time overlap
+        const tutorial1Start = TIMES.indexOf(tutorial1.StartTime);
+        const tutorial1Duration = tutorial1.Duration || 1;
+        const tutorial1End = tutorial1Start + tutorial1Duration - 1;
+        
+        const tutorial2Start = TIMES.indexOf(tutorial2.StartTime);
+        const tutorial2Duration = tutorial2.Duration || 1;
+        const tutorial2End = tutorial2Start + tutorial2Duration - 1;
+        
+        const hasOverlap = !(tutorial1End < tutorial2Start || tutorial1Start > tutorial2End);
+        
+        console.log(`  Time check: ${tutorial1.StartTime} vs ${tutorial2.StartTime} = ${hasOverlap ? 'OVERLAP' : 'NO OVERLAP'}`);
+        
+        if (hasOverlap) {
+          console.log(`✅ CONFLICT STILL VALID: ${code1} and ${code2} clash for ${sharedDepts.join(', ')}`);
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  };
+  
+  // 🔧 FIX: Check BOTH possible orderings of the courses
+  const conflictExists = checkConflictPair(course1Code, course2Code) || 
+                        checkConflictPair(course2Code, course1Code);
+  
+  if (!conflictExists) {
+    console.log(`✅ Department clash auto-resolved: No overlapping tutorials found`);
+  }
+  
+  return conflictExists;
 };
 
 // Helper function to calculate required capacity (same logic as in Home.jsx)

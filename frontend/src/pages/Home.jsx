@@ -62,7 +62,8 @@ function Home() {
   roomCapacity: 0,
   roomDoubleBooking: 0,
   instructorConflict: 0,
-  timeSlotExceeded: 0
+  timeSlotExceeded: 0,
+  departmentTutorialClash: 0 
 });
 const navigate = useNavigate();
 const { showAlert, showConfirm } = useAlert();
@@ -373,7 +374,8 @@ const detectAllConflicts = (currentTimetable, currentCourses, currentRooms) => {
     roomCapacity: [],
     roomDoubleBooking: [],
     instructorConflict: [],
-    timeSlotExceeded: []
+    timeSlotExceeded: [],
+    departmentTutorialClash: [] 
   };
 
   // Helper function to get events from all days/rooms
@@ -594,20 +596,118 @@ conflicts.instructorConflict = Array.from(instructorConflictGroups.values());
     }
   });
 
-  const summary = {
-    total: conflicts.roomCapacity.length + 
-           conflicts.roomDoubleBooking.length + 
-           conflicts.instructorConflict.length + 
-           conflicts.timeSlotExceeded.length,
-    roomCapacity: conflicts.roomCapacity.length,
-    roomDoubleBooking: conflicts.roomDoubleBooking.length,
-    instructorConflict: conflicts.instructorConflict.length,
-    timeSlotExceeded: conflicts.timeSlotExceeded.length
-  };
+  // 5. NEW: Check Department Tutorial Clash Conflicts
+console.log("=== CHECKING DEPARTMENT TUTORIAL CLASHES ===");
+const departmentTutorialConflicts = new Map();
 
-  console.log("Conflict Summary:", summary);
-  console.log("Room double booking conflicts found:", conflicts.roomDoubleBooking.length);
-  console.log("Room conflicts detail:", conflicts.roomDoubleBooking);
+// Get all tutorial events
+const tutorialEvents = allEvents.filter(event => 
+  event.raw?.OccType === 'Tutorial' && 
+  event.raw?.Departments && 
+  event.raw.Departments.length > 0
+);
+
+console.log(`Found ${tutorialEvents.length} tutorials to check for department clashes`);
+
+// Check for department clashes
+for (let i = 0; i < tutorialEvents.length; i++) {
+  for (let j = i + 1; j < tutorialEvents.length; j++) {
+    const tutorial1 = tutorialEvents[i];
+    const tutorial2 = tutorialEvents[j];
+    
+    // Skip if same course
+    if (tutorial1.code === tutorial2.code) continue;
+    
+    // Must be on same day
+    if (tutorial1.day !== tutorial2.day) continue;
+    
+    // Check if time periods overlap
+    const tutorial1Start = TIMES.findIndex(t => t === tutorial1.raw.StartTime);
+    const tutorial1Duration = tutorial1.raw?.Duration || 1;
+    const tutorial1End = tutorial1Start + tutorial1Duration - 1;
+    
+    const tutorial2Start = TIMES.findIndex(t => t === tutorial2.raw.StartTime);
+    const tutorial2Duration = tutorial2.raw?.Duration || 1;
+    const tutorial2End = tutorial2Start + tutorial2Duration - 1;
+    
+    const hasOverlap = !(tutorial1End < tutorial2Start || tutorial1Start > tutorial2End);
+    
+    if (hasOverlap) {
+      // Check if they share any departments
+      const sharedDepartments = tutorial1.raw.Departments.filter(dept => 
+        tutorial2.raw.Departments.includes(dept)
+      );
+      
+      if (sharedDepartments.length > 0) {
+        // Create unique conflict ID
+        const sortedCourses = [tutorial1.code, tutorial2.code].sort();
+        const sortedDepts = sharedDepartments.sort();
+        const conflictId = `dept-clash-${tutorial1.day}-${sortedDepts.join('-')}-${sortedCourses.join('-')}`;
+        
+        if (!departmentTutorialConflicts.has(conflictId)) {
+          const overlapStart = Math.max(tutorial1Start, tutorial2Start);
+          const overlapEnd = Math.min(tutorial1End, tutorial2End);
+          const overlapStartTime = TIMES[overlapStart];
+          const overlapEndTime = TIMES[overlapEnd];
+          
+          const fullTimeRange = overlapStartTime.includes(' - ') 
+            ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+            : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+          
+          departmentTutorialConflicts.set(conflictId, {
+            id: conflictId,
+            type: 'Department Tutorial Clash',
+            departments: sharedDepartments,
+            day: tutorial1.day,
+            time: fullTimeRange,
+            conflictingEvents: [
+              {
+                id: tutorial1.id,
+                courseCode: tutorial1.code,
+                occType: tutorial1.raw.OccType,
+                occNumber: tutorial1.raw.OccNumber,
+                departments: tutorial1.raw.Departments,
+                roomCode: currentRooms.find(r => r._id === tutorial1.roomId)?.code || 'Unknown'
+              },
+              {
+                id: tutorial2.id,
+                courseCode: tutorial2.code,
+                occType: tutorial2.raw.OccType,
+                occNumber: tutorial2.raw.OccNumber,
+                departments: tutorial2.raw.Departments,
+                roomCode: currentRooms.find(r => r._id === tutorial2.roomId)?.code || 'Unknown'
+              }
+            ],
+            description: `Department(s) ${sharedDepartments.join(', ')} have conflicting tutorials: ${tutorial1.code} and ${tutorial2.code} on ${tutorial1.day}`
+          });
+          
+          console.log(`📚 Department clash: ${sharedDepartments.join(', ')} - ${tutorial1.code} vs ${tutorial2.code} at ${fullTimeRange}`);
+        }
+      }
+    }
+  }
+}
+
+conflicts.departmentTutorialClash = Array.from(departmentTutorialConflicts.values());
+console.log(`Department tutorial clashes found: ${conflicts.departmentTutorialClash.length}`);
+
+const summary = {
+  total: conflicts.roomCapacity.length + 
+         conflicts.roomDoubleBooking.length + 
+         conflicts.instructorConflict.length + 
+         conflicts.timeSlotExceeded.length +
+         conflicts.departmentTutorialClash.length,  // ADD THIS
+  roomCapacity: conflicts.roomCapacity.length,
+  roomDoubleBooking: conflicts.roomDoubleBooking.length,
+  instructorConflict: conflicts.instructorConflict.length,
+  timeSlotExceeded: conflicts.timeSlotExceeded.length,
+  departmentTutorialClash: conflicts.departmentTutorialClash.length  // ADD THIS
+};
+
+console.log("Conflict Summary:", summary);
+console.log("Room double booking conflicts found:", conflicts.roomDoubleBooking.length);
+console.log("Room conflicts detail:", conflicts.roomDoubleBooking);
+console.log("Department tutorial clashes found:", conflicts.departmentTutorialClash.length);  // ADD THIS
   
   return { summary, details: conflicts };
 };
@@ -689,6 +789,24 @@ const recordFrontendConflicts = async (conflictDetails) => {
       };
       conflictsToRecord.push(conflictData);
     });
+
+    // NEW: Process Department Tutorial Clash conflicts
+details.departmentTutorialClash.forEach(conflict => {
+  const conflictData = {
+    Year: selectedYear,
+    Semester: selectedSemester,
+    Type: 'Department Tutorial Clash',
+    Description: `Department(s) ${conflict.departments.join(', ')} have conflicting tutorials: ${conflict.conflictingEvents.map(e => 
+      `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''})`
+    ).join(' and ')} on ${conflict.day} at ${conflict.time}`,
+    CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+    Day: conflict.day,
+    StartTime: conflict.time,
+    Priority: 'High',
+    Status: 'Pending'
+  };
+  conflictsToRecord.push(conflictData);
+});
 
     // Record all conflicts in batch
     if (conflictsToRecord.length > 0) {
@@ -998,7 +1116,8 @@ useEffect(() => {
       roomCapacity: 0,
       roomDoubleBooking: 0,
       instructorConflict: 0,
-      timeSlotExceeded: 0
+      timeSlotExceeded: 0,
+      departmentTutorialClash: 0
     });
     return;
   }
@@ -1416,6 +1535,64 @@ if (destRoomObj) {
     });
   });
 
+    // NEW: Check for Department Tutorial Clash conflicts
+  if (moved.raw?.OccType === 'Tutorial' && moved.raw?.Departments && moved.raw.Departments.length > 0) {
+    const movedDepartments = moved.raw.Departments;
+    const movedStartIdx = destTimeIdx;
+    const movedEndIdx = destTimeIdx + duration - 1;
+
+    // Check all other tutorials on the target day
+    Object.entries(newTimetable[selectedDay]).forEach(([checkRoomId, roomSlots]) => {
+      roomSlots.forEach((slot, slotIdx) => {
+        slot.forEach(otherEvent => {
+          // Skip self, skip non-tutorials, skip events without departments
+          if (!otherEvent || otherEvent.id === moved.id) return;
+          if (otherEvent.raw?.OccType !== 'Tutorial') return;
+          if (!otherEvent.raw?.Departments || otherEvent.raw.Departments.length === 0) return;
+
+          // Check for shared departments
+          const sharedDepartments = movedDepartments.filter(dept => 
+            otherEvent.raw.Departments.includes(dept)
+          );
+
+          if (sharedDepartments.length === 0) return;
+
+          // Check time overlap
+          const otherStartIdx = TIMES.findIndex(t => t === otherEvent.raw.StartTime);
+          const otherDuration = otherEvent.raw?.Duration || 1;
+          const otherEndIdx = otherStartIdx + otherDuration - 1;
+
+          const hasOverlap = !(movedEndIdx < otherStartIdx || movedStartIdx > otherEndIdx);
+
+          if (hasOverlap) {
+            const overlapStart = Math.max(movedStartIdx, otherStartIdx);
+            const overlapEnd = Math.min(movedEndIdx, otherEndIdx);
+            const overlapStartTime = TIMES[overlapStart];
+            const overlapEndTime = TIMES[overlapEnd];
+            
+            const overlapTimeSlot = overlapStartTime.includes(' - ') 
+              ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+              : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+
+            const otherRoomObj = rooms.find(r => r._id === checkRoomId);
+
+            conflicts.push({
+              type: 'Department Tutorial Clash',
+              departments: sharedDepartments,
+              conflictingCourse: otherEvent.code,
+              conflictingCourseType: otherEvent.raw?.OccType,
+              conflictingOccNumber: otherEvent.raw?.OccNumber,
+              conflictingRoomCode: otherRoomObj?.code || 'Unknown Room',
+              timeSlot: overlapTimeSlot,
+              movedCourse: moved.code,
+              movedOccNumber: moved.raw.OccNumber
+            });
+          }
+        });
+      });
+    });
+  }
+
   // Check for instructor conflicts (keeping existing logic)
   if (moved.selectedInstructorId && moved.selectedInstructorId.trim() !== "" && 
       moved.selectedInstructor && moved.selectedInstructor.trim() !== "") {
@@ -1497,6 +1674,7 @@ conflicts.push({
   }
 
   // Display alert if conflicts are detected
+  // Display alert if conflicts are detected
   if (conflicts.length > 0) {
     let alertMessage = "The following conflicts were detected:\n\n";
     conflicts.forEach((conflict, index) => {
@@ -1513,8 +1691,22 @@ conflicts.push({
       } else if (conflict.type === 'Time Slot Exceeded') {
         alertMessage += `${index + 1}. Time Slot Exceeded: ${conflict.message}\n`;
       } else if (conflict.type === 'Instructor Conflict') {
-  alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.overlapTimeRange}\n`; // FIXED: Use overlapTimeRange
-}
+        alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.overlapTimeRange}\n`;
+      } else if (conflict.type === 'Department Tutorial Clash') {
+        alertMessage += `${index + 1}. Department Tutorial Clash: Department(s) ${conflict.departments.join(', ')} have conflicting tutorials - ${conflict.movedCourse} (Tutorial ${
+          moved.raw.OccNumber
+            ? Array.isArray(moved.raw.OccNumber)
+              ? `Occ ${moved.raw.OccNumber.join(", ")}`
+              : `Occ ${moved.raw.OccNumber}`
+            : ""
+        }) moved to ${destRoomObj?.code || 'Unknown'} conflicts with ${conflict.conflictingCourse} (${conflict.conflictingCourseType} ${
+          conflict.conflictingOccNumber
+            ? Array.isArray(conflict.conflictingOccNumber)
+              ? `Occ ${conflict.conflictingOccNumber.join(", ")}`
+              : `Occ ${conflict.conflictingOccNumber}`
+            : ""
+        }) in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
+      }
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
 
@@ -1727,7 +1919,41 @@ conflicts.push({
     Status: 'Pending'
   };
   // await recordDragDropConflict(conflictData);
-}
+} else if (conflict.type === 'Department Tutorial Clash') {
+        const movedStartTime = TIMES[destTimeIdx];
+        const movedEndTime = destTimeIdx + duration - 1 < TIMES.length 
+          ? TIMES[destTimeIdx + duration - 1].split(" - ")[1]
+          : TIMES[TIMES.length - 1].split(" - ")[1];
+        
+        const movedTimeRange = movedStartTime.includes(' - ') 
+          ? `${movedStartTime.split(' - ')[0]} - ${movedEndTime}`
+          : `${movedStartTime} - ${movedEndTime}`;
+
+        const conflictData = {
+          Year: selectedYear,
+          Semester: selectedSemester,
+          Type: 'Department Tutorial Clash',
+          Description: `Department(s) ${conflict.departments.join(', ')} have conflicting tutorials: ${conflict.movedCourse} (Tutorial ${
+            moved.raw.OccNumber
+              ? Array.isArray(moved.raw.OccNumber)
+                ? `Occ ${moved.raw.OccNumber.join(", ")}`
+                : `Occ ${moved.raw.OccNumber}`
+              : ""
+          }) moved to ${destRoomObj?.code || 'Unknown'} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType} ${
+            conflict.conflictingOccNumber
+              ? Array.isArray(conflict.conflictingOccNumber)
+                ? `Occ ${conflict.conflictingOccNumber.join(", ")}`
+                : `Occ ${conflict.conflictingOccNumber}`
+              : ""
+          }) in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.timeSlot}`,
+          CourseCode: moved.code,
+          Day: selectedDay,
+          StartTime: conflict.timeSlot,
+          Priority: 'High',
+          Status: 'Pending'
+        };
+        // await recordDragDropConflict(conflictData);
+      }
     }
   }
 };
@@ -1888,6 +2114,64 @@ const requiredCapacity = calculateRequiredCapacity(
       });
     });
 
+    // NEW: Check for Department Tutorial Clash conflicts
+  if (item.raw?.OccType === 'Tutorial' && item.raw?.Departments && item.raw.Departments.length > 0) {
+    const movedDepartments = item.raw.Departments;
+    const movedStartIdx = targetTimeIdx;
+    const movedEndIdx = targetTimeIdx + duration - 1;
+
+    // Check all other tutorials on the target day
+    Object.entries(newTimetable[targetDay]).forEach(([checkRoomId, roomSlots]) => {
+      roomSlots.forEach((slot) => {
+        slot.forEach(otherEvent => {
+          // Skip self, skip non-tutorials, skip events without departments
+          if (!otherEvent || otherEvent.id === item.id) return;
+          if (otherEvent.raw?.OccType !== 'Tutorial') return;
+          if (!otherEvent.raw?.Departments || otherEvent.raw.Departments.length === 0) return;
+
+          // Check for shared departments
+          const sharedDepartments = movedDepartments.filter(dept => 
+            otherEvent.raw.Departments.includes(dept)
+          );
+
+          if (sharedDepartments.length === 0) return;
+
+          // Check time overlap
+          const otherStartIdx = TIMES.findIndex(t => t === otherEvent.raw.StartTime);
+          const otherDuration = otherEvent.raw?.Duration || 1;
+          const otherEndIdx = otherStartIdx + otherDuration - 1;
+
+          const hasOverlap = !(movedEndIdx < otherStartIdx || movedStartIdx > otherEndIdx);
+
+          if (hasOverlap) {
+            const overlapStart = Math.max(movedStartIdx, otherStartIdx);
+            const overlapEnd = Math.min(movedEndIdx, otherEndIdx);
+            const overlapStartTime = TIMES[overlapStart];
+            const overlapEndTime = TIMES[overlapEnd];
+            
+            const overlapTimeSlot = overlapStartTime.includes(' - ') 
+              ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+              : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+
+            const otherRoomObj = rooms.find(r => r._id === checkRoomId);
+
+            conflicts.push({
+              type: 'Department Tutorial Clash',
+              departments: sharedDepartments,
+              conflictingCourse: otherEvent.code,
+              conflictingCourseType: otherEvent.raw?.OccType,
+              conflictingOccNumber: otherEvent.raw?.OccNumber,
+              conflictingRoomCode: otherRoomObj?.code || 'Unknown Room',
+              timeSlot: overlapTimeSlot,
+              movedCourse: item.code,
+              movedOccNumber: item.raw.OccNumber
+            });
+          }
+        });
+      });
+    });
+  }
+
   // NEW: Check for instructor conflicts
   if (item.selectedInstructorId && item.selectedInstructorId.trim() !== "" && 
       item.selectedInstructor && item.selectedInstructor.trim() !== "") {
@@ -2015,7 +2299,7 @@ conflicts.push({
     }
   }
 
-  // NEW: Record instructor conflicts
+   // NEW: Record instructor conflicts
   for (const conflict of conflicts) {
   if (conflict.type === 'Instructor Conflict') {
     // FIXED: Calculate proper time range for the moved event
@@ -2054,6 +2338,45 @@ conflicts.push({
     // } catch (error) {
     //   console.error("Failed to record instructor conflict:", error);
     // }
+  } else if (conflict.type === 'Department Tutorial Clash') {
+    const movedStartTime = targetTime;
+    const movedEndTime = targetTimeIdx + duration - 1 < TIMES.length 
+      ? TIMES[targetTimeIdx + duration - 1].split(" - ")[1]
+      : TIMES[TIMES.length - 1].split(" - ")[1];
+    
+    const movedTimeRange = movedStartTime.includes(' - ') 
+      ? `${movedStartTime.split(' - ')[0]} - ${movedEndTime}`
+      : `${movedStartTime} - ${movedEndTime}`;
+
+    const deptClashConflictData = {
+      Year: selectedYear,
+      Semester: selectedSemester,
+      Type: 'Department Tutorial Clash',
+      Description: `Department(s) ${conflict.departments.join(', ')} have conflicting tutorials: ${conflict.movedCourse} (Tutorial ${
+        item.raw.OccNumber
+          ? Array.isArray(item.raw.OccNumber)
+            ? `Occ ${item.raw.OccNumber.join(", ")}`
+            : `Occ ${item.raw.OccNumber}`
+          : ""
+      }) moved to ${targetRoomObj.code} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType} ${
+        conflict.conflictingOccNumber
+          ? Array.isArray(conflict.conflictingOccNumber)
+            ? `Occ ${conflict.conflictingOccNumber.join(", ")}`
+            : `Occ ${conflict.conflictingOccNumber}`
+          : ""
+      }) in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.timeSlot}`,
+      CourseCode: item.code,
+      Day: targetDay,
+      StartTime: conflict.timeSlot,
+      Priority: 'High',
+      Status: 'Pending'
+    };
+    
+    // try {
+    //   await recordDragDropConflict(deptClashConflictData);
+    // } catch (error) {
+    //   console.error("Failed to record department tutorial clash conflict:", error);
+    // }
   }
 }
 
@@ -2074,8 +2397,22 @@ conflicts.push({
       } else if (conflict.type === 'Time Slot Exceeded') {
         alertMessage += `${index + 1}. Time Slot Exceeded: ${conflict.message}\n`;
       } else if (conflict.type === 'Instructor Conflict') {
-  alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.overlapTimeRange}\n`; // FIXED: Use overlapTimeRange
-}
+        alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.overlapTimeRange}\n`;
+      } else if (conflict.type === 'Department Tutorial Clash') {
+        alertMessage += `${index + 1}. Department Tutorial Clash: Department(s) ${conflict.departments.join(', ')} have conflicting tutorials - ${conflict.movedCourse} (Tutorial ${
+          item.raw.OccNumber
+            ? Array.isArray(item.raw.OccNumber)
+              ? `Occ ${item.raw.OccNumber.join(", ")}`
+              : `Occ ${item.raw.OccNumber}`
+            : ""
+        }) moved to ${targetRoomObj.code} conflicts with ${conflict.conflictingCourse} (${conflict.conflictingCourseType} ${
+          conflict.conflictingOccNumber
+            ? Array.isArray(conflict.conflictingOccNumber)
+              ? `Occ ${conflict.conflictingOccNumber.join(", ")}`
+              : `Occ ${conflict.conflictingOccNumber}`
+            : ""
+        }) in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
+      }
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
     
@@ -2093,7 +2430,7 @@ conflicts.push({
     if (!confirm(alertMessage)) {
   return;
 }
-  } 
+  }
 
   // ALWAYS PERFORM THE MOVE (even with conflicts)
   // Remove the item from ALL slots it was occupying at the source
@@ -2261,6 +2598,14 @@ const generateConflictId = (conflict, conflictType) => {
     
     case 'Time Slot Exceeded':
       return `timeslot_${conflict.courseCode}_${conflict.day}_${conflict.startTime}`;
+
+    case 'Department Tutorial Clash':
+  const sortedDeptCourses = conflict.conflictingEvents
+    .map(e => e.courseCode)
+    .sort();
+  const sortedDepts = conflict.departments.sort();
+  
+  return `dept_clash_${sortedDepts.join('_')}_${sortedDeptCourses.join('_')}_${conflict.day}_${conflict.time}`;
     
     default:
       return `unknown_${Date.now()}_${Math.random()}`;
@@ -2420,6 +2765,26 @@ const handleSaveTimetable = async () => {
         case 'Time Slot Exceeded':
           conflictId = `timeslot_${conflict.CourseCode}_${conflict.Day}_${conflict.StartTime}`;
           break;
+
+        case 'Department Tutorial Clash':
+  // Extract course codes and departments from description
+  const deptCourseMatches = conflict.Description ? 
+    conflict.Description.match(/[A-Z]{3}\d{4}(?:-\d+)?/g) : null;
+  
+  const deptMatch = conflict.Description ? 
+    conflict.Description.match(/Department\(s\) ([^have]+) have/) : null;
+  
+  if (deptCourseMatches && deptCourseMatches.length >= 2 && deptMatch) {
+    const uniqueDeptCourses = [...new Set(deptCourseMatches.slice(0, 2))].sort();
+    const departments = deptMatch[1].split(',').map(d => d.trim()).sort();
+    
+    conflictId = `dept_clash_${departments.join('_')}_${uniqueDeptCourses.join('_')}_${conflict.Day}_${conflict.StartTime}`;
+    
+    console.log(`📋 Parsed existing Department Tutorial Clash: ${departments.join(', ')} - ${uniqueDeptCourses.join(' & ')} -> ID: ${conflictId}`);
+  } else {
+    conflictId = `dept_clash_unknown_${conflict.Day}_${conflict.StartTime}`;
+  }
+  break;
           
         default:
           conflictId = `existing_${conflict._id}`;
@@ -2577,6 +2942,37 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
           }
         } else {
           console.log(`EXISTING ACTIVE Time Slot Exceeded Conflict: ${conflictId}`);
+        }
+      }
+
+      // STEP 7: NEW - Check Department Tutorial Clash Conflicts for new ones
+      for (const conflict of conflictResults.details.departmentTutorialClash) {
+        const conflictId = generateConflictId(conflict, 'Department Tutorial Clash');
+        
+        if (!existingActiveConflictIds.has(conflictId)) {
+          const conflictData = {
+            Year: selectedYear,
+            Semester: selectedSemester,
+            Type: 'Department Tutorial Clash',
+            Description: `Department(s) ${conflict.departments.join(', ')} have conflicting tutorials: ${conflict.conflictingEvents.map(e => 
+              `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''})`
+            ).join(' and ')} on ${conflict.day} at ${conflict.time}`,
+            CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+            Day: conflict.day,
+            StartTime: conflict.time,
+            Priority: 'High',
+            Status: 'Pending'
+          };
+          
+          try {
+            await recordDragDropConflict(conflictData);
+            newConflictsCount++;
+            console.log(`NEW Department Tutorial Clash Conflict: ${conflictId}`);
+          } catch (error) {
+            console.error("Failed to record new department tutorial clash conflict:", error);
+          }
+        } else {
+          console.log(`EXISTING ACTIVE Department Tutorial Clash Conflict: ${conflictId}`);
         }
       }
       

@@ -43,7 +43,8 @@ const recordGenerationConflict = async (conflictData) => {
       'Room Double Booking', 
       'Instructor Conflict', 
       'Course Overlap', 
-      'Time Slot Exceeded'
+      'Time Slot Exceeded',
+      'Department Tutorial Clash'
     ];
 
     let mappedType = conflictData.Type;

@@ -45,6 +45,7 @@ function Students() {
         setStudents(res.data || []);
         setError(null);
       } catch (err) {
+        console.error("Fetch students error:", err);
         setError(err.response?.data?.message || "Failed to fetch students.");
       }
     };
@@ -137,6 +138,7 @@ function Students() {
       setShowModal(false);
       setError(null);
     } catch (err) {
+      console.error("Save student error:", err);
       setError(err.response?.data?.message || "Failed to save.");
     }
   };
@@ -149,6 +151,7 @@ function Students() {
       });
       setStudents(prev => prev.filter(s => s._id !== id));
     } catch (err) {
+      console.error("Delete student error:", err);
       setError(err.response?.data?.message || "Failed to delete.");
     }
   };
@@ -170,7 +173,7 @@ function Students() {
   return (
     <ProtectedRoute>
       <SideBar>
-        <div style={{ maxWidth: 1300, margin: "0 auto", padding: "0 30px 0 10px" }}>
+        <div style={{margin: "0 auto 0 auto", padding: "0 30px 0 0px", marginLeft: "60px" }}>
           <h2 className="fw-bold mb-4">Students</h2>
 
           <div className="d-flex align-items-center mb-3">

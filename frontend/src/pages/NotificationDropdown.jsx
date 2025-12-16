@@ -15,64 +15,73 @@ const NotificationDropdown = () => {
   const navigate = useNavigate();
   const socketRef = useRef(null); // Use ref to persist socket across renders
 
-  // Initialize socket only once
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const role = localStorage.getItem('role');
-    const userId = localStorage.getItem('userId');
+// Initialize socket only once
+useEffect(() => {
+  const token = localStorage.getItem('token');
+  const role = localStorage.getItem('role');
+  const userId = localStorage.getItem('userId');
+  
+  if (!token || !userId || !role) {
+    console.log('⚠️ Missing credentials, skipping socket connection');
+    return;
+  }
+
+  // Create socket instance only if it doesn't exist
+  if (!socketRef.current) {
+    console.log('🔌 Initializing socket connection...');
     
-    if (!token || !userId || !role) {
-      console.log('⚠️ Missing credentials, skipping socket connection');
-      return;
-    }
+    socketRef.current = io('http://localhost:3001', {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
+    });
 
-    // Create socket instance only if it doesn't exist
-    if (!socketRef.current) {
-      console.log('🔌 Initializing socket connection...');
+    const socket = socketRef.current;
+
+    // Connection event handlers
+    socket.on('connect', () => {
+      console.log('✅ Socket connected:', socket.id);
+      socket.emit('identify', { userId, role });
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket connection error:', error.message);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('🔌 Socket disconnected:', reason);
+    });
+
+    // Notification handler - UPDATED to handle both types
+    socket.on('notification', (data) => {
+      console.log('📬 Received notification:', data);
       
-      socketRef.current = io('http://localhost:3001', {
-        transports: ['websocket'],
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionAttempts: 5
-      });
-
-      const socket = socketRef.current;
-
-      // Connection event handlers
-      socket.on('connect', () => {
-        console.log('✅ Socket connected:', socket.id);
-        socket.emit('identify', { userId, role });
-      });
-
-      socket.on('connect_error', (error) => {
-        console.error('❌ Socket connection error:', error.message);
-      });
-
-      socket.on('disconnect', (reason) => {
-        console.log('🔌 Socket disconnected:', reason);
-      });
-
-      // Notification handler
-      socket.on('notification', (data) => {
-        console.log('📬 Received notification:', data);
-        if (data.recipients.includes(role)) {
-          setNotifications(prev => [data.notification, ...prev]);
-          setUnreadCount(prev => prev + 1);
-          showBrowserNotification(data.notification);
-        }
-      });
-    }
-
-    // Cleanup function - only disconnect on unmount
-    return () => {
-      if (socketRef.current) {
-        console.log('🧹 Cleaning up socket connection');
-        socketRef.current.disconnect();
-        socketRef.current = null;
+      // Check if this notification is for the current user
+      const isForMe = 
+        (data.recipients && data.recipients.includes(role)) ||  // Role-based (timetable, etc.)
+        (data.userIds && data.userIds.includes(userId));        // User-specific (feedback)
+      
+      if (isForMe) {
+        console.log('✅ Notification is for current user, updating UI');
+        setNotifications(prev => [data.notification, ...prev]);
+        setUnreadCount(prev => prev + 1);
+        showBrowserNotification(data.notification);
+      } else {
+        console.log('ℹ️ Notification not for current user, ignoring');
       }
-    };
-  }, []); // Empty array - run once on mount
+    });
+  }
+
+  // Cleanup function - only disconnect on unmount
+  return () => {
+    if (socketRef.current) {
+      console.log('🧹 Cleaning up socket connection');
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+  };
+}, []); // Empty array - run once on mount
 
   const handleNotificationClick = async (notification) => {
     try {
