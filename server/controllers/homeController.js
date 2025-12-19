@@ -40,9 +40,18 @@ export const saveTimetable = async (req, res) => {
     const deleteResult = await Schedule.deleteMany({ 
       Year: year, 
       Semester: semester, 
-      Published: { $ne: true }  // Only delete non-published schedules
+      Published: { $ne: true }
     });
     console.log(`Deleted ${deleteResult.deletedCount} draft schedules`);
+
+    // ✅ NEW: Fetch all instructors to map names to IDs
+    const Instructor = mongoose.model('Instructor');
+    const allInstructors = await Instructor.find({}).lean();
+    const instructorMap = new Map();
+    allInstructors.forEach(inst => {
+      instructorMap.set(inst.name, inst._id);
+    });
+    console.log(`Loaded ${allInstructors.length} instructors for ID mapping`);
 
     const timetableWithObjectIds = timetable.map((item, index) => {
       console.log(`Processing item ${index}:`, {
@@ -66,16 +75,28 @@ export const saveTimetable = async (req, res) => {
           ? new mongoose.Types.ObjectId(item.selectedInstructorId)
           : null;
         
+        // ✅ NEW: If we have a name but no ID, look it up
+        if (!instructorIdToSave && instructorMap.has(item.selectedInstructor)) {
+          instructorIdToSave = instructorMap.get(item.selectedInstructor);
+          console.log(`Item ${index}: Mapped instructor name "${item.selectedInstructor}" to ID: ${instructorIdToSave}`);
+        }
+        
         console.log(`Item ${index}: Using selected instructor: ${item.selectedInstructor} (ID: ${instructorIdToSave})`);
       }
       // Priority 2: If Instructors array has exactly one instructor (auto-assigned)
       else if (item.Instructors && Array.isArray(item.Instructors) && item.Instructors.length === 1) {
         instructorsToSave = item.Instructors;
-        instructorIdToSave = item.InstructorID && 
-                           typeof item.InstructorID === "string" && 
-                           item.InstructorID.length === 24
-          ? new mongoose.Types.ObjectId(item.InstructorID)
-          : null;
+        
+        // ✅ CRITICAL FIX: Always try to get the InstructorID for single-instructor courses
+        if (item.InstructorID && 
+            typeof item.InstructorID === "string" && 
+            item.InstructorID.length === 24) {
+          instructorIdToSave = new mongoose.Types.ObjectId(item.InstructorID);
+        } else if (instructorMap.has(item.Instructors[0])) {
+          // ✅ NEW: Look up instructor ID by name
+          instructorIdToSave = instructorMap.get(item.Instructors[0]);
+          console.log(`Item ${index}: AUTO-ASSIGNED - Mapped instructor name "${item.Instructors[0]}" to ID: ${instructorIdToSave}`);
+        }
         
         console.log(`Item ${index}: Using single instructor from array: ${item.Instructors[0]} (ID: ${instructorIdToSave})`);
       }
@@ -118,13 +139,12 @@ export const saveTimetable = async (req, res) => {
     console.log("=== SAVE COMPLETE ===");
     console.log(`Saved ${timetableWithObjectIds.length} draft schedules`);
     
-try {
+    try {
       console.log("Running auto-resolution after timetable save...");
       const autoResolveResult = await analyticsService.autoResolveObsoleteConflicts(year, semester);
       console.log(`Auto-resolved ${autoResolveResult.resolved} conflicts after save`);
     } catch (autoResolveError) {
       console.warn("Auto-resolution failed, but timetable was saved:", autoResolveError);
-      // Don't fail the save operation if auto-resolution fails
     }
 
     res.json({ success: true });
@@ -132,7 +152,6 @@ try {
     console.error("Error in saveTimetable:", error);
     res.status(500).json({ error: error.message });
   }
-  
 };
 
 export const getTimetable = async (req, res) => {
@@ -235,12 +254,12 @@ export const publishTimetable = async (req, res) => {
     console.log(`Found ${draftSchedules.length} draft schedules to publish`);
 
     // Step 2: Delete all existing published schedules for this year/semester
-    const deleteResult = await Schedule.deleteMany({
+    const deletePublishedResult = await Schedule.deleteMany({
       Year: year,
       Semester: semester,
       Published: true
     });
-    console.log(`Deleted ${deleteResult.deletedCount} existing published schedules`);
+    console.log(`Deleted ${deletePublishedResult.deletedCount} existing published schedules`);
 
     // Step 3: Create published copies of draft schedules
     const publishedSchedules = draftSchedules.map(schedule => ({
@@ -253,14 +272,21 @@ export const publishTimetable = async (req, res) => {
     const insertResult = await Schedule.insertMany(publishedSchedules);
     console.log(`Created ${insertResult.length} new published schedules`);
 
-    // Step 5: 🔥 CREATE NOTIFICATION FOR TIMETABLE PUBLICATION
+    // ✅ Step 5: DELETE the draft schedules after successful publishing
+    const deleteDraftsResult = await Schedule.deleteMany({
+      Year: year,
+      Semester: semester,
+      Published: { $ne: true }
+    });
+    console.log(`Deleted ${deleteDraftsResult.deletedCount} draft schedules after publishing`);
+
+    // Step 6: Create notification for timetable publication
     try {
       console.log('📢 Creating notification for timetable publication...');
       await createTimetablePublishedNotification(year, semester);
       console.log(`✅ Notification created successfully for timetable publication: ${year} Semester ${semester}`);
     } catch (notificationError) {
       console.error("⚠️ Failed to create notification, but timetable was published:", notificationError);
-      // Don't fail the entire publish operation if notification creation fails
     }
 
     res.json({ 

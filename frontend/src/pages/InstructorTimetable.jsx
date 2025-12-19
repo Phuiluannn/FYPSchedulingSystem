@@ -287,7 +287,7 @@ console.log("Filtered instructor schedules (only specifically assigned):", instr
 
     if (format === "csv") {
       const csvData = [];
-      const headers = ["Day", "Time", "Duration (Hours)", "Course Code", "Type", "Occurrence", "Room", "Building"];
+      const headers = ["Day", "Time", "Duration (Hours)", "Course Code", "Type", "Occurrence", "Room", "Building", "Departments", "Estimated Students"];
       csvData.push(headers);
 
       DAYS.forEach(day => {
@@ -298,6 +298,10 @@ console.log("Filtered instructor schedules (only specifically assigned):", instr
             ? event.occNumber.join(", ") 
             : event.occNumber || "N/A";
           
+          const departments = event.raw.Departments && Array.isArray(event.raw.Departments) && event.raw.Departments.length > 0
+            ? event.raw.Departments.join(", ")
+            : "N/A";
+
           csvData.push([
             day,
             event.startTime,
@@ -306,7 +310,9 @@ console.log("Filtered instructor schedules (only specifically assigned):", instr
             event.occType,
             occText,
             roomDetails.code,
-            roomDetails.building
+            roomDetails.building,
+            departments,  // Add this
+            event.raw.EstimatedStudents || "N/A"  // Add this if you want
           ]);
         });
       });
@@ -751,6 +757,11 @@ if (noDataMessage) {
 <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 4 }}>
   {event.occType} {occText && `• ${occText}`}
 </div>
+{event.raw.Departments && event.raw.Departments.length > 0 && (
+  <div style={{ fontSize: 11, opacity: 0.9, marginBottom: 4 }}>
+    {event.raw.Departments.join(", ")}
+  </div>
+)}
 <div style={{ 
   display: "flex", 
   alignItems: "center", 

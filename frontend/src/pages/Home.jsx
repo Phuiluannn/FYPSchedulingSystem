@@ -221,151 +221,151 @@ const handlePublish = async () => {
  * Get available instructors for a specific event based on occurrence restrictions
  * An instructor can only teach tutorials for occurrences they're assigned to in lectures
  */
-const getAvailableInstructorsForEvent = (event, timetable, selectedDay) => {
-  const { code: courseCode, raw } = event;
-  const { OccType, OccNumber } = raw;
+// const getAvailableInstructorsForEvent = (event, timetable, selectedDay) => {
+//   const { code: courseCode, raw } = event;
+//   const { OccType, OccNumber } = raw;
   
-  // If this is a lecture, return all course instructors (no restrictions)
-  if (OccType === "Lecture") {
-    return instructors.filter(inst => 
-      (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
-        .includes(inst.name)
-    );
-  }
+//   // If this is a lecture, return all course instructors (no restrictions)
+//   if (OccType === "Lecture") {
+//     return instructors.filter(inst => 
+//       (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
+//         .includes(inst.name)
+//     );
+//   }
   
-  // If this is a tutorial, filter instructors based on lecture assignments
-  if (OccType === "Tutorial") {
-    const tutorialOccurrences = Array.isArray(OccNumber) ? OccNumber : [OccNumber];
-    const availableInstructors = [];
+//   // If this is a tutorial, filter instructors based on lecture assignments
+//   if (OccType === "Tutorial") {
+//     const tutorialOccurrences = Array.isArray(OccNumber) ? OccNumber : [OccNumber];
+//     const availableInstructors = [];
     
-    // Find all lecture events for this course
-    const lectureEvents = [];
-    DAYS.forEach(day => {
-      if (timetable[day]) {
-        Object.values(timetable[day]).forEach(roomSlots => {
-          roomSlots.forEach(slot => {
-            slot.forEach(item => {
-              if (item && 
-                  item.code === courseCode && 
-                  item.raw?.OccType === "Lecture" &&
-                  item.selectedInstructor && 
-                  item.selectedInstructorId) {
-                lectureEvents.push(item);
-              }
-            });
-          });
-        });
-      }
-    });
+//     // Find all lecture events for this course
+//     const lectureEvents = [];
+//     DAYS.forEach(day => {
+//       if (timetable[day]) {
+//         Object.values(timetable[day]).forEach(roomSlots => {
+//           roomSlots.forEach(slot => {
+//             slot.forEach(item => {
+//               if (item && 
+//                   item.code === courseCode && 
+//                   item.raw?.OccType === "Lecture" &&
+//                   item.selectedInstructor && 
+//                   item.selectedInstructorId) {
+//                 lectureEvents.push(item);
+//               }
+//             });
+//           });
+//         });
+//       }
+//     });
     
-    // For each instructor in the course, check if they teach lectures that cover these tutorial occurrences
-    instructors
-      .filter(inst => 
-        (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
-          .includes(inst.name)
-      )
-      .forEach(instructor => {
-        // Find lecture events taught by this instructor for this course
-        const instructorLectures = lectureEvents.filter(lecture => 
-          lecture.selectedInstructorId === instructor._id
-        );
+//     // For each instructor in the course, check if they teach lectures that cover these tutorial occurrences
+//     instructors
+//       .filter(inst => 
+//         (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
+//           .includes(inst.name)
+//       )
+//       .forEach(instructor => {
+//         // Find lecture events taught by this instructor for this course
+//         const instructorLectures = lectureEvents.filter(lecture => 
+//           lecture.selectedInstructorId === instructor._id
+//         );
         
-        if (instructorLectures.length === 0) {
-          // No lecture restriction - instructor can teach any tutorial
-          availableInstructors.push(instructor);
-        } else {
-          // Check if any of the instructor's lectures cover these tutorial occurrences
-          const canTeachTutorial = instructorLectures.some(lecture => {
-            const lectureOccurrences = Array.isArray(lecture.raw.OccNumber) 
-              ? lecture.raw.OccNumber 
-              : [lecture.raw.OccNumber];
+//         if (instructorLectures.length === 0) {
+//           // No lecture restriction - instructor can teach any tutorial
+//           availableInstructors.push(instructor);
+//         } else {
+//           // Check if any of the instructor's lectures cover these tutorial occurrences
+//           const canTeachTutorial = instructorLectures.some(lecture => {
+//             const lectureOccurrences = Array.isArray(lecture.raw.OccNumber) 
+//               ? lecture.raw.OccNumber 
+//               : [lecture.raw.OccNumber];
             
-            // Check if there's any overlap between lecture occurrences and tutorial occurrences
-            return tutorialOccurrences.some(tutOcc => 
-              lectureOccurrences.includes(tutOcc)
-            );
-          });
+//             // Check if there's any overlap between lecture occurrences and tutorial occurrences
+//             return tutorialOccurrences.some(tutOcc => 
+//               lectureOccurrences.includes(tutOcc)
+//             );
+//           });
           
-          if (canTeachTutorial) {
-            availableInstructors.push(instructor);
-          }
-        }
-      });
+//           if (canTeachTutorial) {
+//             availableInstructors.push(instructor);
+//           }
+//         }
+//       });
     
-    return availableInstructors;
-  }
+//     return availableInstructors;
+//   }
   
-  // Default: return all course instructors
-  return instructors.filter(inst => 
-    (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
-      .includes(inst.name)
-  );
-};
+//   // Default: return all course instructors
+//   return instructors.filter(inst => 
+//     (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
+//       .includes(inst.name)
+//   );
+// };
 
-/**
- * Check if an instructor assignment would violate occurrence restrictions
- */
-const checkOccurrenceRestriction = (event, selectedInstructorId, timetable) => {
-  const { code: courseCode, raw } = event;
-  const { OccType, OccNumber } = raw;
+// /**
+//  * Check if an instructor assignment would violate occurrence restrictions
+//  */
+// const checkOccurrenceRestriction = (event, selectedInstructorId, timetable) => {
+//   const { code: courseCode, raw } = event;
+//   const { OccType, OccNumber } = raw;
   
-  // Only apply restrictions to tutorials
-  if (OccType !== "Tutorial") return null;
+//   // Only apply restrictions to tutorials
+//   if (OccType !== "Tutorial") return null;
   
-  const selectedInstructor = instructors.find(inst => inst._id === selectedInstructorId);
-  if (!selectedInstructor) return null;
+//   const selectedInstructor = instructors.find(inst => inst._id === selectedInstructorId);
+//   if (!selectedInstructor) return null;
   
-  const tutorialOccurrences = Array.isArray(OccNumber) ? OccNumber : [OccNumber];
+//   const tutorialOccurrences = Array.isArray(OccNumber) ? OccNumber : [OccNumber];
   
-  // Find all lecture events for this course taught by this instructor
-  const instructorLectures = [];
-  DAYS.forEach(day => {
-    if (timetable[day]) {
-      Object.values(timetable[day]).forEach(roomSlots => {
-        roomSlots.forEach(slot => {
-          slot.forEach(item => {
-            if (item && 
-                item.code === courseCode && 
-                item.raw?.OccType === "Lecture" &&
-                item.selectedInstructorId === selectedInstructorId) {
-              instructorLectures.push(item);
-            }
-          });
-        });
-      });
-    }
-  });
+//   // Find all lecture events for this course taught by this instructor
+//   const instructorLectures = [];
+//   DAYS.forEach(day => {
+//     if (timetable[day]) {
+//       Object.values(timetable[day]).forEach(roomSlots => {
+//         roomSlots.forEach(slot => {
+//           slot.forEach(item => {
+//             if (item && 
+//                 item.code === courseCode && 
+//                 item.raw?.OccType === "Lecture" &&
+//                 item.selectedInstructorId === selectedInstructorId) {
+//               instructorLectures.push(item);
+//             }
+//           });
+//         });
+//       });
+//     }
+//   });
   
-  if (instructorLectures.length === 0) {
-    // No lecture assignments - no restrictions
-    return null;
-  }
+//   if (instructorLectures.length === 0) {
+//     // No lecture assignments - no restrictions
+//     return null;
+//   }
   
-  // Check if any lecture covers these tutorial occurrences
-  const validLectures = instructorLectures.filter(lecture => {
-    const lectureOccurrences = Array.isArray(lecture.raw.OccNumber) 
-      ? lecture.raw.OccNumber 
-      : [lecture.raw.OccNumber];
+//   // Check if any lecture covers these tutorial occurrences
+//   const validLectures = instructorLectures.filter(lecture => {
+//     const lectureOccurrences = Array.isArray(lecture.raw.OccNumber) 
+//       ? lecture.raw.OccNumber 
+//       : [lecture.raw.OccNumber];
     
-    return tutorialOccurrences.some(tutOcc => 
-      lectureOccurrences.includes(tutOcc)
-    );
-  });
+//     return tutorialOccurrences.some(tutOcc => 
+//       lectureOccurrences.includes(tutOcc)
+//     );
+//   });
   
-  if (validLectures.length === 0) {
-    return {
-      isViolation: true,
-      message: `${selectedInstructor.name} cannot teach tutorial for occurrences [${tutorialOccurrences.join(', ')}] because they are not assigned to teach lectures covering these occurrences.`,
-      instructorLectures: instructorLectures.map(lec => ({
-        occurrences: Array.isArray(lec.raw.OccNumber) ? lec.raw.OccNumber : [lec.raw.OccNumber],
-        day: lec.raw.Day,
-        time: lec.raw.StartTime
-      }))
-    };
-  }
+//   if (validLectures.length === 0) {
+//     return {
+//       isViolation: true,
+//       message: `${selectedInstructor.name} cannot teach tutorial for occurrences [${tutorialOccurrences.join(', ')}] because they are not assigned to teach lectures covering these occurrences.`,
+//       instructorLectures: instructorLectures.map(lec => ({
+//         occurrences: Array.isArray(lec.raw.OccNumber) ? lec.raw.OccNumber : [lec.raw.OccNumber],
+//         day: lec.raw.Day,
+//         time: lec.raw.StartTime
+//       }))
+//     };
+//   }
   
-  return null; // No violation
-};
+//   return null; // No violation
+// };
 
 const detectAllConflicts = (currentTimetable, currentCourses, currentRooms) => {
   console.log("=== DETECTING ALL CONFLICTS ===");
@@ -1110,29 +1110,80 @@ useEffect(() => {
 }, [showYearDropdown]);
 
 useEffect(() => {
-  if (!timetable || Object.keys(timetable).length === 0 || !courses.length || !rooms.length) {
-    setConflictSummary({
-      total: 0,
-      roomCapacity: 0,
-      roomDoubleBooking: 0,
-      instructorConflict: 0,
-      timeSlotExceeded: 0,
-      departmentTutorialClash: 0
-    });
-    return;
-  }
+  const fetchAndCalculateConflicts = async () => {
+    if (!timetable || Object.keys(timetable).length === 0 || !courses.length || !rooms.length) {
+      setConflictSummary({
+        total: 0,
+        roomCapacity: 0,
+        roomDoubleBooking: 0,
+        instructorConflict: 0,
+        timeSlotExceeded: 0,
+        departmentTutorialClash: 0
+      });
+      return;
+    }
 
-  console.log("Detecting conflicts after timetable change...");
-  const conflictResults = detectAllConflicts(timetable, courses, rooms);
-  const { summary, details } = conflictResults;
+    console.log("Detecting conflicts after timetable change...");
+    const conflictResults = detectAllConflicts(timetable, courses, rooms);
+    const { summary: rawSummary, details } = conflictResults;
+    
+    // Fetch resolved conflicts from database to exclude them
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(
+        `http://localhost:3001/analytics/conflicts?year=${selectedYear}&semester=${selectedSemester}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      const resolvedConflicts = response.data.conflicts.filter(c => c.Status === 'Resolved');
+      console.log(`Found ${resolvedConflicts.length} resolved conflicts in database`);
+      
+      // Create a Set of resolved conflict IDs for quick lookup
+      const resolvedConflictIds = new Set();
+      resolvedConflicts.forEach(conflict => {
+        const conflictId = generateConflictId(conflict, conflict.Type);
+        resolvedConflictIds.add(conflictId);
+      });
+      
+      // Filter out resolved conflicts from each category
+      const filterResolvedConflicts = (conflictArray, conflictType) => {
+        return conflictArray.filter(conflict => {
+          const conflictId = generateConflictId(conflict, conflictType);
+          return !resolvedConflictIds.has(conflictId);
+        });
+      };
+      
+      const filteredDetails = {
+        roomCapacity: filterResolvedConflicts(details.roomCapacity, 'Room Capacity'),
+        roomDoubleBooking: filterResolvedConflicts(details.roomDoubleBooking, 'Room Double Booking'),
+        instructorConflict: filterResolvedConflicts(details.instructorConflict, 'Instructor Conflict'),
+        timeSlotExceeded: filterResolvedConflicts(details.timeSlotExceeded, 'Time Slot Exceeded'),
+        departmentTutorialClash: filterResolvedConflicts(details.departmentTutorialClash, 'Department Tutorial Clash')
+      };
+      
+      const adjustedSummary = {
+        total: filteredDetails.roomCapacity.length + 
+               filteredDetails.roomDoubleBooking.length + 
+               filteredDetails.instructorConflict.length + 
+               filteredDetails.timeSlotExceeded.length +
+               filteredDetails.departmentTutorialClash.length,
+        roomCapacity: filteredDetails.roomCapacity.length,
+        roomDoubleBooking: filteredDetails.roomDoubleBooking.length,
+        instructorConflict: filteredDetails.instructorConflict.length,
+        timeSlotExceeded: filteredDetails.timeSlotExceeded.length,
+        departmentTutorialClash: filteredDetails.departmentTutorialClash.length
+      };
+      
+      console.log(`Adjusted conflict summary (excluding ${resolvedConflicts.length} resolved):`, adjustedSummary);
+      setConflictSummary(adjustedSummary);
+    } catch (error) {
+      console.error("Error fetching resolved conflicts:", error);
+      // Fallback to raw summary if fetch fails
+      setConflictSummary(rawSummary);
+    }
+  };
   
-  setConflictSummary(summary);
-  
-  // AUTO-RECORD FRONTEND CONFLICTS
-  // if (summary.total > 0) {
-  //   recordFrontendConflicts(conflictResults);
-  // }
-  
+  fetchAndCalculateConflicts();
 }, [timetable, courses, rooms, selectedYear, selectedSemester]);
 
   const handleContextMenu = (e, item, roomId, timeIdx, index) => {
@@ -2578,34 +2629,98 @@ const handleGenerateTimetable = async () => {
 const generateConflictId = (conflict, conflictType) => {
   switch (conflictType) {
     case 'Room Capacity':
-      return `capacity_${conflict.courseCode}_${conflict.roomCode}_${conflict.day}_${conflict.time}`;
+      // Handle both frontend-detected and database conflicts
+      const capacityCourseCode = conflict.courseCode || conflict.CourseCode;
+      const capacityRoomCode = conflict.roomCode || (rooms.find(r => r._id === conflict.RoomID)?.code) || 'Unknown';
+      const capacityDay = conflict.day || conflict.Day;
+      const capacityTime = conflict.time || conflict.StartTime;
+      return `capacity_${capacityCourseCode}_${capacityRoomCode}_${capacityDay}_${capacityTime}`;
     
     case 'Room Double Booking':
-      // Use FULL course codes (including -1, -2 suffixes)
-      const sortedCourses = conflict.conflictingEvents
-        .map(e => e.courseCode)
-        .sort();
+      // For database conflicts, extract course codes from Description
+      let sortedCourses;
+      if (conflict.conflictingEvents) {
+        // Frontend-detected conflict
+        sortedCourses = conflict.conflictingEvents.map(e => e.courseCode).sort();
+      } else if (conflict.Description) {
+        // Database conflict - extract from description
+        const courseMatches = conflict.Description.match(/[A-Z]{3}\d{4}(?:-\d+)?/g);
+        if (courseMatches && courseMatches.length >= 2) {
+          sortedCourses = [...new Set(courseMatches.slice(0, 2))].sort();
+        } else {
+          sortedCourses = [conflict.CourseCode, 'unknown'].sort();
+        }
+      } else {
+        sortedCourses = [conflict.CourseCode || 'unknown', 'unknown'].sort();
+      }
       
-      return `double_${sortedCourses.join('_')}_${conflict.roomCode}_${conflict.day}_${conflict.time}`;
+      const doubleRoomCode = conflict.roomCode || (rooms.find(r => r._id === conflict.RoomID)?.code) || 'Unknown';
+      const doubleDay = conflict.day || conflict.Day;
+      const doubleTime = conflict.time || conflict.StartTime;
+      return `double_${sortedCourses.join('_')}_${doubleRoomCode}_${doubleDay}_${doubleTime}`;
     
     case 'Instructor Conflict':
-      // Use FULL course codes (including -1, -2 suffixes)
-      const sortedInstrCourses = conflict.conflictingEvents
-        .map(e => e.courseCode)
-        .sort();
+      // For database conflicts, extract course codes from Description
+      let sortedInstrCourses;
+      if (conflict.conflictingEvents) {
+        // Frontend-detected conflict
+        sortedInstrCourses = conflict.conflictingEvents.map(e => e.courseCode).sort();
+      } else if (conflict.Description) {
+        // Database conflict - extract from description
+        const instrCourseMatches = conflict.Description.match(/[A-Z]{3}\d{4}(?:-\d+)?/g);
+        if (instrCourseMatches && instrCourseMatches.length >= 2) {
+          sortedInstrCourses = [...new Set(instrCourseMatches.slice(0, 2))].sort();
+        } else {
+          sortedInstrCourses = [conflict.CourseCode, 'unknown'].sort();
+        }
+      } else {
+        sortedInstrCourses = [conflict.CourseCode || 'unknown', 'unknown'].sort();
+      }
       
-      return `instructor_${conflict.instructorId}_${sortedInstrCourses.join('_')}_${conflict.day}_${conflict.timeRange || conflict.time}`;
+      const instrId = conflict.instructorId || conflict.InstructorID;
+      const instrDay = conflict.day || conflict.Day;
+      const instrTime = conflict.timeRange || conflict.time || conflict.StartTime;
+      return `instructor_${instrId}_${sortedInstrCourses.join('_')}_${instrDay}_${instrTime}`;
     
     case 'Time Slot Exceeded':
-      return `timeslot_${conflict.courseCode}_${conflict.day}_${conflict.startTime}`;
+      const timeCourseCode = conflict.courseCode || conflict.CourseCode;
+      const timeDay = conflict.day || conflict.Day;
+      const timeStart = conflict.startTime || conflict.StartTime;
+      return `timeslot_${timeCourseCode}_${timeDay}_${timeStart}`;
 
     case 'Department Tutorial Clash':
-  const sortedDeptCourses = conflict.conflictingEvents
-    .map(e => e.courseCode)
-    .sort();
-  const sortedDepts = conflict.departments.sort();
-  
-  return `dept_clash_${sortedDepts.join('_')}_${sortedDeptCourses.join('_')}_${conflict.day}_${conflict.time}`;
+      // For database conflicts, extract from Description
+      let sortedDeptCourses;
+      let sortedDepts;
+      
+      if (conflict.conflictingEvents && conflict.departments) {
+        // Frontend-detected conflict
+        sortedDeptCourses = conflict.conflictingEvents.map(e => e.courseCode).sort();
+        sortedDepts = conflict.departments.sort();
+      } else if (conflict.Description) {
+        // Database conflict - extract from description
+        const deptCourseMatches = conflict.Description.match(/[A-Z]{3}\d{4}(?:-\d+)?/g);
+        const deptMatch = conflict.Description.match(/Department\(s\)\s+(.+?)\s+have/);
+        
+        if (deptCourseMatches && deptCourseMatches.length >= 2) {
+          sortedDeptCourses = [...new Set(deptCourseMatches.slice(0, 2))].sort();
+        } else {
+          sortedDeptCourses = [conflict.CourseCode, 'unknown'].sort();
+        }
+        
+        if (deptMatch && deptMatch[1]) {
+          sortedDepts = deptMatch[1].split(',').map(d => d.trim()).filter(d => d.length > 0).sort();
+        } else {
+          sortedDepts = ['unknown'];
+        }
+      } else {
+        sortedDeptCourses = [conflict.CourseCode || 'unknown', 'unknown'].sort();
+        sortedDepts = ['unknown'];
+      }
+      
+      const deptDay = conflict.day || conflict.Day;
+      const deptTime = conflict.time || conflict.StartTime;
+      return `dept_clash_${sortedDepts.join('_')}_${sortedDeptCourses.join('_')}_${deptDay}_${deptTime}`;
     
     default:
       return `unknown_${Date.now()}_${Math.random()}`;
@@ -3035,10 +3150,9 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 
   if (format === "csv") {
     const csvData = [];
-    const headers = ["Day", "Time Slot", "End Time", "Duration (Hours)", "Room Code", "Room Capacity", "Course Code", "Occurrence Type", "Occurrence Number", "Deparments", "Estimated Students", "Instructors"];
+    const headers = ["Day", "Time Slot", "End Time", "Duration (Hours)", "Room Code", "Room Capacity", "Course Code", "Occurrence Type", "Occurrence Number", "Departments", "Estimated Students", "Instructors"];
     csvData.push(headers);
 
-    // FIXED: Add Set to track exported events and prevent duplicates
     const exportedEvents = new Set();
 
     DAYS.forEach(day => {
@@ -3049,32 +3163,28 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 
         slots.forEach((slot, timeIdx) => {
           slot.forEach(item => {
-            // CRITICAL FIX: Only export events that match current filters
             if (item && item.raw && !exportedEvents.has(item.id) && isEventMatchingAllFilters(item)) {
-              exportedEvents.add(item.id); // Mark as exported
+              exportedEvents.add(item.id);
               
-              // CRITICAL FIX: Improved instructor handling
               let instructorName = "No Instructor Assigned";
               
-              // Priority 1: Check selectedInstructor (directly assigned)
               if (item.selectedInstructor && item.selectedInstructor.trim() !== "") {
                 instructorName = item.selectedInstructor;
-              }
-              // Priority 2: Check selectedInstructorId and find name from instructors array
-              else if (item.selectedInstructorId && item.selectedInstructorId.trim() !== "") {
+              } else if (item.selectedInstructorId && item.selectedInstructorId.trim() !== "") {
                 const foundInstructor = instructors.find(inst => inst._id === item.selectedInstructorId);
                 if (foundInstructor) {
                   instructorName = foundInstructor.name;
                 }
-              }
-              // Priority 3: Check if there's only one instructor in the raw data
-              else if (item.raw.Instructors && Array.isArray(item.raw.Instructors) && item.raw.Instructors.length === 1) {
+              } else if (item.raw.Instructors && Array.isArray(item.raw.Instructors) && item.raw.Instructors.length === 1) {
                 instructorName = item.raw.Instructors[0];
-              }
-              // Priority 4: Check OriginalInstructors if available
-              else if (item.raw.OriginalInstructors && Array.isArray(item.raw.OriginalInstructors) && item.raw.OriginalInstructors.length === 1) {
+              } else if (item.raw.OriginalInstructors && Array.isArray(item.raw.OriginalInstructors) && item.raw.OriginalInstructors.length === 1) {
                 instructorName = item.raw.OriginalInstructors[0];
               }
+
+              // ✅ FIX: Properly extract departments
+              const departments = item.raw.Departments && Array.isArray(item.raw.Departments) && item.raw.Departments.length > 0
+                ? item.raw.Departments.join(", ")
+                : "N/A";
 
               csvData.push([
                 day,
@@ -3086,8 +3196,8 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
                 item.code || "N/A",
                 item.raw.OccType || "N/A",
                 Array.isArray(item.raw.OccNumber) ? item.raw.OccNumber.join(", ") : item.raw.OccNumber || "N/A",
-                item.raw.Departments ? item.raw.Departments.join(", ") : "N/A",  // NEW
-                item.raw.EstimatedStudents || "N/A",  // NEW
+                departments,  // ✅ Now properly included
+                item.raw.EstimatedStudents || "N/A",
                 instructorName,
               ]);
             }
@@ -3290,8 +3400,22 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
               div.style.borderRadius = "6px";
               div.style.fontWeight = "500";
               div.style.fontSize = "15px";
-              div.innerHTML = `<div><strong>${event.code} (${event.raw.OccType})${duration > 1 ? ` (${duration}h)` : ""}</strong></div>
-                <div style="font-size: 13px">${event.raw.OccNumber ? (Array.isArray(event.raw.OccNumber) ? `(Occ ${event.raw.OccNumber.join(", ")})` : `(Occ ${event.raw.OccNumber})`) : ""} ${event.selectedInstructor || "No Instructor Assigned"}</div>`;
+
+              // ✅ FIX: Add departments to the display
+              const departments = event.raw.Departments && Array.isArray(event.raw.Departments) && event.raw.Departments.length > 0
+                ? event.raw.Departments.join(", ")
+                : "";
+
+              const departmentDisplay = departments ? `<div style="font-size: 12px; color: #666;">${departments}</div>` : "";
+
+              div.innerHTML = `
+                <div><strong>${event.code} (${event.raw.OccType})${duration > 1 ? ` (${duration}h)` : ""}</strong></div>
+                <div style="font-size: 13px">
+                  ${event.raw.OccNumber ? (Array.isArray(event.raw.OccNumber) ? `(Occ ${event.raw.OccNumber.join(", ")})` : `(Occ ${event.raw.OccNumber})`) : ""} 
+                  ${event.selectedInstructor || "No Instructor Assigned"}
+                </div>
+                ${departmentDisplay}
+              `;
 
               cell.appendChild(div);
               row.appendChild(cell);
@@ -4057,27 +4181,27 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
   
   // Check for occurrence restriction violations
   if (selectedId && selectedId.trim() !== "") {
-    const occurrenceViolation = checkOccurrenceRestriction(event, selectedId, timetable);
+    // const occurrenceViolation = checkOccurrenceRestriction(event, selectedId, timetable);
     
-    if (occurrenceViolation && occurrenceViolation.isViolation) {
-      let violationMessage = `Occurrence Restriction Violation:\n\n${occurrenceViolation.message}\n\n`;
+    // if (occurrenceViolation && occurrenceViolation.isViolation) {
+    //   let violationMessage = `Occurrence Restriction Violation:\n\n${occurrenceViolation.message}\n\n`;
       
-      if (occurrenceViolation.instructorLectures.length > 0) {
-        violationMessage += "This instructor teaches lectures for the following occurrences:\n";
-        occurrenceViolation.instructorLectures.forEach((lecture, index) => {
-          violationMessage += `${index + 1}. Occurrences [${lecture.occurrences.join(', ')}] on ${lecture.day} at ${lecture.time}\n`;
-        });
-        violationMessage += "\nTo assign this instructor to this tutorial, they must also teach a lecture covering the same occurrences.";
-      }
+    //   if (occurrenceViolation.instructorLectures.length > 0) {
+    //     violationMessage += "This instructor teaches lectures for the following occurrences:\n";
+    //     occurrenceViolation.instructorLectures.forEach((lecture, index) => {
+    //       violationMessage += `${index + 1}. Occurrences [${lecture.occurrences.join(', ')}] on ${lecture.day} at ${lecture.time}\n`;
+    //     });
+    //     violationMessage += "\nTo assign this instructor to this tutorial, they must also teach a lecture covering the same occurrences.";
+    //   }
       
-      violationMessage += "\n\nDo you want to proceed anyway? This will create a scheduling violation that will be recorded when you save the timetable.";
+    //   violationMessage += "\n\nDo you want to proceed anyway? This will create a scheduling violation that will be recorded when you save the timetable.";
       
-      if (!confirm(violationMessage)) {
-        return; // Don't apply the change
-      }
+    //   if (!confirm(violationMessage)) {
+    //     return; // Don't apply the change
+    //   }
       
-      // NOTE: Removed recordDragDropConflict call - conflicts will be recorded on save
-    }
+    //   // NOTE: Removed recordDragDropConflict call - conflicts will be recorded on save
+    // }
     
     // Check for standard instructor conflicts (existing logic)
     const eventStartIdx = TIMES.findIndex(t => t === event.raw.StartTime);
@@ -4152,12 +4276,16 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 >
   <option value="">Select Instructor</option>
   {/* Only show instructors who can teach this occurrence */}
-  {getAvailableInstructorsForEvent(event, timetable, selectedDay)
-    .map(inst => (
-      <option key={inst._id} value={inst._id}>
-        {inst.name}
-      </option>
-    ))}
+{instructors
+  .filter(inst => 
+    (Array.isArray(event.instructors) ? event.instructors : [event.instructors])
+      .includes(inst.name)
+  )
+  .map(inst => (
+    <option key={inst._id} value={inst._id}>
+      {inst.name}
+    </option>
+  ))}
 </select>
                                   </div>
                                 </div>

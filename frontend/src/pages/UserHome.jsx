@@ -385,7 +385,8 @@ useEffect(() => {
 
   if (format === "csv") {
     const csvData = [];
-    const headers = ["Day", "Time Slot", "End Time", "Duration (Hours)", "Room Code", "Room Capacity", "Course Code", "Occurrence Type", "Occurrence Number", "Instructor"];
+    // ✅ ADD "Departments" to headers
+    const headers = ["Day", "Time Slot", "End Time", "Duration (Hours)", "Room Code", "Room Capacity", "Course Code", "Occurrence Type", "Occurrence Number", "Departments", "Estimated Students", "Instructor"];
     csvData.push(headers);
 
     const exportedEvents = new Set();
@@ -398,9 +399,15 @@ useEffect(() => {
 
         slots.forEach((slot, timeIdx) => {
           slot.forEach(item => {
-            // CRITICAL: Only export events that match current filters
             if (item && item.raw && !exportedEvents.has(item.id) && isEventMatchingAllFilters(item)) {
               exportedEvents.add(item.id);
+              
+              // ✅ ADD: Extract departments
+              const departments = item.raw.Departments && Array.isArray(item.raw.Departments) && item.raw.Departments.length > 0
+                ? item.raw.Departments.join(", ")
+                : "N/A";
+              
+              const estimatedStudents = item.raw.EstimatedStudents || "N/A";
               
               csvData.push([
                 day,
@@ -412,6 +419,8 @@ useEffect(() => {
                 item.code || "N/A",
                 item.raw.OccType || "N/A",
                 Array.isArray(item.raw.OccNumber) ? item.raw.OccNumber.join(", ") : item.raw.OccNumber || "N/A",
+                departments,  // ✅ ADD this
+                estimatedStudents,  // ✅ ADD this
                 item.instructorName || "No Instructor Assigned",
               ]);
             }
@@ -607,8 +616,24 @@ useEffect(() => {
               div.style.borderRadius = "6px";
               div.style.fontWeight = "500";
               div.style.fontSize = "15px";
-              div.innerHTML = `<div><strong>${event.code} (${event.raw.OccType})${duration > 1 ? ` (${duration}h)` : ""}</strong></div>
-                <div style="font-size: 13px">${event.raw.OccNumber ? (Array.isArray(event.raw.OccNumber) ? `(Occ ${event.raw.OccNumber.join(", ")})` : `(Occ ${event.raw.OccNumber})`) : ""} ${event.instructorName}</div>`;
+
+              // ✅ ADD: Extract departments for display
+              const departments = event.raw.Departments && Array.isArray(event.raw.Departments) && event.raw.Departments.length > 0
+                ? event.raw.Departments.join(", ")
+                : "";
+
+              const departmentDisplay = departments 
+                ? `<div style="font-size: 11px; color: #666; margin-top: 2px;">${departments}</div>` 
+                : "";
+
+              div.innerHTML = `
+                <div><strong>${event.code} (${event.raw.OccType})${duration > 1 ? ` (${duration}h)` : ""}</strong></div>
+                <div style="font-size: 13px">
+                  ${event.raw.OccNumber ? (Array.isArray(event.raw.OccNumber) ? `(Occ ${event.raw.OccNumber.join(", ")})` : `(Occ ${event.raw.OccNumber})`) : ""} 
+                  ${event.instructorName}
+                </div>
+                ${departmentDisplay}
+              `;
 
               cell.appendChild(div);
               row.appendChild(cell);

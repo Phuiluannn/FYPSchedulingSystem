@@ -530,7 +530,7 @@ const exportConflictData = () => {
           </div>
         </td>
         <td style={{ textAlign: "right", paddingRight: 20 }}>
-          <span className="fw-bold">{instructor.totalHours}/12 hrs</span>
+          <span className="fw-bold">{instructor.totalHours} hrs</span>
         </td>
       </tr>
     ))

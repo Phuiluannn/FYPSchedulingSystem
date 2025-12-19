@@ -6,14 +6,12 @@ const courseSchema = new mongoose.Schema({
   code: { type: String, required: true },
   name: { type: String, required: true },
   creditHour: { type: Number, required: true },
-  targetStudent: { type: Number, required: true }, // Total target students (can be calculated from departmentStudents)
+  targetStudent: { type: Number, required: true },
   
-  // NEW: Department-specific student counts
   departmentStudents: {
     type: Map,
     of: Number,
     default: {}
-    // e.g., { "Artificial Intelligence": 50, "Software Engineering": 45, ... }
   },
   
   courseType: { type: String, required: true, enum: ["Faculty Core", "Programme Core", "Elective"] },
@@ -22,41 +20,27 @@ const courseSchema = new mongoose.Schema({
   hasTutorial: { type: String, enum: ["Yes", "No"], default: "No" },
   lectureHour: { type: Number, default: 0 },
   
-  // NEW: Lecture occurrence configuration
   lectureOccurrence: {
     type: Number,
     default: 0
   },
   
-  // NEW: Department groupings for each lecture occurrence
   lectureGroupings: [{
     occNumber: { type: Number, required: true },
     departments: [{ type: String }],
     estimatedStudents: { type: Number, default: 0 }
   }],
-  // e.g., [
-  //   { occNumber: 1, departments: ["AI", "CSN", "MM"], estimatedStudents: 150 },
-  //   { occNumber: 2, departments: ["SE", "IS", "DS"], estimatedStudents: 140 }
-  // ]
   
-  // Tutorial occurrences will be calculated automatically based on departmentStudents
   tutorialOcc: {
     type: Number,
     default: 0
   },
   
-  // NEW: Tutorial configuration (one or two departments per tutorial)
   tutorialGroupings: [{
     occNumber: { type: Number, required: true },
     departments: [{ type: String }],
     estimatedStudents: { type: Number, default: 0 }
   }],
-  // e.g., [
-  //   { occNumber: 1, departments: ["AI"], estimatedStudents: 50 },
-  //   { occNumber: 2, departments: ["CSN"], estimatedStudents: 45 },
-  //   { occNumber: 3, departments: ["MM", "IS"], estimatedStudents: 55 },
-  //   ...
-  // ]
   
   year: {
     type: [{ type: String, enum: ["1", "2", "3", "4"] }],
@@ -88,12 +72,8 @@ const courseSchema = new mongoose.Schema({
 
 courseSchema.index({ code: 1, academicYear: 1, semester: 1 }, { unique: true });
 
-// FIXED: Helper method to calculate tutorial occurrences
-// This now works for BOTH hasTutorial "Yes" and "No"
-// "No" means no separate lectures, but tutorials still exist based on student numbers
+// FIXED: Helper method to calculate tutorial occurrences with special handling for Electives
 courseSchema.methods.calculateTutorialOccurrences = function(maxStudentsPerTutorial = 40) {
-  // FIXED: Always calculate tutorials if there are department students
-  // regardless of hasTutorial value
   if (!this.departmentStudents || this.departmentStudents.size === 0) {
     this.tutorialGroupings = [];
     this.tutorialOcc = 0;
@@ -106,8 +86,24 @@ courseSchema.methods.calculateTutorialOccurrences = function(maxStudentsPerTutor
   // Get all departments with students
   const deptEntries = Array.from(this.departmentStudents.entries())
     .filter(([_, count]) => count > 0)
-    .sort((a, b) => b[1] - a[1]); // Sort by student count descending
+    .sort((a, b) => b[1] - a[1]);
   
+  // NEW: Special handling for Elective courses with single department
+  // Electives should have only 1 tutorial grouping regardless of student count
+  if (this.courseType === "Elective" && deptEntries.length === 1) {
+    const [dept, count] = deptEntries[0];
+    tutorialGroupings.push({
+      occNumber: 1,
+      departments: [dept],
+      estimatedStudents: count
+    });
+    
+    this.tutorialGroupings = tutorialGroupings;
+    this.tutorialOcc = 1;
+    return 1;
+  }
+  
+  // Regular logic for Faculty Core and Programme Core courses
   let i = 0;
   while (i < deptEntries.length) {
     const [dept, count] = deptEntries[i];
@@ -117,7 +113,6 @@ courseSchema.methods.calculateTutorialOccurrences = function(maxStudentsPerTutor
       if (i + 1 < deptEntries.length) {
         const [nextDept, nextCount] = deptEntries[i + 1];
         if (count + nextCount <= maxStudentsPerTutorial) {
-          // Pair two departments
           tutorialGroupings.push({
             occNumber: occNumber++,
             departments: [dept, nextDept],
@@ -127,7 +122,6 @@ courseSchema.methods.calculateTutorialOccurrences = function(maxStudentsPerTutor
           continue;
         }
       }
-      // Single department
       tutorialGroupings.push({
         occNumber: occNumber++,
         departments: [dept],
@@ -136,13 +130,11 @@ courseSchema.methods.calculateTutorialOccurrences = function(maxStudentsPerTutor
       i++;
     } else {
       // Large department - split into multiple tutorials
-      // FIX: Use floor division with remainder distribution
       const numTutorials = Math.ceil(count / maxStudentsPerTutorial);
       const baseStudents = Math.floor(count / numTutorials);
       const remainder = count % numTutorials;
       
       for (let j = 0; j < numTutorials; j++) {
-        // First 'remainder' tutorials get one extra student
         const studentsInThisTutorial = j < remainder ? baseStudents + 1 : baseStudents;
         
         tutorialGroupings.push({

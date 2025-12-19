@@ -546,43 +546,49 @@ for (const course of shuffledCourses) {
 
 console.log("=== PHASE 2: SCHEDULING ALL TUTORIALS (DEPARTMENT-BASED) ===");
 
-// PHASE 2: Schedule tutorials based on tutorial groupings
 for (const course of courses) {
-  const { tutorialOcc, tutorialGroupings, roomTypes, instructors, code, _id, hasTutorial, creditHour, lectureHour } = course;
+  const { tutorialOcc, tutorialGroupings, roomTypes, instructors, code, _id, hasTutorial, creditHour, lectureHour, courseType, department } = course;
   
   // CRITICAL FIX: Schedule tutorials for ANY course that has tutorial occurrences
-  // This includes:
-  // 1. Courses with hasTutorial === "Yes" (has both lectures and tutorials)
-  // 2. Courses with hasTutorial === "No" (has ONLY tutorials, no separate lectures)
   if (!tutorialOcc || tutorialOcc <= 0 || !tutorialGroupings || tutorialGroupings.length === 0) {
     console.log(`Skipping ${code} - no tutorials to schedule (tutorialOcc=${tutorialOcc})`);
     continue;
   }
 
-  console.log(`Scheduling tutorials for course: ${code} (hasTutorial=${hasTutorial})`);
+  console.log(`Scheduling tutorials for course: ${code} (hasTutorial=${hasTutorial}, courseType=${courseType})`);
   
   // FIXED: For tutorial-only courses (hasTutorial === "No"), duration equals creditHour
-  // For courses with both (hasTutorial === "Yes"), duration = creditHour - lectureHour
   let tutorialDuration;
   if (hasTutorial === "No") {
-    // Tutorial-only courses: duration = credit hour (e.g., 2 credit hours = 2 hours of tutorial)
     tutorialDuration = creditHour || 1;
     console.log(`  ➡ Tutorial-only course: duration = ${tutorialDuration}h (credit hour)`);
   } else {
-    // Courses with both lectures and tutorials
     tutorialDuration = Math.max(1, (creditHour || 1) - (lectureHour || 1));
     console.log(`  ➡ Course with lectures: duration = ${tutorialDuration}h (creditHour ${creditHour} - lectureHour ${lectureHour})`);
   }
   
   const courseRoomTypes = Array.isArray(roomTypes) ? roomTypes : [roomTypes].filter(Boolean);
 
-  // Get this course's lecture schedules (will be empty for tutorial-only courses)
+  // Get this course's lecture schedules
   const courseLectureSchedules = schedules.filter(schedule => 
     schedule.CourseID.toString() === _id.toString() && 
     schedule.OccType === "Lecture"
   );
   
   console.log(`  Found ${courseLectureSchedules.length} lecture schedules for course ${code}`);
+
+  // NEW: Check if this is an Elective course with a single department
+  const isElectiveSingleDept = courseType === "Elective" && 
+                                Array.isArray(department) && 
+                                department.length === 1 &&
+                                tutorialGroupings.length === 1;
+
+  if (isElectiveSingleDept) {
+    console.log(`  🎯 ELECTIVE COURSE (Single Department): ${code} - Special scheduling rules apply`);
+    console.log(`     - Department: ${department[0]}`);
+    console.log(`     - Total Students: ${tutorialGroupings[0].estimatedStudents}`);
+    console.log(`     - Will schedule as 1 tutorial with relaxed room restrictions`);
+  }
 
   let tutorialsScheduled = 0;
 
@@ -597,7 +603,7 @@ for (const course of courses) {
     let suitableTutorialRooms;
     
     if (requiresCCNALab) {
-      // CRITICAL FIX: If course requires CCNA Lab, tutorials MUST also be in CCNA Lab
+      // CCNA Lab requirement takes precedence over everything
       console.log(`    ⚠️ ${code} requires CCNA Lab - tutorials MUST be in CCNA Lab rooms`);
       suitableTutorialRooms = rooms.filter(
         room => 
@@ -609,17 +615,49 @@ for (const course of courses) {
         console.warn(`    ⚠️ No CCNA Lab rooms meet capacity requirement. Using all CCNA Labs regardless of capacity.`);
         suitableTutorialRooms = rooms.filter(room => room.roomType === "CCNA Lab");
       }
+    } else if (isElectiveSingleDept) {
+      // NEW: Special handling for Elective courses with single department
+      // No room type restrictions UNLESS explicitly specified
+      if (courseRoomTypes.length > 0) {
+        // User explicitly specified room types - respect them
+        console.log(`    ℹ️ Elective course with explicit room types: ${courseRoomTypes.join(', ')}`);
+        suitableTutorialRooms = rooms.filter(
+          room => room.capacity >= grouping.estimatedStudents && 
+                  courseRoomTypes.includes(room.roomType)
+        );
+        
+        // If no rooms match the specified types with capacity, try without capacity
+        if (suitableTutorialRooms.length === 0) {
+          console.warn(`    ⚠️ No rooms match specified types with capacity. Using specified types without capacity check.`);
+          suitableTutorialRooms = rooms.filter(
+            room => courseRoomTypes.includes(room.roomType)
+          );
+        }
+      } else {
+        // No explicit room types - use ANY room with sufficient capacity
+        console.log(`    ✨ Elective course without room restrictions - using any available room`);
+        suitableTutorialRooms = rooms.filter(
+          room => room.capacity >= grouping.estimatedStudents
+        );
+        
+        // If no rooms meet capacity, use all rooms (will trigger capacity conflict)
+        if (suitableTutorialRooms.length === 0) {
+          console.warn(`    ⚠️ No rooms meet capacity requirement (${grouping.estimatedStudents}). Using all rooms.`);
+          suitableTutorialRooms = [...rooms];
+        }
+      }
     } else if (courseRoomTypes.length > 0) {
-      // Normal room type filtering for non-CCNA courses
+      // Normal room type filtering for non-elective courses with specified room types
       suitableTutorialRooms = rooms.filter(
-        room => room.capacity >= grouping.estimatedStudents && courseRoomTypes.includes(room.roomType)
+        room => room.capacity >= grouping.estimatedStudents && 
+                courseRoomTypes.includes(room.roomType)
       );
     } else {
-      // Default room selection logic
+      // Default room selection logic (avoid lecture halls)
       const suitableNonLectureHallRooms = rooms.filter(
         room =>
           room.capacity >= grouping.estimatedStudents &&
-          (room.roomType !== "Lecture Hall" || room.roomType === undefined)
+          room.roomType !== "Lecture Hall"
       );
       
       const suitableAllRooms = rooms.filter(
@@ -646,7 +684,7 @@ for (const course of courses) {
       continue;
     }
 
-    // FIXED: For tutorial-only courses, no need to avoid lecture conflicts
+    // For tutorial-only courses, no need to avoid lecture conflicts
     let latestLectureDayIdx = -1;
     let latestLectureEndTimeIdx = -1;
 
@@ -675,7 +713,7 @@ for (const course of courses) {
     // Create tutorial time slots
     const availableTutorialSlots = [];
     
-    // FIXED: For tutorial-only courses, start from the beginning of the week
+    // For tutorial-only courses, start from the beginning of the week
     const startDayIdx = (hasTutorial === "Yes" && latestLectureDayIdx >= 0) ? latestLectureDayIdx : 0;
     
     for (let dayIdx = startDayIdx; dayIdx < DAYS.length; dayIdx++) {
@@ -758,7 +796,7 @@ for (const course of courses) {
         tutorialsScheduled++;
         placed = true;
 
-        console.log(`  ✅ Scheduled Tutorial Occ${grouping.occNumber} for ${code} on ${day} ${TIMES[timeIdx]} in ${room.name || room.code}`);
+        console.log(`  ✅ Scheduled Tutorial Occ${grouping.occNumber} for ${code} on ${day} ${TIMES[timeIdx]} in ${room.name || room.code}${isElectiveSingleDept ? ' (Elective - relaxed rules)' : ''}`);
       }
     }
 

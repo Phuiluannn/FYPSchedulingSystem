@@ -472,10 +472,32 @@ const handleChange = async (e) => {
       setCopyLoading(false);
       await fetchCourses();
     } catch (err) {
-      setCopyError(
-        err.response?.data?.message ||
-          "Failed to copy courses. Please check your backend."
-      );
+      const errorMsg = err.response?.data?.message || "Failed to copy courses. Please check your backend.";
+      
+      // Check if it's a student data missing error
+      if (errorMsg.includes("Missing student data for")) {
+        setCopyError(
+          <div>
+            <strong>Incomplete Student Data!</strong>
+            <p className="mb-2 mt-2">{errorMsg}</p>
+            <p className="mb-0">
+              Please go to the <strong>Students</strong> page and add enrollment data for all missing year levels in {filterYear} Semester {filterSemester}.
+            </p>
+          </div>
+        );
+      } else if (errorMsg.includes("No student data found") || errorMsg.includes("No courses found")) {
+        setCopyError(
+          <div>
+            <strong>Data Required!</strong>
+            <p className="mb-2 mt-2">{errorMsg}</p>
+            <p className="mb-0">
+              Please configure the required data before copying courses.
+            </p>
+          </div>
+        );
+      } else {
+        setCopyError(errorMsg);
+      }
       setCopyLoading(false);
     }
   };
@@ -791,7 +813,7 @@ const handleChange = async (e) => {
                 <tbody>
   {filteredCourses.length === 0 ? (
     <tr>
-      <td colSpan="13" style={{ textAlign: "center", padding: "2rem" }}>
+      <td colSpan="17" style={{ textAlign: "center", padding: "2rem" }}>
         <div className="text-muted">
           <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>📚</span>
           <h5>No courses found!</h5>
@@ -1343,7 +1365,10 @@ const handleChange = async (e) => {
                 <div className="modal-content">
                   <div className="modal-header">
                     <h5 className="fw-bold">Copy Courses</h5>
-                    <button type="button" className="btn-close" onClick={() => setShowCopyModal(false)}></button>
+                    <button type="button" className="btn-close" onClick={() => {
+                      setShowCopyModal(false);
+                      setCopyError(null);
+                    }}></button>
                   </div>
                   <div className="modal-body">
                     {copyError && (
@@ -1388,7 +1413,10 @@ const handleChange = async (e) => {
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={() => setShowCopyModal(false)}
+                      onClick={() => {
+                        setShowCopyModal(false);
+                        setCopyError(null);
+                      }}
                       disabled={copyLoading}
                     >
                       Cancel

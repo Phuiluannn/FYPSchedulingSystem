@@ -178,6 +178,9 @@ export const updateCourse = async (id, courseData) => {
     );
   }
   
+  const instructorsChanged = JSON.stringify(existingCourse.instructors?.sort()) !== 
+                            JSON.stringify(courseData.instructors?.sort());
+  
   // Update course data
   Object.assign(existingCourse, {
     ...courseData,
@@ -186,16 +189,42 @@ export const updateCourse = async (id, courseData) => {
     lectureGroupings,
     year: Array.isArray(courseData.year) ? courseData.year : [],
     department: Array.isArray(courseData.department) ? courseData.department : [],
-    // Keep lectureOccurrence as provided
     lectureOccurrence: courseData.lectureOccurrence || 0,
     tutorialOcc: 0,
     tutorialGroupings: []
   });
   
-  // FIXED: Calculate tutorial occurrences for BOTH "Yes" and "No" cases
   existingCourse.calculateTutorialOccurrences(40);
   
-  return await existingCourse.save();
+  const savedCourse = await existingCourse.save();
+  
+  // ✅ NEW: Update all existing schedules if instructors changed
+  if (instructorsChanged) {
+    console.log(`Instructors changed for ${savedCourse.code}, updating existing schedules...`);
+    
+    // Import Schedule model at the top of the file
+    const Schedule = (await import('../models/Home.js')).default;
+    
+    // Update all draft schedules for this course
+    const updateResult = await Schedule.updateMany(
+      {
+        CourseID: savedCourse._id,
+        Published: { $ne: true } // Only update draft schedules
+      },
+      {
+        $set: {
+          OriginalInstructors: courseData.instructors || [],
+          // Clear specific instructor assignments when instructor list changes
+          InstructorID: null,
+          Instructors: []
+        }
+      }
+    );
+    
+    console.log(`Updated ${updateResult.modifiedCount} draft schedules with new instructor list`);
+  }
+  
+  return savedCourse;
 };
 
 // Delete a course
@@ -205,10 +234,40 @@ export const deleteCourse = async (id) => {
 
 // Copy courses
 export const copyCourses = async (fromYear, fromSemester, toYear, toSemester) => {
+  // First, get all courses to be copied to check which years they cover
   const coursesToCopy = await CourseModel.find({
     academicYear: fromYear,
     semester: fromSemester,
   });
+  
+  if (coursesToCopy.length === 0) {
+    throw new Error(`No courses found for ${fromYear} Semester ${fromSemester}.`);
+  }
+  
+  // Collect all unique year levels from the courses to be copied
+  const requiredYears = new Set();
+  coursesToCopy.forEach(course => {
+    if (course.year && Array.isArray(course.year)) {
+      course.year.forEach(y => requiredYears.add(Number(y)));
+    }
+  });
+  
+  // Check if student data exists for ALL required year levels in target year/semester
+  const targetStudentData = await StudentModel.find({
+    academicYear: toYear,
+    semester: String(toSemester)
+  });
+  
+  const availableYears = new Set(targetStudentData.map(s => Number(s.year)));
+  const missingYears = [...requiredYears].filter(year => !availableYears.has(year)).sort();
+  
+  if (missingYears.length > 0) {
+    const yearsList = missingYears.map(y => `Year ${y}`).join(', ');
+    throw new Error(
+      `Missing student data for ${yearsList} in ${toYear} Semester ${toSemester}. ` +
+      `Please configure student enrollment data for all required year levels before copying courses.`
+    );
+  }
 
   // Find existing codes in the target year/semester
   const existingCourses = await CourseModel.find({

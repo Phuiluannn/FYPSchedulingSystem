@@ -52,7 +52,6 @@ const SideBar = ({ children, role = "admin", feedbackBadge }) => {
         }}
       >
         <div className="d-flex align-items-center gap-4">
-          {/* Replace the simple notification icon with NotificationDropdown */}
           <NotificationDropdown />
           
           {/* Profile Info */}
@@ -81,6 +80,12 @@ const SideBar = ({ children, role = "admin", feedbackBadge }) => {
 };
 
 const SidebarUnfoldableExample = ({ currentPath, role, feedbackBadge }) => {
+  // 🔥 ADD THIS LOGOUT HANDLER
+  const handleLogout = () => {
+    // Clear all localStorage data
+    localStorage.clear();
+  };
+
   // Define sidebar items for each role
   let navItems = [];
   if (role === "admin") {
@@ -129,8 +134,10 @@ const SidebarUnfoldableExample = ({ currentPath, role, feedbackBadge }) => {
           })}
         </div>
         <div className="mb-3">
+          {/* 🔥 UPDATED LOGOUT BUTTON - Add onClick to clear localStorage */}
           <CNavItem
             href="/login"
+            onClick={handleLogout}
             className={`text-white custom-nav-item ${currentPath === '/login' ? 'active' : ''}`}
           >
             <CIcon customClassName="nav-icon text-white" icon={cilAccountLogout} /> Logout
