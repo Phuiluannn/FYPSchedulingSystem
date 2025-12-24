@@ -197,7 +197,9 @@ function LogIn() {
                         </div>
                         {errors.role && <small className="text-danger">{errors.role}</small>}
                     </div>
+
                     {errors.general && <div className="text-danger text-center mb-3">{errors.general}</div>}
+                    
                     <button
                         type="submit"
                         className="font-fredoka btn w-100 rounded-3"
@@ -205,6 +207,24 @@ function LogIn() {
                     >
                         Login
                     </button>
+                    
+                    {/* 🔥 INSTRUCTOR NOTICE - Always visible at bottom */}
+                    <div 
+                        className="alert alert-info mt-3 mb-0" 
+                        style={{ 
+                            fontSize: '0.8rem',
+                            backgroundColor: '#e7f3ff',
+                            borderColor: '#b3d9ff',
+                            color: '#004085',
+                            padding: '10px 15px'
+                        }}
+                    >
+                        <strong>👨‍🏫 New Instructor?</strong>
+                        <p className="mb-0 mt-1">
+                            If you are an instructor, your account has been created by the admin. Please use <strong>"Forgot Password"</strong> to set up your password.
+                        </p>
+                    </div>
+                    
                     <p className="font-fredoka mt-3 text-center">
                         Don't have an account?
                         <a href="/signup" className="text-primary text-decoration-underline ms-1">

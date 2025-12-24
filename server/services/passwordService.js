@@ -61,7 +61,13 @@ export const forgotPassword = async (email) => {
         throw new Error("User with this email does not exist.");
     }
 
-    console.log('✅ User found:', user.name);
+    // 🔥 SPECIAL HANDLING FOR INSTRUCTORS - Check if setting password for first time
+    const isFirstTimeSetup = user.role === 'instructor' && (!user.password || user.password === '');
+    if (isFirstTimeSetup) {
+        console.log('ℹ️ Instructor setting password for first time:', user.name);
+    } else {
+        console.log('✅ User found:', user.name);
+    }
 
     // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
@@ -104,27 +110,38 @@ export const forgotPassword = async (email) => {
     // Create reset URL
     const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
     
+    // 🔥 CUSTOMIZE EMAIL CONTENT based on whether it's first-time setup
+    const emailSubject = isFirstTimeSetup ? 'Set Your Password - Welcome!' : 'Password Reset Request';
+    const emailTitle = isFirstTimeSetup ? 'Welcome! Set Your Password' : 'Password Reset Request';
+    const emailMessage = isFirstTimeSetup 
+        ? `<p>Welcome ${user.name},</p>
+           <p>An administrator has created an account for you. Please click the button below to set your password and activate your account:</p>`
+        : `<p>Hello ${user.name},</p>
+           <p>You requested to reset your password. Click the button below to reset it:</p>`;
+    const buttonText = isFirstTimeSetup ? 'Set Password' : 'Reset Password';
+    
     // Email content
     const mailOptions = {
         from: process.env.EMAIL_USER,
         to: email,
-        subject: 'Password Reset Request',
+        subject: emailSubject,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #015551;">Password Reset Request</h2>
-                <p>Hello ${user.name},</p>
-                <p>You requested to reset your password. Click the button below to reset it:</p>
+                <h2 style="color: #015551;">${emailTitle}</h2>
+                ${emailMessage}
                 <div style="text-align: center; margin: 30px 0;">
                     <a href="${resetUrl}" 
                        style="background-color: #015551; color: white; padding: 12px 30px; 
                               text-decoration: none; border-radius: 5px; display: inline-block;">
-                        Reset Password
+                        ${buttonText}
                     </a>
                 </div>
                 <p>Or copy and paste this link into your browser:</p>
                 <p style="color: #666; word-break: break-all;">${resetUrl}</p>
                 <p><strong>This link will expire in 1 hour.</strong></p>
-                <p>If you didn't request this, please ignore this email.</p>
+                ${isFirstTimeSetup 
+                    ? '<p>After setting your password, you can log in to the system.</p>' 
+                    : '<p>If you didn\'t request this, please ignore this email.</p>'}
                 <hr style="border: 1px solid #eee; margin: 30px 0;">
                 <p style="color: #999; font-size: 12px;">
                     This is an automated email, please do not reply.
@@ -138,7 +155,7 @@ export const forgotPassword = async (email) => {
         console.log('📨 Attempting to send email to:', email);
         const info = await transporter.sendMail(mailOptions);
         console.log('✅ Email sent successfully:', info.messageId);
-        return { message: "Password reset link sent to email" };
+        return { message: isFirstTimeSetup ? "Password setup link sent to email" : "Password reset link sent to email" };
     } catch (error) {
         // If email fails, delete the token
         await PasswordResetModel.deleteOne({ token: hashedToken });
@@ -185,11 +202,24 @@ export const resetPassword = async (token, newPassword) => {
 
     console.log('✅ User found:', user.email);
 
+    // 🔥 CHECK IF THIS IS FIRST-TIME PASSWORD SETUP FOR INSTRUCTOR
+    const isFirstTimeSetup = user.role === 'instructor' && (!user.password || user.password === '');
+    if (isFirstTimeSetup) {
+        console.log('ℹ️ First-time password setup for instructor:', user.email);
+    }
+
     // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     
     // Update user password
     user.password = hashedPassword;
+    
+    // 🔥 UPDATE STATUS TO VERIFIED after setting password (no longer need to wait for login)
+    if (isFirstTimeSetup || user.status === 'unverified') {
+        user.status = 'verified';
+        console.log('ℹ️ Status updated to verified after password setup');
+    }
+    
     await user.save();
 
     console.log('✅ Password updated successfully');
@@ -199,5 +229,7 @@ export const resetPassword = async (token, newPassword) => {
 
     console.log('✅ Token deleted');
 
-    return { message: "Password reset successful" };
+    return { 
+        message: isFirstTimeSetup ? "Password set successfully! You can now log in." : "Password reset successful" 
+    };
 };
