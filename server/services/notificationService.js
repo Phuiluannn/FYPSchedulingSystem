@@ -60,8 +60,16 @@ export const createFeedbackResponseNotification = async (feedbackId, feedbackTit
   return await createNotification(notificationData);
 };
 
-export const getUserNotifications = async (userRole, userId, limit = 20) => {
+export const getUserNotifications = async (userRole, userId, limit = 20, userCreatedAt = null) => {
   try {
+    // Determine the earliest date to fetch notifications from
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const minDate = userCreatedAt && new Date(userCreatedAt) > thirtyDaysAgo 
+      ? new Date(userCreatedAt) 
+      : thirtyDaysAgo;
+
+    console.log(`Fetching notifications for user ${userId}, role: ${userRole}, created at: ${userCreatedAt}, minDate: ${minDate}`);
+
     const notifications = await Notification.find({
       $or: [
         { 
@@ -73,7 +81,7 @@ export const getUserNotifications = async (userRole, userId, limit = 20) => {
           [`isRead.${userId}`]: { $exists: true } // Only feedback notifications for this specific user
         }
       ],
-      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+      createdAt: { $gte: minDate }
     })
     .sort({ createdAt: -1 })
     .limit(limit)
@@ -130,9 +138,15 @@ export const markNotificationAsRead = async (notificationId, userId) => {
   }
 };
 
-export const getUnreadNotificationCount = async (userRole, userId) => {
+export const getUnreadNotificationCount = async (userRole, userId, userCreatedAt = null) => {
   try {
     console.log(`Getting unread count for role: ${userRole}, userId: ${userId}`);
+    
+    // Determine the earliest date to fetch notifications from
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const minDate = userCreatedAt && new Date(userCreatedAt) > thirtyDaysAgo 
+      ? new Date(userCreatedAt) 
+      : thirtyDaysAgo;
     
     // Get all notifications for this user role OR specific feedback notifications
     const notifications = await Notification.find({
@@ -143,7 +157,7 @@ export const getUnreadNotificationCount = async (userRole, userId) => {
           [`isRead.${userId}`]: { $exists: true } // Feedback notifications specifically for this user
         }
       ],
-      createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+      createdAt: { $gte: minDate }
     }).lean();
     
     console.log(`Found ${notifications.length} total notifications for role ${userRole}`);

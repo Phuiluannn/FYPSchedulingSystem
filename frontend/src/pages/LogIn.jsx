@@ -8,6 +8,7 @@ function LogIn() {
     const [password, setPassword] = useState("");
     const [role, setRole] = useState("student");
     const [errors, setErrors] = useState({});
+    const [showPassword, setShowPassword] = useState(false);
     const navigate = useNavigate();
     const { showAlert, showConfirm } = useAlert();
 
@@ -114,124 +115,163 @@ function LogIn() {
     };
 
     return (
-        <div className="d-flex justify-content-center align-items-center vh-100" style={{ backgroundColor: '#8AB2A6' }}>
-            <div className="bg-white p-5 rounded-4" style={{ width: '40%' }}>
-                <h2 className="text-center fw-bold display fs-2 mb-5">Login</h2>
-                <form onSubmit={handleSubmit}>
-                    <div className="font-fredoka mb-4">
-                        <input
-                            type="email"
-                            placeholder="Enter your siswamail or ummail"
-                            autoComplete="off"
-                            name="email"
-                            className="form-control rounded-3"
-                            onChange={(e) => {
-                                setEmail(e.target.value);
-                                if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
-                            }}
-                        />
-                        {errors.email && <small className="text-danger">{errors.email}</small>}
-                    </div>
-                    <div className="font-fredoka mb-4">
-                        <input
-                            type="password"
-                            placeholder="Enter your password"
-                            autoComplete="off"
-                            name="password"
-                            className="form-control rounded-3"
-                            onChange={(e) => {
-                                setPassword(e.target.value);
-                                if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
-                            }}
-                        />
-                        {errors.password && <small className="text-danger">{errors.password}</small>}
-                        <p className="mt-2 text-end">
-                            <a
-                                href="/forgot-password"
-                                className="text-primary text-decoration-underline"
-                                style={{ fontSize: '0.8rem' }}
-                            >
-                                Forgot Password?
-                            </a>
-                        </p>
-                    </div>
-                    <div className="font-fredoka mb-4 text-center">
-                        <p className="mb-2">Select Your Role:</p>
-                        <div className="btn-group mb-2" role="group" aria-label="Role selection">
-                            <button
-                                type="button"
-                                className="btn"
-                                style={{
-                                    backgroundColor: role === 'student' ? '#015551' : 'transparent',
-                                    color: role === 'student' ? '#fff' : '#015551',
-                                    border: '1px solid #015551',
-                                }}
-                                onClick={() => setRole('student')}
-                            >
-                                Student
-                            </button>
-                            <button
-                                type="button"
-                                className="btn"
-                                style={{
-                                    backgroundColor: role === 'instructor' ? '#015551' : 'transparent',
-                                    color: role === 'instructor' ? '#fff' : '#015551',
-                                    border: '1px solid #015551',
-                                }}
-                                onClick={() => setRole('instructor')}
-                            >
-                                Instructor
-                            </button>
-                            <button
-                                type="button"
-                                className="btn"
-                                style={{
-                                    backgroundColor: role === 'admin' ? '#015551' : 'transparent',
-                                    color: role === 'admin' ? '#fff' : '#015551',
-                                    border: '1px solid #015551',
-                                }}
-                                onClick={() => setRole('admin')}
-                            >
-                                Admin
-                            </button>
+        <div className="min-h-screen flex items-center justify-center p-2" style={{ 
+            background: 'linear-gradient(135deg, #a4c3d2 0%, #b8acd2 100%)'
+        }}>
+            <div className="w-full max-w-lg my-2">
+                {/* Login Card */}
+                <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                    {/* Header with gradient */}
+                    <div className="bg-gradient-to-r from-teal-600 to-teal-700 p-3 text-center">
+                        <div className="w-12 h-12 bg-white rounded-full mx-auto mb-2 flex items-center justify-center shadow-lg">
+                            <svg className="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
                         </div>
-                        {errors.role && <small className="text-danger">{errors.role}</small>}
+                        <h2 className="text-lg font-bold text-white">Welcome Back</h2>
+                        <p className="text-xs text-teal-100">Log in to continue</p>
                     </div>
 
-                    {errors.general && <div className="text-danger text-center mb-3">{errors.general}</div>}
-                    
-                    <button
-                        type="submit"
-                        className="font-fredoka btn w-100 rounded-3"
-                        style={{ backgroundColor: '#015551', color: '#fff'}}
-                    >
-                        Login
-                    </button>
-                    
-                    {/* 🔥 INSTRUCTOR NOTICE - Always visible at bottom */}
-                    <div 
-                        className="alert alert-info mt-3 mb-0" 
-                        style={{ 
-                            fontSize: '0.8rem',
-                            backgroundColor: '#e7f3ff',
-                            borderColor: '#b3d9ff',
-                            color: '#004085',
-                            padding: '10px 15px'
-                        }}
-                    >
-                        <strong>👨‍🏫 New Instructor?</strong>
-                        <p className="mb-0 mt-1">
-                            If you are an instructor, your account has been created by the admin. Please use <strong>"Forgot Password"</strong> to set up your password.
-                        </p>
+                    {/* Form Content */}
+                    <div className="p-4 space-y-2.5">
+                        {/* Email Input */}
+                        <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-gray-700">Email Address</label>
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                                    </svg>
+                                </div>
+                                <input
+                                    type="email"
+                                    placeholder="Enter your siswamail or ummail"
+                                    autoComplete="off"
+                                    name="email"
+                                    value={email}
+                                    className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all ${
+                                        errors.email ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                    onChange={(e) => {
+                                        setEmail(e.target.value);
+                                        if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
+                                    }}
+                                />
+                            </div>
+                            {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+                        </div>
+
+                        {/* Password Input */}
+                        <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-gray-700">Password</label>
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
+                                </div>
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    placeholder="Enter your password"
+                                    autoComplete="off"
+                                    name="password"
+                                    value={password}
+                                    className={`w-full pl-10 pr-12 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none transition-all ${
+                                        errors.password ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                    onChange={(e) => {
+                                        setPassword(e.target.value);
+                                        if (errors.password) setErrors(prev => ({ ...prev, password: undefined }));
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                >
+                                    {showPassword ? (
+                                        <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        </svg>
+                                    )}
+                                </button>
+                            </div>
+                            {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+                            <div className="text-right">
+                                <a href="/forgot-password" className="text-xs text-teal-600 hover:text-teal-700 font-medium transition-colors">
+                                    Forgot Password?
+                                </a>
+                            </div>
+                        </div>
+
+                        {/* Role Selection */}
+                        <div className="space-y-1.5">
+                            <label className="block text-xs font-semibold text-gray-700">Select Your Role</label>
+                            <div className="grid grid-cols-3 gap-2">
+                                {['student', 'instructor', 'admin'].map((r) => (
+                                    <button
+                                        key={r}
+                                        type="button"
+                                        className={`py-2 px-3 rounded-lg font-medium text-sm transition-all ${
+                                            role === r 
+                                                ? 'bg-teal-600 text-white shadow-lg scale-105' 
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                        onClick={() => setRole(r)}
+                                    >
+                                        {r.charAt(0).toUpperCase() + r.slice(1)}
+                                    </button>
+                                ))}
+                            </div>
+                            {errors.role && <p className="text-red-500 text-xs mt-1">{errors.role}</p>}
+                        </div>
+
+                        {/* General Error */}
+                        {errors.general && (
+                            <div className="bg-red-50 border-l-4 border-red-500 p-2 rounded">
+                                <p className="text-red-700 text-xs">{errors.general}</p>
+                            </div>
+                        )}
+
+                        {/* Submit Button */}
+                        <button
+                            onClick={handleSubmit}
+                            className="w-full bg-gradient-to-r from-teal-600 to-teal-700 text-white py-2 rounded-lg font-semibold hover:from-teal-700 hover:to-teal-800 transition-all shadow-lg hover:shadow-xl"
+                        >
+                            Log In
+                        </button>
+
+                        {/* Instructor Notice */}
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5">
+                            <div className="flex items-start">
+                                <svg className="w-4 h-4 text-blue-600 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                                <div>
+                                    <p className="text-xs font-semibold text-blue-900">👨‍🏫 New Instructor?</p>
+                                    <p className="text-xs text-blue-700 mt-0.5">
+                                        Account has been created by admin. Use <strong>"Forgot Password"</strong> to set up your password.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Sign Up Link */}
+                        <div className="text-center pt-2 border-t border-gray-200">
+                            <p className="text-gray-600 text-xs">
+                                Don't have an account?{' '}
+                                <a href="/signup" className="text-teal-600 hover:text-teal-700 font-semibold transition-colors">
+                                    Sign Up
+                                </a>
+                            </p>
+                        </div>
                     </div>
-                    
-                    <p className="font-fredoka mt-3 text-center">
-                        Don't have an account?
-                        <a href="/signup" className="text-primary text-decoration-underline ms-1">
-                            Sign Up
-                        </a>
-                    </p>
-                </form>
+                </div>
             </div>
         </div>
     );

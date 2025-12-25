@@ -106,7 +106,12 @@ export const login = async ({ email, password, role }) => {
         console.log("Unresolved feedback count:", unresolvedFeedbackCount);
     }
 
-    const token = jwt.sign({ id: user._id, role: user.role }, SECRET_KEY, { expiresIn: '1h' });
+    // 🔥 UPDATED: Include createdAt in JWT token for notification filtering
+    const token = jwt.sign({ 
+        id: user._id, 
+        role: user.role,
+        createdAt: user.createdAt // 🔥 ADD THIS - Essential for filtering notifications by user registration date
+    }, SECRET_KEY, { expiresIn: '1h' });
     
     // 🔥 UPDATE STATUS TO VERIFIED on login if still unverified (just in case)
     if (user.status === 'unverified') {

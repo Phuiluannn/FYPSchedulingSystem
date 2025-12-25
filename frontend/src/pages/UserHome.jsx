@@ -54,6 +54,7 @@ function UserHome() {
   const { showAlert, showConfirm } = useAlert();
   const [searchParams] = useSearchParams();
   const location = useLocation();
+  const containerRef = useRef(null);
   
   useEffect(() => {
     // Check navigation state first (from notification click)
@@ -358,22 +359,49 @@ useEffect(() => {
 };
 
   // Handle export button click
-  const handleExportClick = (e) => {
-  console.log("Export button clicked"); // Add this
-  console.log("isPublished:", isPublished); // Add this
+const handleExportClick = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
   
   if (!isPublished) {
     showAlert("No published timetable available to export.", "warning");
     return;
   }
   
-  console.log("Calculating modal position..."); // Add this
-  const position = calculateModalPosition();
-  console.log("Modal position:", position); // Add this
+  // Get the export button's position
+  const buttonRect = e.currentTarget.getBoundingClientRect();
+  const containerRect = containerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
   
-  setExportModalPosition(position);
+  // Calculate modal position relative to the container (not the viewport)
+  const modalWidth = 250;
+  const modalHeight = 120;
+  
+  // Position relative to container, not viewport
+  let x = buttonRect.left - containerRect.left;
+  let y = buttonRect.bottom - containerRect.top + 8; // 8px gap below button
+  
+  // Adjust if modal would go off the right edge of the container
+  const containerWidth = containerRef.current?.offsetWidth || window.innerWidth;
+  if (x + modalWidth > containerWidth) {
+    x = buttonRect.right - containerRect.left - modalWidth;
+  }
+  
+  // Keep modal within container bounds
+  if (x < 15) {
+    x = 15;
+  }
+  
+  // Adjust if modal would go off the bottom edge of the container
+  const containerHeight = containerRef.current?.offsetHeight || window.innerHeight;
+  if (y + modalHeight > containerHeight) {
+    y = buttonRect.top - containerRect.top - modalHeight - 8; // Position above button instead
+    if (y < 15) {
+      y = 15;
+    }
+  }
+  
+  setExportModalPosition({ x, y });
   setShowExportModal(true);
-  console.log("showExportModal set to true"); // Add this
 };
 
   // Handle export functionality
@@ -737,6 +765,73 @@ useEffect(() => {
   }
 }, [showYearDropdown]);
 
+useEffect(() => {
+  if (showExportModal) {
+    const handleClickOutside = (event) => {
+      const modal = document.querySelector('[data-modal="export"]');
+      if (modal && !modal.contains(event.target)) {
+        setShowExportModal(false);
+      }
+    };
+    
+    const handleScroll = () => {
+      setShowExportModal(false);
+    };
+    
+    window.addEventListener('click', handleClickOutside);
+    window.addEventListener('scroll', handleScroll, true);
+    
+    return () => {
+      window.removeEventListener('click', handleClickOutside);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }
+}, [showExportModal]);
+
+useEffect(() => {
+  const updateModalPosition = () => {
+    if (showExportModal && exportButtonRef.current && containerRef.current) {
+      const buttonRect = exportButtonRef.current.getBoundingClientRect();
+      const containerRect = containerRef.current.getBoundingClientRect();
+      
+      const modalWidth = 250;
+      const modalHeight = 120;
+      
+      let x = buttonRect.left - containerRect.left;
+      let y = buttonRect.bottom - containerRect.top + 8;
+      
+      const containerWidth = containerRef.current.offsetWidth;
+      if (x + modalWidth > containerWidth) {
+        x = buttonRect.right - containerRect.left - modalWidth;
+      }
+      
+      if (x < 15) {
+        x = 15;
+      }
+      
+      const containerHeight = containerRef.current.offsetHeight;
+      if (y + modalHeight > containerHeight) {
+        y = buttonRect.top - containerRect.top - modalHeight - 8;
+        if (y < 15) {
+          y = 15;
+        }
+      }
+      
+      setExportModalPosition({ x, y });
+    }
+  };
+
+  if (showExportModal) {
+    window.addEventListener('resize', updateModalPosition);
+    window.addEventListener('scroll', updateModalPosition);
+    
+    return () => {
+      window.removeEventListener('resize', updateModalPosition);
+      window.removeEventListener('scroll', updateModalPosition);
+    };
+  }
+}, [showExportModal]);
+
   const handleExportConfirm = () => {
     handleExportTimetable(selectedExportFormat);
     setShowExportModal(false);
@@ -1022,7 +1117,9 @@ useEffect(() => {
             </div>
           </div>
 
-          <div style={{
+          <div 
+          ref={containerRef}
+          style={{
             background: "#fff",
             borderRadius: 12,
             boxShadow: "0 2px 12px rgba(0,0,0,0.07)",
@@ -1031,7 +1128,7 @@ useEffect(() => {
             margin: "0 auto",
             display: "flex",
             flexDirection: "column",
-            position: "relative",
+            position: "relative", // MAKE SURE THIS EXISTS
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 23 }}>
               <h2 style={{ fontWeight: 700, fontSize: 27, margin: 0 }}>
@@ -1261,69 +1358,69 @@ useEffect(() => {
 
             {/* Export Modal */}
             {showExportModal && (
-              <div 
-                data-modal="export"
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  position: "fixed",
-                  top: `${exportModalPosition.y}px`,
-                  left: `${exportModalPosition.x}px`,
-                  background: "#fff",
-                  padding: "20px",
-                  borderRadius: 8,
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-                  zIndex: 1000,
-                  width: "250px",
-                  border: "1px solid #e0e0e0"
-                }}
-              >
-                <h3 style={{ fontSize: "16px", marginBottom: "10px" }}>Select Export Format</h3>
-                <div style={{ marginBottom: "10px" }}>
-                  <label style={{ display: "block", fontSize: "14px", marginBottom: "5px" }}>Format</label>
-                  <select
-                    value={selectedExportFormat}
-                    onChange={(e) => setSelectedExportFormat(e.target.value)}
-                    style={{ width: "100%", padding: "8px", fontSize: "14px" }}
-                  >
-                    {/* <option value="csv">CSV</option> */}
-                    <option value="png">PNG</option>
-                    <option value="jpg">JPG</option>
-                  </select>
-                </div>
-                <div style={{ display: "flex", gap: "10px", padding: "2px" }}>
-                  <button
-                    onClick={handleExportConfirm}
-                    style={{
-                      background: "#015551",
-                      color: "#fff",
-                      border: "none",
-                      padding: "8px 16px",
-                      borderRadius: 4,
-                      cursor: "pointer",
-                      flex: 1,
-                      fontSize: "14px"
-                    }}
-                  >
-                    Export
-                  </button>
-                  <button
-                    onClick={handleExportCancel}
-                    style={{
-                      background: "#dc3545",
-                      color: "#fff",
-                      border: "none",
-                      padding: "8px 16px",
-                      borderRadius: 4,
-                      cursor: "pointer",
-                      flex: 1,
-                      fontSize: "14px"
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
+            <div 
+              data-modal="export"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute",  // CHANGED from "fixed"
+                top: `${exportModalPosition.y}px`,
+                left: `${exportModalPosition.x}px`,
+                background: "#fff",
+                padding: "20px",
+                borderRadius: 8,
+                boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+                zIndex: 1000,
+                width: "250px",
+                border: "1px solid #e0e0e0"
+              }}
+            >
+              <h3 style={{ fontSize: "16px", marginBottom: "10px" }}>Select Export Format</h3>
+              <div style={{ marginBottom: "10px" }}>
+                <label style={{ display: "block", fontSize: "14px", marginBottom: "5px" }}>Format</label>
+                <select
+                  value={selectedExportFormat}
+                  onChange={(e) => setSelectedExportFormat(e.target.value)}
+                  style={{ width: "100%", padding: "8px", fontSize: "14px" }}
+                >
+                  <option value="csv">CSV</option>
+                  <option value="png">PNG</option>
+                  <option value="jpg">JPG</option>
+                </select>
               </div>
-            )}
+              <div style={{ display: "flex", gap: "10px", padding: "2px" }}>
+                <button
+                  onClick={handleExportConfirm}
+                  style={{
+                    background: "#015551",
+                    color: "#fff",
+                    border: "none",
+                    padding: "8px 16px",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    flex: 1,
+                    fontSize: "14px"
+                  }}
+                >
+                  Export
+                </button>
+                <button
+                  onClick={handleExportCancel}
+                  style={{
+                    background: "#dc3545",
+                    color: "#fff",
+                    border: "none",
+                    padding: "8px 16px",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    flex: 1,
+                    fontSize: "14px"
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           </div>
           
           {/* Hidden table for image export */}

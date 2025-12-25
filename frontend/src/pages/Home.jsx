@@ -4488,7 +4488,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
             )}
             {showExportModal && (
   <div 
-  data-modal="day-selector"
+  data-modal="export"
     onClick={(e) => e.stopPropagation()}
   style={{
     position: "absolute",
