@@ -636,7 +636,7 @@ const handleChange = async (e) => {
   return (
     <ProtectedRoute>
       <SideBar>
-        <div style={{margin: "0 auto 0 auto", padding: "0 30px 0 0px", marginLeft: "80px" }}>
+        <div style={{margin: "0 auto 0 auto", padding: "0 30px 0 0px", marginLeft: "10px" }}>
           <h2 className="fw-bold mb-4">Courses</h2>
           <div className="d-flex align-items-center mb-3">
             <div style={{ position: "relative", display: "flex", alignItems: "center" }}>

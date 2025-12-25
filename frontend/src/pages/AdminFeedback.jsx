@@ -392,14 +392,14 @@ const handleUpdateResponse = async () => {
                   borderRadius: "0 0 8px 8px",
                   zIndex: 1000,
                   boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                  maxHeight: "200px",
+                  maxHeight: "215px",
                   overflowY: "auto"
                 }}>
                 {[
                   { value: "All", label: "All Categories" },
                   { value: "Schedule Issue", label: "Schedule Issue" },
                   { value: "Bug", label: "Bug" },
-                  { value: "Feature Request", label: "Feature Request" },
+                  // { value: "Feature Request", label: "Feature Request" },
                   { value: "Improvement Suggestion", label: "Improvement Suggestion" },
                   { value: "Other", label: "Other" }
                 ].map((option) => (

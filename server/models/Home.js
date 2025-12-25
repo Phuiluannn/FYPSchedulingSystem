@@ -11,7 +11,10 @@ const HomeSchema = new mongoose.Schema({
   Departments: [{ type: String }], // Which departments this occurrence is for
   EstimatedStudents: { type: Number, default: 0 }, // Estimated number of students for this occurrence
   
-  Year: { type: String, required: true },
+  // ✅ CRITICAL FIX: Add YearLevel field
+  YearLevel: [{ type: String }], // Year level(s) of students (e.g., ["1"], ["2"], ["1", "2"])
+  
+  Year: { type: String, required: true }, // Academic year (e.g., "2025/2026")
   Semester: { type: String, required: true },
   Day: { type: String, required: true },
   StartTime: { type: String, required: true },

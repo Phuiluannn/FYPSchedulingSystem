@@ -159,6 +159,68 @@ export const generateTimetable = async (req) => {
     return TIMES[endTimeIdx].split(" - ")[1];
   };
 
+const hasDepartmentConflict = (schedules, newSchedule, day, startTimeIdx, duration) => {
+  const newDepartments = newSchedule.Departments || [];
+  const newYearLevels = newSchedule.YearLevel || [];
+  const newEndTimeIdx = startTimeIdx + duration - 1;
+
+  // Check all existing schedules for conflicts
+  for (const existingSchedule of schedules) {
+    // Skip if different day
+    if (existingSchedule.Day !== day) continue;
+    
+    // Skip if same course (same course can have multiple occurrences for different departments)
+    if (existingSchedule.CourseCode === newSchedule.CourseCode) continue;
+
+        const existingYearLevels = existingSchedule.YearLevel || [];
+    const hasSharedYearLevel = newYearLevels.some(yl => existingYearLevels.includes(yl));
+    
+    if (!hasSharedYearLevel) continue;
+
+    const existingDepartments = existingSchedule.Departments || [];
+    const existingStartTimeIdx = TIMES.findIndex(time => time === existingSchedule.StartTime);
+    const existingEndTimeIdx = existingStartTimeIdx + (existingSchedule.Duration || 1) - 1;
+
+    // Check if time slots overlap
+    const timeSlotsOverlap = !(newEndTimeIdx < existingStartTimeIdx || startTimeIdx > existingEndTimeIdx);
+    
+    if (timeSlotsOverlap) {
+      // Check if any department is shared between the two schedules
+      const sharedDepartments = newDepartments.filter(dept => 
+        existingDepartments.includes(dept)
+      );
+
+      if (sharedDepartments.length > 0) {
+        // Determine conflict type for better logging
+        let conflictType = '';
+        if (newSchedule.OccType === "Tutorial" && existingSchedule.OccType === "Tutorial") {
+          conflictType = 'Tutorial-Tutorial';
+        } else if (newSchedule.OccType === "Tutorial" && existingSchedule.OccType === "Lecture") {
+          conflictType = 'Tutorial-Lecture';
+        } else if (newSchedule.OccType === "Lecture" && existingSchedule.OccType === "Tutorial") {
+          conflictType = 'Lecture-Tutorial';
+        } else if (newSchedule.OccType === "Lecture" && existingSchedule.OccType === "Lecture") {
+          conflictType = 'Lecture-Lecture';
+        }
+
+        return {
+          hasConflict: true,
+          conflictType: conflictType,
+          conflictingCourse: existingSchedule.CourseCode,
+          conflictingDepartments: sharedDepartments,
+          conflictingTime: existingSchedule.StartTime,
+          conflictingOccNumber: existingSchedule.OccNumber,
+          conflictingOccType: existingSchedule.OccType,
+          conflictingYear: existingSchedule.Year
+        };
+      }
+    }
+  }
+
+  return { hasConflict: false };
+};
+
+
   // Force placement with conflicts - UPDATED for department-based occurrences
   const forceScheduleWithConflicts = async (course, occType, grouping, duration, allowedRooms, year, semester) => {
     console.log(`🔴 FORCE SCHEDULING: ${course.code} - ${occType} Occ${grouping.occNumber} (Depts: ${grouping.departments.join(', ')}) with ${duration}h`);
@@ -204,6 +266,7 @@ export const generateTimetable = async (req) => {
               Departments: grouping.departments, // NEW: Track which departments this is for
               EstimatedStudents: grouping.estimatedStudents, // NEW: Track estimated students
               Year: year,
+              YearLevel: course.year,
               Semester: semester,
               Day: day,
               StartTime: TIMES[timeIdx],
@@ -379,6 +442,7 @@ for (const course of shuffledCourses) {
           Departments: grouping.departments,
           EstimatedStudents: grouping.estimatedStudents,
           Year: year,
+          YearLevel: course.year,
           Semester: semester,
           Day: day,
           StartTime: TIMES[timeIdx],
@@ -475,6 +539,7 @@ for (const course of shuffledCourses) {
             Departments: grouping.departments,
             EstimatedStudents: grouping.estimatedStudents,
             Year: year,
+            YearLevel: course.year,
             Semester: semester,
             Day: forcedDay,
             StartTime: TIMES[forcedTimeIdx],
@@ -525,6 +590,7 @@ for (const course of shuffledCourses) {
           Departments: grouping.departments,
           EstimatedStudents: grouping.estimatedStudents,
           Year: year,
+          YearLevel: course.year,
           Semester: semester,
           Day: forcedDay,
           StartTime: TIMES[forcedTimeIdx],
@@ -544,12 +610,11 @@ for (const course of shuffledCourses) {
   console.log(`Lectures scheduled for ${code}: ${lectureGroupings.length}/${lectureGroupings.length}`);
 }
 
-console.log("=== PHASE 2: SCHEDULING ALL TUTORIALS (DEPARTMENT-BASED) ===");
+console.log("=== PHASE 2: SCHEDULING ALL TUTORIALS (DEPARTMENT-BASED WITH CONFLICT DETECTION) ===");
 
 for (const course of courses) {
   const { tutorialOcc, tutorialGroupings, roomTypes, instructors, code, _id, hasTutorial, creditHour, lectureHour, courseType, department } = course;
   
-  // CRITICAL FIX: Schedule tutorials for ANY course that has tutorial occurrences
   if (!tutorialOcc || tutorialOcc <= 0 || !tutorialGroupings || tutorialGroupings.length === 0) {
     console.log(`Skipping ${code} - no tutorials to schedule (tutorialOcc=${tutorialOcc})`);
     continue;
@@ -557,7 +622,6 @@ for (const course of courses) {
 
   console.log(`Scheduling tutorials for course: ${code} (hasTutorial=${hasTutorial}, courseType=${courseType})`);
   
-  // FIXED: For tutorial-only courses (hasTutorial === "No"), duration equals creditHour
   let tutorialDuration;
   if (hasTutorial === "No") {
     tutorialDuration = creditHour || 1;
@@ -569,7 +633,6 @@ for (const course of courses) {
   
   const courseRoomTypes = Array.isArray(roomTypes) ? roomTypes : [roomTypes].filter(Boolean);
 
-  // Get this course's lecture schedules
   const courseLectureSchedules = schedules.filter(schedule => 
     schedule.CourseID.toString() === _id.toString() && 
     schedule.OccType === "Lecture"
@@ -577,7 +640,6 @@ for (const course of courses) {
   
   console.log(`  Found ${courseLectureSchedules.length} lecture schedules for course ${code}`);
 
-  // NEW: Check if this is an Elective course with a single department
   const isElectiveSingleDept = courseType === "Elective" && 
                                 Array.isArray(department) && 
                                 department.length === 1 &&
@@ -585,84 +647,56 @@ for (const course of courses) {
 
   if (isElectiveSingleDept) {
     console.log(`  🎯 ELECTIVE COURSE (Single Department): ${code} - Special scheduling rules apply`);
-    console.log(`     - Department: ${department[0]}`);
-    console.log(`     - Total Students: ${tutorialGroupings[0].estimatedStudents}`);
-    console.log(`     - Will schedule as 1 tutorial with relaxed room restrictions`);
   }
 
   let tutorialsScheduled = 0;
 
-  // Schedule each tutorial grouping separately
   for (const grouping of tutorialGroupings) {
     console.log(`  Scheduling Tutorial Occ${grouping.occNumber} for ${code}: Depts=[${grouping.departments.join(', ')}], Students=${grouping.estimatedStudents}`);
     
-    // CRITICAL: Check if course requires CCNA Lab
     const requiresCCNALab = courseRoomTypes.includes("CCNA Lab");
     
-    // Find suitable rooms for this specific grouping
+    // Find suitable rooms (same logic as before)
     let suitableTutorialRooms;
     
     if (requiresCCNALab) {
-      // CCNA Lab requirement takes precedence over everything
       console.log(`    ⚠️ ${code} requires CCNA Lab - tutorials MUST be in CCNA Lab rooms`);
       suitableTutorialRooms = rooms.filter(
-        room => 
-          room.roomType === "CCNA Lab" &&
-          room.capacity >= grouping.estimatedStudents
+        room => room.roomType === "CCNA Lab" && room.capacity >= grouping.estimatedStudents
       );
       
       if (suitableTutorialRooms.length === 0) {
-        console.warn(`    ⚠️ No CCNA Lab rooms meet capacity requirement. Using all CCNA Labs regardless of capacity.`);
+        console.warn(`    ⚠️ No CCNA Lab rooms meet capacity requirement. Using all CCNA Labs.`);
         suitableTutorialRooms = rooms.filter(room => room.roomType === "CCNA Lab");
       }
     } else if (isElectiveSingleDept) {
-      // NEW: Special handling for Elective courses with single department
-      // No room type restrictions UNLESS explicitly specified
       if (courseRoomTypes.length > 0) {
-        // User explicitly specified room types - respect them
-        console.log(`    ℹ️ Elective course with explicit room types: ${courseRoomTypes.join(', ')}`);
         suitableTutorialRooms = rooms.filter(
           room => room.capacity >= grouping.estimatedStudents && 
                   courseRoomTypes.includes(room.roomType)
         );
         
-        // If no rooms match the specified types with capacity, try without capacity
         if (suitableTutorialRooms.length === 0) {
-          console.warn(`    ⚠️ No rooms match specified types with capacity. Using specified types without capacity check.`);
-          suitableTutorialRooms = rooms.filter(
-            room => courseRoomTypes.includes(room.roomType)
-          );
+          suitableTutorialRooms = rooms.filter(room => courseRoomTypes.includes(room.roomType));
         }
       } else {
-        // No explicit room types - use ANY room with sufficient capacity
-        console.log(`    ✨ Elective course without room restrictions - using any available room`);
-        suitableTutorialRooms = rooms.filter(
-          room => room.capacity >= grouping.estimatedStudents
-        );
+        suitableTutorialRooms = rooms.filter(room => room.capacity >= grouping.estimatedStudents);
         
-        // If no rooms meet capacity, use all rooms (will trigger capacity conflict)
         if (suitableTutorialRooms.length === 0) {
-          console.warn(`    ⚠️ No rooms meet capacity requirement (${grouping.estimatedStudents}). Using all rooms.`);
           suitableTutorialRooms = [...rooms];
         }
       }
     } else if (courseRoomTypes.length > 0) {
-      // Normal room type filtering for non-elective courses with specified room types
       suitableTutorialRooms = rooms.filter(
         room => room.capacity >= grouping.estimatedStudents && 
                 courseRoomTypes.includes(room.roomType)
       );
     } else {
-      // Default room selection logic (avoid lecture halls)
       const suitableNonLectureHallRooms = rooms.filter(
-        room =>
-          room.capacity >= grouping.estimatedStudents &&
-          room.roomType !== "Lecture Hall"
+        room => room.capacity >= grouping.estimatedStudents && room.roomType !== "Lecture Hall"
       );
       
-      const suitableAllRooms = rooms.filter(
-        room => room.capacity >= grouping.estimatedStudents
-      );
+      const suitableAllRooms = rooms.filter(room => room.capacity >= grouping.estimatedStudents);
       
       suitableTutorialRooms = suitableNonLectureHallRooms.length > 0
         ? suitableNonLectureHallRooms 
@@ -670,7 +704,7 @@ for (const course of courses) {
     }
 
     if (suitableTutorialRooms.length === 0) {
-      console.warn(`  ⚠️ No suitable rooms for ${code} Tutorial Occ${grouping.occNumber}. ${requiresCCNALab ? 'Using CCNA Labs' : 'Using all rooms'} with conflicts.`);
+      console.warn(`  ⚠️ No suitable rooms for ${code} Tutorial Occ${grouping.occNumber}.`);
       await forceScheduleWithConflicts(
         course, 
         "Tutorial", 
@@ -684,12 +718,11 @@ for (const course of courses) {
       continue;
     }
 
-    // For tutorial-only courses, no need to avoid lecture conflicts
+    // Calculate lecture constraints
     let latestLectureDayIdx = -1;
     let latestLectureEndTimeIdx = -1;
 
     if (courseLectureSchedules.length > 0) {
-      // Only calculate lecture constraints if this course has lectures
       courseLectureSchedules.forEach(lecture => {
         const lectureDayIdx = DAYS.indexOf(lecture.Day);
         const lectureTimeIdx = TIMES.findIndex(time => time === lecture.StartTime);
@@ -704,16 +737,10 @@ for (const course of courses) {
           latestLectureEndTimeIdx = lectureEndTimeIdx;
         }
       });
-
-      console.log(`  Latest lecture for ${code} ends at day index ${latestLectureDayIdx}, time index ${latestLectureEndTimeIdx - 1}`);
-    } else {
-      console.log(`  No lectures for ${code} - tutorial-only course, can schedule anywhere`);
     }
 
     // Create tutorial time slots
     const availableTutorialSlots = [];
-    
-    // For tutorial-only courses, start from the beginning of the week
     const startDayIdx = (hasTutorial === "Yes" && latestLectureDayIdx >= 0) ? latestLectureDayIdx : 0;
     
     for (let dayIdx = startDayIdx; dayIdx < DAYS.length; dayIdx++) {
@@ -721,7 +748,6 @@ for (const course of courses) {
       
       let startTimeIdx = 0;
       
-      // Only apply lecture end time constraints if this course has lectures
       if (hasTutorial === "Yes" && dayIdx === latestLectureDayIdx && latestLectureEndTimeIdx > 0) {
         startTimeIdx = latestLectureEndTimeIdx;
         if (startTimeIdx >= TIMES.length) continue;
@@ -730,7 +756,6 @@ for (const course of courses) {
       for (let timeIdx = startTimeIdx; timeIdx <= TIMES.length - tutorialDuration; timeIdx++) {
         let conflictsWithOwnLecture = false;
         
-        // Only check lecture conflicts if this course has lectures
         if (hasTutorial === "Yes") {
           for (const lecture of courseLectureSchedules) {
             if (lecture.Day === currentDay) {
@@ -763,13 +788,113 @@ for (const course of courses) {
 
     let placed = false;
 
-    // Try to schedule this tutorial occurrence
+    // **NEW: Try to schedule with department conflict checking**
     for (const slot of availableTutorialSlots) {
       if (placed) break;
       
       const { day, timeIdx, room } = slot;
       
-      if (areConsecutiveSlotsAvailable(day, timeIdx, tutorialDuration, room._id)) {
+      // Check room availability
+      if (!areConsecutiveSlotsAvailable(day, timeIdx, tutorialDuration, room._id)) {
+        continue;
+      }
+
+      // **NEW: Create tentative schedule to check department conflicts**
+      const tentativeSchedule = {
+  CourseCode: code,
+  OccType: "Tutorial",
+  Departments: grouping.departments,
+  Year: year, // ✅ Make sure this is included!
+  YearLevel: course.year,
+  Day: day,
+  StartTime: TIMES[timeIdx],
+  Duration: tutorialDuration,
+  OccNumber: [grouping.occNumber]
+};
+
+      // **NEW: Check for department conflicts**
+      const deptConflict = hasDepartmentConflict(schedules, tentativeSchedule, day, timeIdx, tutorialDuration);
+      
+      if (deptConflict.hasConflict) {
+        console.log(`    ⚠️ Department conflict detected: ${code} Occ${grouping.occNumber} conflicts with ${deptConflict.conflictingCourse} (shared depts: ${deptConflict.conflictingDepartments.join(', ')})`);
+        continue; // Try next slot
+      }
+
+      // No conflicts - schedule it!
+      const tutorialSchedule = {
+        _id: new mongoose.Types.ObjectId().toString(),
+        CourseID: _id,
+        CourseCode: code,
+        Instructors: [],
+        OriginalInstructors: instructors,
+        InstructorID: null,
+        RoomID: room._id,
+        OccNumber: [grouping.occNumber],
+        OccType: "Tutorial",
+        Departments: grouping.departments,
+        EstimatedStudents: grouping.estimatedStudents,
+        Year: year,
+        YearLevel: course.year,
+        Semester: semester,
+        Day: day,
+        StartTime: TIMES[timeIdx],
+        EndTime: getEndTime(timeIdx, tutorialDuration),
+        Duration: tutorialDuration,
+        Published: false
+      };
+
+      schedules.push(tutorialSchedule);
+      markConsecutiveSlotsAsUsed(day, timeIdx, tutorialDuration, room._id);
+      tutorialsScheduled++;
+      placed = true;
+
+      console.log(`  ✅ Scheduled Tutorial Occ${grouping.occNumber} for ${code} on ${day} ${TIMES[timeIdx]} in ${room.name || room.code} (no dept conflicts)`);
+    }
+
+    // If normal scheduling failed, try force scheduling with department conflict detection
+    if (!placed) {
+      console.warn(`  ⚠️ Normal scheduling failed for ${code} Tutorial Occ${grouping.occNumber}. Attempting force schedule with conflict detection.`);
+      
+      let forcePlaced = false;
+      const forceSlots = [];
+      
+      // Try all possible slots, accepting department conflicts if necessary
+      for (let dayIdx = 0; dayIdx < DAYS.length && !forcePlaced; dayIdx++) {
+        const day = DAYS[dayIdx];
+        for (let timeIdx = 0; timeIdx <= TIMES.length - tutorialDuration && !forcePlaced; timeIdx++) {
+          for (const room of suitableTutorialRooms) {
+            const tentativeSchedule = {
+  CourseCode: code,
+  OccType: "Tutorial",
+  Departments: grouping.departments,
+  Year: year, // ✅ Make sure this is included!
+  YearLevel: course.year,
+  Day: day,
+  StartTime: TIMES[timeIdx],
+  Duration: tutorialDuration,
+  OccNumber: [grouping.occNumber]
+};
+
+            const deptConflict = hasDepartmentConflict(schedules, tentativeSchedule, day, timeIdx, tutorialDuration);
+            
+            forceSlots.push({
+              day,
+              timeIdx,
+              room,
+              deptConflict,
+              priority: deptConflict.hasConflict ? 1 : 0 // Prefer slots without dept conflicts
+            });
+          }
+        }
+      }
+
+      // Sort by priority (slots without conflicts first)
+      forceSlots.sort((a, b) => a.priority - b.priority);
+
+      // Force place in the best available slot
+      if (forceSlots.length > 0) {
+        const bestSlot = forceSlots[0];
+        
         const tutorialSchedule = {
           _id: new mongoose.Types.ObjectId().toString(),
           CourseID: _id,
@@ -777,42 +902,57 @@ for (const course of courses) {
           Instructors: [],
           OriginalInstructors: instructors,
           InstructorID: null,
-          RoomID: room._id,
+          RoomID: bestSlot.room._id,
           OccNumber: [grouping.occNumber],
           OccType: "Tutorial",
           Departments: grouping.departments,
           EstimatedStudents: grouping.estimatedStudents,
           Year: year,
+          YearLevel: course.year,
           Semester: semester,
-          Day: day,
-          StartTime: TIMES[timeIdx],
-          EndTime: getEndTime(timeIdx, tutorialDuration),
+          Day: bestSlot.day,
+          StartTime: TIMES[bestSlot.timeIdx],
+          EndTime: getEndTime(bestSlot.timeIdx, tutorialDuration),
           Duration: tutorialDuration,
           Published: false
         };
 
         schedules.push(tutorialSchedule);
-        markConsecutiveSlotsAsUsed(day, timeIdx, tutorialDuration, room._id);
+        markConsecutiveSlotsAsUsed(bestSlot.day, bestSlot.timeIdx, tutorialDuration, bestSlot.room._id);
         tutorialsScheduled++;
-        placed = true;
 
-        console.log(`  ✅ Scheduled Tutorial Occ${grouping.occNumber} for ${code} on ${day} ${TIMES[timeIdx]} in ${room.name || room.code}${isElectiveSingleDept ? ' (Elective - relaxed rules)' : ''}`);
+        // **NEW: Record department conflict if it exists**
+        if (bestSlot.deptConflict.hasConflict) {
+          await recordGenerationConflict({
+            Year: year,
+            Semester: semester,
+            Type: 'Department Tutorial Clash',
+            Description: `${code} (Tutorial Occ${grouping.occNumber}) clashes with ${bestSlot.deptConflict.conflictingCourse} for department(s): ${bestSlot.deptConflict.conflictingDepartments.join(', ')} at ${bestSlot.day} ${TIMES[bestSlot.timeIdx]}`,
+            CourseCode: code,
+            RoomID: bestSlot.room._id,
+            Day: bestSlot.day,
+            StartTime: TIMES[bestSlot.timeIdx],
+            Priority: 'High',
+            Status: 'Pending'
+          });
+          
+          console.log(`  🔴 FORCE PLACED with DEPARTMENT CONFLICT: ${code} Occ${grouping.occNumber} at ${bestSlot.day} ${TIMES[bestSlot.timeIdx]}`);
+        } else {
+          console.log(`  🟡 FORCE PLACED without department conflict: ${code} Occ${grouping.occNumber} at ${bestSlot.day} ${TIMES[bestSlot.timeIdx]}`);
+        }
+      } else {
+        // Absolute last resort
+        await forceScheduleWithConflicts(
+          course, 
+          "Tutorial", 
+          grouping, 
+          tutorialDuration, 
+          suitableTutorialRooms, 
+          year, 
+          semester
+        );
+        tutorialsScheduled++;
       }
-    }
-
-    // If normal scheduling failed, force schedule
-    if (!placed) {
-      console.warn(`  ⚠️ Normal scheduling failed for ${code} Tutorial Occ${grouping.occNumber}. Force scheduling.`);
-      const forcedCount = await forceScheduleWithConflicts(
-        course, 
-        "Tutorial", 
-        grouping, 
-        tutorialDuration, 
-        requiresCCNALab ? suitableTutorialRooms : suitableTutorialRooms, 
-        year, 
-        semester
-      );
-      tutorialsScheduled += forcedCount;
     }
   }
   
@@ -852,6 +992,15 @@ export const getTimetable = async (year, semester, onlyPublished = false) => {
 
   const schedules = await Schedule.find(filter).lean();
   console.log(`Found ${schedules.length} schedules in database`);
+  
+  // ✅ Log first schedule to verify YearLevel exists
+  if (schedules.length > 0) {
+    console.log("Sample schedule from DB:", {
+      code: schedules[0].CourseCode,
+      yearLevel: schedules[0].YearLevel,
+      departments: schedules[0].Departments
+    });
+  }
 
   const schedulesWithStringIds = schedules.map(sch => ({
     ...sch,
@@ -859,6 +1008,10 @@ export const getTimetable = async (year, semester, onlyPublished = false) => {
     CourseID: sch.CourseID?.toString?.() ?? sch.CourseID,
     RoomID: sch.RoomID?.toString?.() ?? sch.RoomID,
     Duration: sch.Duration || 1,
+    // ✅ Explicitly preserve these fields
+    YearLevel: sch.YearLevel || [],
+    Departments: sch.Departments || [],
+    EstimatedStudents: sch.EstimatedStudents || 0
   }));
 
   return { schedules: schedulesWithStringIds };
@@ -881,7 +1034,7 @@ export const saveTimetable = async (year, semester, timetable) => {
     }
 
     return {
-      ...item,
+      ...item, // ✅ This spreads all fields including YearLevel, Departments, EstimatedStudents
       CourseID: mongoose.Types.ObjectId(item.CourseID),
       RoomID: mongoose.Types.ObjectId(item.RoomID),
       InstructorID: item.InstructorID && item.InstructorID.length === 24
@@ -890,9 +1043,17 @@ export const saveTimetable = async (year, semester, timetable) => {
       Duration: duration,
       Year: year,
       Semester: semester,
+      // ✅ Explicitly ensure these critical fields are preserved:
+      YearLevel: item.YearLevel || [],
+      Departments: item.Departments || [],
+      EstimatedStudents: item.EstimatedStudents || 0
     };
   });
 
   await Schedule.insertMany(timetableWithObjectIds);
+  
+  // ✅ Log a sample to verify YearLevel is saved
+  console.log("Sample saved schedule:", timetableWithObjectIds[0]);
+  
   return { success: true };
 };

@@ -749,7 +749,7 @@ useEffect(() => {
   return (
     <ProtectedRoute>
       <SideBar role={role}>
-        <div style={{ maxWidth: 1700, margin: "0 auto 0 auto", padding: "0 10px 0 30px", paddingLeft: "70px" }}>
+        <div style={{ maxWidth: 1700, margin: "0 auto 0 auto", padding: "0 10px 0 30px", paddingLeft: "10px" }}>
           <h2 className="fw-bold mb-4">Timetable</h2>
           
           <div style={{

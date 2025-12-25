@@ -13,75 +13,70 @@ const NotificationDropdown = () => {
   const [error, setError] = useState(null);
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
-  const socketRef = useRef(null); // Use ref to persist socket across renders
+  const socketRef = useRef(null);
 
-// Initialize socket only once
-useEffect(() => {
-  const token = localStorage.getItem('token');
-  const role = localStorage.getItem('role');
-  const userId = localStorage.getItem('userId');
-  
-  if (!token || !userId || !role) {
-    console.log('⚠️ Missing credentials, skipping socket connection');
-    return;
-  }
-
-  // Create socket instance only if it doesn't exist
-  if (!socketRef.current) {
-    console.log('🔌 Initializing socket connection...');
+  // Initialize socket only once
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role');
+    const userId = localStorage.getItem('userId');
     
-    socketRef.current = io('http://localhost:3001', {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5
-    });
-
-    const socket = socketRef.current;
-
-    // Connection event handlers
-    socket.on('connect', () => {
-      console.log('✅ Socket connected:', socket.id);
-      socket.emit('identify', { userId, role });
-    });
-
-    socket.on('connect_error', (error) => {
-      console.error('❌ Socket connection error:', error.message);
-    });
-
-    socket.on('disconnect', (reason) => {
-      console.log('🔌 Socket disconnected:', reason);
-    });
-
-    // Notification handler - UPDATED to handle both types
-    socket.on('notification', (data) => {
-      console.log('📬 Received notification:', data);
-      
-      // Check if this notification is for the current user
-      const isForMe = 
-        (data.recipients && data.recipients.includes(role)) ||  // Role-based (timetable, etc.)
-        (data.userIds && data.userIds.includes(userId));        // User-specific (feedback)
-      
-      if (isForMe) {
-        console.log('✅ Notification is for current user, updating UI');
-        setNotifications(prev => [data.notification, ...prev]);
-        setUnreadCount(prev => prev + 1);
-        showBrowserNotification(data.notification);
-      } else {
-        console.log('ℹ️ Notification not for current user, ignoring');
-      }
-    });
-  }
-
-  // Cleanup function - only disconnect on unmount
-  return () => {
-    if (socketRef.current) {
-      console.log('🧹 Cleaning up socket connection');
-      socketRef.current.disconnect();
-      socketRef.current = null;
+    if (!token || !userId || !role) {
+      console.log('⚠️ Missing credentials, skipping socket connection');
+      return;
     }
-  };
-}, []); // Empty array - run once on mount
+
+    if (!socketRef.current) {
+      console.log('🔌 Initializing socket connection...');
+      
+      socketRef.current = io('http://localhost:3001', {
+        transports: ['websocket'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 5
+      });
+
+      const socket = socketRef.current;
+
+      socket.on('connect', () => {
+        console.log('✅ Socket connected:', socket.id);
+        socket.emit('identify', { userId, role });
+      });
+
+      socket.on('connect_error', (error) => {
+        console.error('❌ Socket connection error:', error.message);
+      });
+
+      socket.on('disconnect', (reason) => {
+        console.log('🔌 Socket disconnected:', reason);
+      });
+
+      socket.on('notification', (data) => {
+        console.log('📬 Received notification:', data);
+        
+        const isForMe = 
+          (data.recipients && data.recipients.includes(role)) ||
+          (data.userIds && data.userIds.includes(userId));
+        
+        if (isForMe) {
+          console.log('✅ Notification is for current user, updating UI');
+          setNotifications(prev => [data.notification, ...prev]);
+          setUnreadCount(prev => prev + 1);
+          showBrowserNotification(data.notification);
+        } else {
+          console.log('ℹ️ Notification not for current user, ignoring');
+        }
+      });
+    }
+
+    return () => {
+      if (socketRef.current) {
+        console.log('🧹 Cleaning up socket connection');
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, []);
 
   const handleNotificationClick = async (notification) => {
     try {
@@ -92,15 +87,39 @@ useEffect(() => {
       setIsOpen(false);
 
       if (notification.type === 'timetable_published') {
-        navigate('/user/home', { 
-          replace: true,
-          state: { 
-            year: notification.academicYear, 
-            semester: notification.semester 
-          } 
-        });
-      } else {
-        navigate('/user/feedback');
+        const isOnHomePage = window.location.pathname === '/user/home';
+        
+        if (isOnHomePage) {
+          window.location.reload();
+        } else {
+          navigate('/user/home', { 
+            replace: true,
+            state: { 
+              year: notification.academicYear, 
+              semester: notification.semester 
+            } 
+          });
+        }
+      } else if (notification.type === 'feedback') {
+        const isOnFeedbackPage = window.location.pathname === '/user/feedback';
+        
+        if (isOnFeedbackPage) {
+          // If already on feedback page, reload with feedbackId highlight
+          navigate('/user/feedback', { 
+            replace: true,
+            state: { 
+              feedbackId: notification.feedbackId 
+            } 
+          });
+          window.location.reload();
+        } else {
+          // Navigate to feedback page with feedbackId to highlight
+          navigate('/user/feedback', {
+            state: { 
+              feedbackId: notification.feedbackId 
+            }
+          });
+        }
       }
       
       console.log('✅ Navigated based on notification');

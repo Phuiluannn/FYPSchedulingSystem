@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { io } from "socket.io-client";
 import axios from "axios";
+import { useLocation } from "react-router-dom";
 import SideBar from "./SideBar";
 import ProtectedRoute from "./ProtectedRoute";
 import { BiSort, BiSortUp, BiSortDown } from "react-icons/bi";
@@ -9,11 +10,13 @@ const socket = io('http://localhost:3001', { transports: ['websocket'] });
 const statusTabs = ["All", "Pending", "In Progress", "Resolved"];
 
 function UserFeedback() {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("All");
   const [feedbackList, setFeedbackList] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [feedbackToDelete, setFeedbackToDelete] = useState(null);
+  const [highlightedFeedbackId, setHighlightedFeedbackId] = useState(null);
   const [form, setForm] = useState({
     title: "",
     type: "",
@@ -23,6 +26,29 @@ function UserFeedback() {
   const [deleteErrorMessage, setDeleteErrorMessage] = useState("");
   const [sortOrder, setSortOrder] = useState("desc");
   const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
+
+  // Handle navigation from notification
+  useEffect(() => {
+    if (location.state?.feedbackId) {
+      setHighlightedFeedbackId(location.state.feedbackId);
+      
+      // Scroll to the highlighted feedback after a brief delay
+      setTimeout(() => {
+        const element = document.getElementById(`feedback-${location.state.feedbackId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+
+      // Remove highlight after 5 seconds
+      setTimeout(() => {
+        setHighlightedFeedbackId(null);
+      }, 5000);
+
+      // Clear the state to prevent re-highlighting on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   // Fetch feedback on mount and when activeTab changes
   useEffect(() => {
@@ -46,29 +72,29 @@ function UserFeedback() {
   }, [activeTab]);
 
   useEffect(() => {
-  socket.connect();
+    socket.connect();
 
-  socket.on('feedback:new', (newFeedback) => {
-    setFeedbackList(prev => [newFeedback, ...prev]);
-  });
+    socket.on('feedback:new', (newFeedback) => {
+      setFeedbackList(prev => [newFeedback, ...prev]);
+    });
 
-  socket.on('feedback:update', (updatedFeedback) => {
-    setFeedbackList(prev =>
-      prev.map(fb => fb._id === updatedFeedback._id ? updatedFeedback : fb)
-    );
-  });
+    socket.on('feedback:update', (updatedFeedback) => {
+      setFeedbackList(prev =>
+        prev.map(fb => fb._id === updatedFeedback._id ? updatedFeedback : fb)
+      );
+    });
 
-  socket.on('feedback:delete', ({ _id }) => {
-    setFeedbackList(prev => prev.filter(fb => fb._id !== _id));
-  });
+    socket.on('feedback:delete', ({ _id }) => {
+      setFeedbackList(prev => prev.filter(fb => fb._id !== _id));
+    });
 
-  return () => {
-    socket.disconnect();
-    socket.off('feedback:new');
-    socket.off('feedback:update');
-    socket.off('feedback:delete');
-  };
-}, []);
+    return () => {
+      socket.disconnect();
+      socket.off('feedback:new');
+      socket.off('feedback:update');
+      socket.off('feedback:delete');
+    };
+  }, []);
 
   useEffect(() => {
     if (showModal || showDeleteModal) {
@@ -82,12 +108,12 @@ function UserFeedback() {
   }, [showModal, showDeleteModal]);
 
   const sortedFeedback = [...feedbackList].sort((a, b) => {
-  const dateA = new Date(a.submitted);
-  const dateB = new Date(b.submitted);
-  return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
-});
+    const dateA = new Date(a.submitted);
+    const dateB = new Date(b.submitted);
+    return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+  });
 
-const filteredFeedback = sortedFeedback; // Backend handles filtering by status
+  const filteredFeedback = sortedFeedback;
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -95,42 +121,41 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (!form.title.trim() || !form.feedback.trim()) {
-    setErrorMessage("Please fill in both Subject and Description fields.");
-    return;
-  }
-
-  try {
-    const token = localStorage.getItem("token");
-
-    // Set priority based on feedback type
-    let priority = "Low";
-    if (form.type === "Schedule Issue") {
-      priority = "High";
-    } else if (form.type === "Bug") {
-      priority = "Medium";
+    e.preventDefault();
+    if (!form.title.trim() || !form.feedback.trim()) {
+      setErrorMessage("Please fill in both Subject and Description fields.");
+      return;
     }
 
-    const response = await axios.post(
-      "http://localhost:3001/user/feedback",
-      {
-        title: form.title,
-        type: form.type,
-        feedback: form.feedback,
-        priority: priority
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    try {
+      const token = localStorage.getItem("token");
 
-    setFeedbackList([response.data, ...feedbackList]);
-    setShowModal(false);
-    setForm({ title: "", type: "", feedback: "" });
-    setErrorMessage("");
-  } catch (error) {
-    setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
-  }
-};
+      let priority = "Low";
+      if (form.type === "Schedule Issue") {
+        priority = "High";
+      } else if (form.type === "Bug") {
+        priority = "Medium";
+      }
+
+      const response = await axios.post(
+        "http://localhost:3001/user/feedback",
+        {
+          title: form.title,
+          type: form.type,
+          feedback: form.feedback,
+          priority: priority
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setFeedbackList([response.data, ...feedbackList]);
+      setShowModal(false);
+      setForm({ title: "", type: "", feedback: "" });
+      setErrorMessage("");
+    } catch (error) {
+      setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
+    }
+  };
 
   const handleDeleteClick = (feedback) => {
     setFeedbackToDelete(feedback);
@@ -148,7 +173,6 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      // Remove the deleted feedback from the list
       setFeedbackList(feedbackList.filter(fb => fb._id !== feedbackToDelete._id));
       setShowDeleteModal(false);
       setFeedbackToDelete(null);
@@ -163,7 +187,6 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
     setDeleteErrorMessage("");
   };
 
-  // Function to check if feedback can be deleted (only unresolved feedback)
   const canDeleteFeedback = (feedback) => {
     return feedback.status !== "Resolved";
   };
@@ -172,6 +195,60 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
     <ProtectedRoute>
       <SideBar role={localStorage.getItem('role') || 'student'}>
         <div>
+          <style>{`
+            @keyframes highlightPulse {
+              0%, 100% {
+                box-shadow: 0 0 0 0 rgba(1, 85, 81, 0.4);
+                border-color: rgba(1, 85, 81, 0.3);
+              }
+              50% {
+                box-shadow: 0 0 0 8px rgba(1, 85, 81, 0);
+                border-color: rgba(1, 85, 81, 0.6);
+              }
+            }
+
+            .feedback-highlight {
+              animation: highlightPulse 2s ease-in-out 2;
+              background: linear-gradient(90deg, 
+                rgba(1, 85, 81, 0.08) 0%, 
+                rgba(1, 85, 81, 0.04) 50%, 
+                rgba(1, 85, 81, 0.08) 100%) !important;
+              border: 2px solid rgba(1, 85, 81, 0.4) !important;
+              transition: all 0.3s ease;
+            }
+
+            .response-badge {
+              position: relative;
+              overflow: hidden;
+            }
+
+            .response-badge::before {
+              content: '';
+              position: absolute;
+              top: -50%;
+              left: -50%;
+              width: 200%;
+              height: 200%;
+              background: linear-gradient(
+                45deg,
+                transparent,
+                rgba(255, 255, 255, 0.3),
+                transparent
+              );
+              transform: rotate(45deg);
+              animation: shimmer 2s infinite;
+            }
+
+            @keyframes shimmer {
+              0% {
+                left: -100%;
+              }
+              100% {
+                left: 100%;
+              }
+            }
+          `}</style>
+
           <div
             style={{
               maxWidth: 1100,
@@ -183,59 +260,60 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
             }}
           >
             <div className="d-flex justify-content-between align-items-start mb-4">
-  <h2 className="fw-bold mb-0">Feedback</h2>
-  <div className="d-flex gap-2">
-    <button
-      className="btn"
-      style={{
-        background: "#f8f9fa",
-        color: "#495057",
-        fontWeight: 500,
-        borderRadius: 8,
-        minWidth: 140,
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 12px",
-        fontSize: 14,
-        marginTop: 18,
-        border: "1px solid #dee2e6"
-      }}
-      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-    >
-      {sortOrder === "asc" ? (
-        <>
-          <BiSortUp size={18} /> Oldest First
-        </>
-      ) : (
-        <>
-          <BiSortDown size={18} /> Newest First
-        </>
-      )}
-    </button>
-    <button
-      className="btn"
-      style={{
-        background: "#015551",
-        color: "#fff",
-        fontWeight: 500,
-        borderRadius: 8,
-        minWidth: 160,
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 12px",
-        fontSize: 16,
-        marginTop: 18,
-      }}
-      onClick={() => setShowModal(true)}
-    >
-      <span style={{ fontSize: 18 }}>+</span> Submit Feedback
-    </button>
-  </div>
-</div>
+              <h2 className="fw-bold mb-0">Feedback</h2>
+              <div className="d-flex gap-2">
+                <button
+                  className="btn"
+                  style={{
+                    background: "#f8f9fa",
+                    color: "#495057",
+                    fontWeight: 500,
+                    borderRadius: 8,
+                    minWidth: 140,
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 12px",
+                    fontSize: 14,
+                    marginTop: 18,
+                    border: "1px solid #dee2e6"
+                  }}
+                  onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                >
+                  {sortOrder === "asc" ? (
+                    <>
+                      <BiSortUp size={18} /> Oldest First
+                    </>
+                  ) : (
+                    <>
+                      <BiSortDown size={18} /> Newest First
+                    </>
+                  )}
+                </button>
+                <button
+                  className="btn"
+                  style={{
+                    background: "#015551",
+                    color: "#fff",
+                    fontWeight: 500,
+                    borderRadius: 8,
+                    minWidth: 160,
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 12px",
+                    fontSize: 16,
+                    marginTop: 18,
+                  }}
+                  onClick={() => setShowModal(true)}
+                >
+                  <span style={{ fontSize: 18 }}>+</span> Submit Feedback
+                </button>
+              </div>
+            </div>
+
             {/* Tabs */}
             <div className="d-flex mb-4" style={{ gap: 2 }}>
               {statusTabs.map((tab) => (
@@ -259,12 +337,14 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
                 </button>
               ))}
             </div>
+
             {/* Feedback Cards */}
             <div className="d-flex flex-column gap-4">
               {filteredFeedback.map((fb) => (
                 <div
                   key={fb._id}
-                  className="p-4"
+                  id={`feedback-${fb._id}`}
+                  className={highlightedFeedbackId === fb._id ? "feedback-highlight p-4" : "p-4"}
                   style={{
                     background: "#fff",
                     border: "1px solid #e0e0e0",
@@ -273,6 +353,25 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
                     position: "relative",
                   }}
                 >
+                  {highlightedFeedbackId === fb._id && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: -12,
+                        left: 20,
+                        background: "#015551",
+                        color: "#fff",
+                        padding: "4px 12px",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        boxShadow: "0 2px 8px rgba(1, 85, 81, 0.3)",
+                      }}
+                    >
+                      ✨ New Response
+                    </div>
+                  )}
+                  
                   <div className="d-flex justify-content-between align-items-start">
                     <div style={{ flex: 1 }}>
                       <div className="fw-bold" style={{ fontSize: 22 }}>
@@ -369,9 +468,35 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
                     <div style={{ color: "#444" }}>{fb.feedback}</div>
                   </div>
                   {fb.response && (
-                    <div className="mt-3">
-                      <div className="fw-bold" style={{ fontSize: 16 }}>
-                        Admin Response:
+                    <div 
+                      className="mt-3 p-3"
+                      style={{
+                        background: highlightedFeedbackId === fb._id 
+                          ? "rgba(1, 85, 81, 0.05)" 
+                          : "#f8f9fa",
+                        borderRadius: 8,
+                        border: highlightedFeedbackId === fb._id 
+                          ? "1px solid rgba(1, 85, 81, 0.2)" 
+                          : "1px solid #e9ecef",
+                      }}
+                    >
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        <div className="fw-bold" style={{ fontSize: 16, color: "#015551" }}>
+                          Admin Response:
+                        </div>
+                        {highlightedFeedbackId === fb._id && (
+                          <span 
+                            className="badge response-badge"
+                            style={{
+                              background: "#015551",
+                              color: "#fff",
+                              fontSize: 11,
+                              padding: "3px 8px",
+                            }}
+                          >
+                            NEW
+                          </span>
+                        )}
                       </div>
                       <div style={{ color: "#444" }}>
                         {fb.response}
@@ -432,7 +557,7 @@ const filteredFeedback = sortedFeedback; // Backend handles filtering by status
                           </option>
                           <option value="Schedule Issue">Schedule Issue</option>
                           <option value="Bug">Bug</option>
-                          <option value="Feature Request">Feature Request</option>
+                          {/* <option value="Feature Request">Feature Request</option> */}
                           <option value="Improvement Suggestion">Improvement Suggestion</option>
                           <option value="Other">Other</option>
                         </select>

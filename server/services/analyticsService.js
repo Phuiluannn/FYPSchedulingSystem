@@ -317,7 +317,7 @@ const departmentTutorialConflicts = new Map();
 const tutorialsByDay = {};
 
 for (const item of timetable) {
-  const { OccType, Day, StartTime, Duration, CourseCode, OccNumber, Departments } = item;
+  const { OccType, Day, StartTime, Duration, CourseCode, OccNumber, Departments, YearLevel } = item; // ✅ ADD YearLevel
   
   // Only check tutorials
   if (OccType !== 'Tutorial') continue;
@@ -347,6 +347,16 @@ Object.entries(tutorialsByDay).forEach(([day, tutorials]) => {
       // Skip if same course
       if (tutorial1.CourseCode === tutorial2.CourseCode) continue;
       
+      // ✅ NEW: Skip if different year levels (students in different years can't clash)
+      const yearLevel1 = tutorial1.YearLevel || [];
+      const yearLevel2 = tutorial2.YearLevel || [];
+      const hasSharedYearLevel = yearLevel1.some(yl => yearLevel2.includes(yl));
+      
+      if (!hasSharedYearLevel) {
+        console.log(`  ℹ️ Skipping ${tutorial1.CourseCode} vs ${tutorial2.CourseCode} - different year levels`);
+        continue; // Different year levels = no conflict possible
+      }
+      
       // Check if time periods overlap
       const hasOverlap = !(tutorial1.endTimeIdx < tutorial2.startTimeIdx || tutorial1.startTimeIdx > tutorial2.endTimeIdx);
       
@@ -360,7 +370,8 @@ Object.entries(tutorialsByDay).forEach(([day, tutorials]) => {
           // Create unique conflict ID
           const sortedCourses = [tutorial1.CourseCode, tutorial2.CourseCode].sort();
           const sortedDepts = sharedDepartments.sort();
-          const conflictId = `dept-${day}-${sortedDepts.join('-')}-${sortedCourses.join('-')}`;
+          const sortedYears = yearLevel1.filter(yl => yearLevel2.includes(yl)).sort(); // ✅ ADD shared years to conflict ID
+          const conflictId = `dept-${day}-${sortedDepts.join('-')}-${sortedYears.join('-')}-${sortedCourses.join('-')}`;
           
           if (!departmentTutorialConflicts.has(conflictId)) {
             const overlapStart = Math.max(tutorial1.startTimeIdx, tutorial2.startTimeIdx);
@@ -378,11 +389,14 @@ Object.entries(tutorialsByDay).forEach(([day, tutorials]) => {
                 : ` (Occ ${tutorial2.OccNumber})`
               : "";
             
+            // ✅ NEW: Add year level info to conflict description
+            const sharedYearText = sortedYears.length > 0 ? ` (Year ${sortedYears.join(', ')})` : '';
+            
             departmentTutorialConflicts.set(conflictId, {
               Year: year,
               Semester: semester,
               Type: 'Department Tutorial Clash',
-              Description: `Department(s) ${sharedDepartments.join(', ')} have conflicting tutorials: ${tutorial1.CourseCode}${tutorial1OccText} and ${tutorial2.CourseCode}${tutorial2OccText} on ${day} at ${overlapTimeSlot}`,
+              Description: `Department(s) ${sharedDepartments.join(', ')}${sharedYearText} have conflicting tutorials: ${tutorial1.CourseCode}${tutorial1OccText} and ${tutorial2.CourseCode}${tutorial2OccText} on ${day} at ${overlapTimeSlot}`,
               CourseCode: tutorial1.CourseCode,
               Day: day,
               StartTime: overlapTimeSlot,
@@ -390,7 +404,7 @@ Object.entries(tutorialsByDay).forEach(([day, tutorials]) => {
               Status: 'Pending'
             });
             
-            console.log(`📚 Department clash detected: ${sharedDepartments.join(', ')} - ${tutorial1.CourseCode} vs ${tutorial2.CourseCode}`);
+            console.log(`📚 Department clash detected: ${sharedDepartments.join(', ')} Year ${sortedYears.join(', ')} - ${tutorial1.CourseCode} vs ${tutorial2.CourseCode}`);
           }
         }
       }
@@ -761,18 +775,26 @@ const validateDepartmentTutorialClashConflict = async (conflict, schedules) => {
   
   console.log(`Extracted courses: ${course1Code} vs ${course2Code}`);
   
-  // Extract departments
-  const deptMatch = Description.match(/Department\(s\)\s+(.+?)\s+have\s+conflicting/);
+  // Extract departments - handle both old and new format
+  let departments = [];
   
-  if (!deptMatch || !deptMatch[1]) {
-    console.log('❌ Could not extract departments from description');
-    return true;
+  // Try new format first: "Department(s) X (Year 1) have conflicting"
+  const newDeptMatch = Description.match(/Department\(s\)\s+(.+?)\s+\(Year\s+[\d,\s]+\)\s+have\s+conflicting/);
+  if (newDeptMatch && newDeptMatch[1]) {
+    departments = newDeptMatch[1]
+      .split(',')
+      .map(d => d.trim())
+      .filter(d => d.length > 0);
+  } else {
+    // Fall back to old format: "Department(s) X have conflicting"
+    const oldDeptMatch = Description.match(/Department\(s\)\s+(.+?)\s+have\s+conflicting/);
+    if (oldDeptMatch && oldDeptMatch[1]) {
+      departments = oldDeptMatch[1]
+        .split(',')
+        .map(d => d.trim())
+        .filter(d => d.length > 0);
+    }
   }
-  
-  const departments = deptMatch[1]
-    .split(',')
-    .map(d => d.trim())
-    .filter(d => d.length > 0);
   
   if (departments.length === 0) {
     console.log('❌ No departments found after parsing');
@@ -780,6 +802,19 @@ const validateDepartmentTutorialClashConflict = async (conflict, schedules) => {
   }
   
   console.log(`Extracted departments: ${departments.join(', ')}`);
+  
+  // ✅ NEW: Extract year level from description
+  const yearMatch = Description.match(/\(Year\s+([\d,\s]+)\)/);
+  let conflictYearLevels = [];
+  if (yearMatch && yearMatch[1]) {
+    conflictYearLevels = yearMatch[1]
+      .split(',')
+      .map(y => y.trim())
+      .filter(y => y.length > 0);
+    console.log(`Extracted year levels from conflict: ${conflictYearLevels.join(', ')}`);
+  } else {
+    console.log('⚠️ No year level found in conflict description - this is an old conflict, will check all years');
+  }
   
   // 🔧 FIX: Check conflicts in BOTH directions since they could be recorded either way
   const checkConflictPair = (code1, code2) => {
@@ -807,6 +842,20 @@ const validateDepartmentTutorialClashConflict = async (conflict, schedules) => {
       for (const tutorial2 of tutorial2Events) {
         const tutorial1Depts = tutorial1.Departments || [];
         const tutorial2Depts = tutorial2.Departments || [];
+        const tutorial1YearLevels = tutorial1.YearLevel || [];
+        const tutorial2YearLevels = tutorial2.YearLevel || [];
+        
+        console.log(`  Checking: ${code1} (Depts: ${tutorial1Depts.join(',')}, Years: ${tutorial1YearLevels.join(',')}) vs ${code2} (Depts: ${tutorial2Depts.join(',')}, Years: ${tutorial2YearLevels.join(',')})`);
+        
+        // ✅ CRITICAL: Check if they share year levels
+        const hasSharedYearLevel = tutorial1YearLevels.some(yl => tutorial2YearLevels.includes(yl));
+        
+        if (!hasSharedYearLevel) {
+          console.log(`  ℹ️ No shared year levels - no conflict possible`);
+          continue; // Different year levels = no conflict
+        }
+        
+        console.log(`  ✓ Shared year levels: ${tutorial1YearLevels.filter(yl => tutorial2YearLevels.includes(yl)).join(', ')}`);
         
         // Check if they share departments (case-insensitive)
         const sharedDepts = departments.filter(dept => 
@@ -819,6 +868,23 @@ const validateDepartmentTutorialClashConflict = async (conflict, schedules) => {
         console.log(`  ✓ Shared departments found: ${sharedDepts.join(', ')}`);
         
         // Check time overlap
+        const TIMES = [
+          "8.00 AM - 9.00 AM",
+          "9.00 AM - 10.00 AM",
+          "10.00 AM - 11.00 AM",
+          "11.00 AM - 12.00 PM",
+          "12.00 PM - 1.00 PM",
+          "1.00 PM - 2.00 PM",
+          "2.00 PM - 3.00 PM",
+          "3.00 PM - 4.00 PM",
+          "4.00 PM - 5.00 PM",
+          "5.00 PM - 6.00 PM",
+          "6.00 PM - 7.00 PM",
+          "7.00 PM - 8.00 PM",
+          "8.00 PM - 9.00 PM",
+          "9.00 PM - 10.00 PM"
+        ];
+        
         const tutorial1Start = TIMES.indexOf(tutorial1.StartTime);
         const tutorial1Duration = tutorial1.Duration || 1;
         const tutorial1End = tutorial1Start + tutorial1Duration - 1;
@@ -832,7 +898,7 @@ const validateDepartmentTutorialClashConflict = async (conflict, schedules) => {
         console.log(`  Time check: ${tutorial1.StartTime} vs ${tutorial2.StartTime} = ${hasOverlap ? 'OVERLAP' : 'NO OVERLAP'}`);
         
         if (hasOverlap) {
-          console.log(`✅ CONFLICT STILL VALID: ${code1} and ${code2} clash for ${sharedDepts.join(', ')}`);
+          console.log(`✅ CONFLICT STILL VALID: ${code1} and ${code2} clash for ${sharedDepts.join(', ')} at Year ${tutorial1YearLevels.filter(yl => tutorial2YearLevels.includes(yl)).join(', ')}`);
           return true;
         }
       }
@@ -846,7 +912,7 @@ const validateDepartmentTutorialClashConflict = async (conflict, schedules) => {
                         checkConflictPair(course2Code, course1Code);
   
   if (!conflictExists) {
-    console.log(`✅ Department clash auto-resolved: No overlapping tutorials found`);
+    console.log(`✅ Department clash auto-resolved: No overlapping tutorials with shared year levels found`);
   }
   
   return conflictExists;

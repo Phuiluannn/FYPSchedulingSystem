@@ -621,6 +621,18 @@ for (let i = 0; i < tutorialEvents.length; i++) {
     // Must be on same day
     if (tutorial1.day !== tutorial2.day) continue;
     
+    // ✅ CRITICAL FIX: Check if they share year levels
+    const yearLevel1 = tutorial1.raw.YearLevel || [];
+    const yearLevel2 = tutorial2.raw.YearLevel || [];
+    const hasSharedYearLevel = yearLevel1.some(yl => yearLevel2.includes(yl));
+    
+    if (!hasSharedYearLevel) {
+      console.log(`  ℹ️ Skipping ${tutorial1.code} vs ${tutorial2.code} - different year levels (${yearLevel1.join(',')} vs ${yearLevel2.join(',')})`);
+      continue; // Different year levels = no conflict possible
+    }
+    
+    console.log(`  ✓ Shared year levels: ${yearLevel1.filter(yl => yearLevel2.includes(yl)).join(', ')} - ${tutorial1.code} vs ${tutorial2.code}`);
+    
     // Check if time periods overlap
     const tutorial1Start = TIMES.findIndex(t => t === tutorial1.raw.StartTime);
     const tutorial1Duration = tutorial1.raw?.Duration || 1;
@@ -639,10 +651,11 @@ for (let i = 0; i < tutorialEvents.length; i++) {
       );
       
       if (sharedDepartments.length > 0) {
-        // Create unique conflict ID
+        // Create unique conflict ID including year levels
         const sortedCourses = [tutorial1.code, tutorial2.code].sort();
         const sortedDepts = sharedDepartments.sort();
-        const conflictId = `dept-clash-${tutorial1.day}-${sortedDepts.join('-')}-${sortedCourses.join('-')}`;
+        const sortedYears = yearLevel1.filter(yl => yearLevel2.includes(yl)).sort();
+        const conflictId = `dept-clash-${tutorial1.day}-${sortedDepts.join('-')}-${sortedYears.join('-')}-${sortedCourses.join('-')}`;
         
         if (!departmentTutorialConflicts.has(conflictId)) {
           const overlapStart = Math.max(tutorial1Start, tutorial2Start);
@@ -658,6 +671,7 @@ for (let i = 0; i < tutorialEvents.length; i++) {
             id: conflictId,
             type: 'Department Tutorial Clash',
             departments: sharedDepartments,
+            yearLevels: sortedYears, // ✅ ADD THIS
             day: tutorial1.day,
             time: fullTimeRange,
             conflictingEvents: [
@@ -667,6 +681,7 @@ for (let i = 0; i < tutorialEvents.length; i++) {
                 occType: tutorial1.raw.OccType,
                 occNumber: tutorial1.raw.OccNumber,
                 departments: tutorial1.raw.Departments,
+                yearLevels: yearLevel1, // ✅ ADD THIS
                 roomCode: currentRooms.find(r => r._id === tutorial1.roomId)?.code || 'Unknown'
               },
               {
@@ -675,13 +690,14 @@ for (let i = 0; i < tutorialEvents.length; i++) {
                 occType: tutorial2.raw.OccType,
                 occNumber: tutorial2.raw.OccNumber,
                 departments: tutorial2.raw.Departments,
+                yearLevels: yearLevel2, // ✅ ADD THIS
                 roomCode: currentRooms.find(r => r._id === tutorial2.roomId)?.code || 'Unknown'
               }
             ],
-            description: `Department(s) ${sharedDepartments.join(', ')} have conflicting tutorials: ${tutorial1.code} and ${tutorial2.code} on ${tutorial1.day}`
+            description: `Department(s) ${sharedDepartments.join(', ')} (Year ${sortedYears.join(', ')}) have conflicting tutorials: ${tutorial1.code} and ${tutorial2.code} on ${tutorial1.day}`
           });
           
-          console.log(`📚 Department clash: ${sharedDepartments.join(', ')} - ${tutorial1.code} vs ${tutorial2.code} at ${fullTimeRange}`);
+          console.log(`📚 Department clash: ${sharedDepartments.join(', ')} Year ${sortedYears.join(', ')} - ${tutorial1.code} vs ${tutorial2.code} at ${fullTimeRange}`);
         }
       }
     }
@@ -1587,62 +1603,77 @@ if (destRoomObj) {
   });
 
     // NEW: Check for Department Tutorial Clash conflicts
-  if (moved.raw?.OccType === 'Tutorial' && moved.raw?.Departments && moved.raw.Departments.length > 0) {
-    const movedDepartments = moved.raw.Departments;
-    const movedStartIdx = destTimeIdx;
-    const movedEndIdx = destTimeIdx + duration - 1;
+if (moved.raw?.OccType === 'Tutorial' && moved.raw?.Departments && moved.raw.Departments.length > 0) {
+  const movedDepartments = moved.raw.Departments;
+  const movedYearLevels = moved.raw.YearLevel || []; // ✅ ADD THIS
+  const movedStartIdx = destTimeIdx;
+  const movedEndIdx = destTimeIdx + duration - 1;
 
-    // Check all other tutorials on the target day
-    Object.entries(newTimetable[selectedDay]).forEach(([checkRoomId, roomSlots]) => {
-      roomSlots.forEach((slot, slotIdx) => {
-        slot.forEach(otherEvent => {
-          // Skip self, skip non-tutorials, skip events without departments
-          if (!otherEvent || otherEvent.id === moved.id) return;
-          if (otherEvent.raw?.OccType !== 'Tutorial') return;
-          if (!otherEvent.raw?.Departments || otherEvent.raw.Departments.length === 0) return;
+  // Check all other tutorials on the target day
+  Object.entries(newTimetable[selectedDay]).forEach(([checkRoomId, roomSlots]) => {
+    roomSlots.forEach((slot, slotIdx) => {
+      slot.forEach(otherEvent => {
+        // Skip self, skip non-tutorials, skip events without departments
+        if (!otherEvent || otherEvent.id === moved.id) return;
+        if (otherEvent.raw?.OccType !== 'Tutorial') return;
+        if (!otherEvent.raw?.Departments || otherEvent.raw.Departments.length === 0) return;
 
-          // Check for shared departments
-          const sharedDepartments = movedDepartments.filter(dept => 
-            otherEvent.raw.Departments.includes(dept)
-          );
+        // ✅ CRITICAL FIX: Check if they share year levels
+        const otherYearLevels = otherEvent.raw.YearLevel || [];
+        const hasSharedYearLevel = movedYearLevels.some(yl => otherYearLevels.includes(yl));
+        
+        if (!hasSharedYearLevel) {
+          console.log(`  ℹ️ Skipping department clash check: ${moved.code} (Years: ${movedYearLevels.join(',')}) vs ${otherEvent.code} (Years: ${otherYearLevels.join(',')}) - different year levels`);
+          return; // Different year levels = no conflict possible
+        }
 
-          if (sharedDepartments.length === 0) return;
+        // Check for shared departments
+        const sharedDepartments = movedDepartments.filter(dept => 
+          otherEvent.raw.Departments.includes(dept)
+        );
 
-          // Check time overlap
-          const otherStartIdx = TIMES.findIndex(t => t === otherEvent.raw.StartTime);
-          const otherDuration = otherEvent.raw?.Duration || 1;
-          const otherEndIdx = otherStartIdx + otherDuration - 1;
+        if (sharedDepartments.length === 0) return;
 
-          const hasOverlap = !(movedEndIdx < otherStartIdx || movedStartIdx > otherEndIdx);
+        // Check time overlap
+        const otherStartIdx = TIMES.findIndex(t => t === otherEvent.raw.StartTime);
+        const otherDuration = otherEvent.raw?.Duration || 1;
+        const otherEndIdx = otherStartIdx + otherDuration - 1;
 
-          if (hasOverlap) {
-            const overlapStart = Math.max(movedStartIdx, otherStartIdx);
-            const overlapEnd = Math.min(movedEndIdx, otherEndIdx);
-            const overlapStartTime = TIMES[overlapStart];
-            const overlapEndTime = TIMES[overlapEnd];
-            
-            const overlapTimeSlot = overlapStartTime.includes(' - ') 
-              ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
-              : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+        const hasOverlap = !(movedEndIdx < otherStartIdx || movedStartIdx > otherEndIdx);
 
-            const otherRoomObj = rooms.find(r => r._id === checkRoomId);
+        if (hasOverlap) {
+          const overlapStart = Math.max(movedStartIdx, otherStartIdx);
+          const overlapEnd = Math.min(movedEndIdx, otherEndIdx);
+          const overlapStartTime = TIMES[overlapStart];
+          const overlapEndTime = TIMES[overlapEnd];
+          
+          const overlapTimeSlot = overlapStartTime.includes(' - ') 
+            ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+            : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
 
-            conflicts.push({
-              type: 'Department Tutorial Clash',
-              departments: sharedDepartments,
-              conflictingCourse: otherEvent.code,
-              conflictingCourseType: otherEvent.raw?.OccType,
-              conflictingOccNumber: otherEvent.raw?.OccNumber,
-              conflictingRoomCode: otherRoomObj?.code || 'Unknown Room',
-              timeSlot: overlapTimeSlot,
-              movedCourse: moved.code,
-              movedOccNumber: moved.raw.OccNumber
-            });
-          }
-        });
+          const otherRoomObj = rooms.find(r => r._id === checkRoomId);
+          
+          const sharedYears = movedYearLevels.filter(yl => otherYearLevels.includes(yl));
+
+          conflicts.push({
+            type: 'Department Tutorial Clash',
+            departments: sharedDepartments,
+            yearLevels: sharedYears, // ✅ ADD THIS
+            conflictingCourse: otherEvent.code,
+            conflictingCourseType: otherEvent.raw?.OccType,
+            conflictingOccNumber: otherEvent.raw?.OccNumber,
+            conflictingRoomCode: otherRoomObj?.code || 'Unknown Room',
+            timeSlot: overlapTimeSlot,
+            movedCourse: moved.code,
+            movedOccNumber: moved.raw.OccNumber
+          });
+          
+          console.log(`📚 Department clash detected (drag): ${sharedDepartments.join(', ')} Year ${sharedYears.join(', ')} - ${moved.code} vs ${otherEvent.code}`);
+        }
       });
     });
-  }
+  });
+}
 
   // Check for instructor conflicts (keeping existing logic)
   if (moved.selectedInstructorId && moved.selectedInstructorId.trim() !== "" && 
@@ -2167,61 +2198,76 @@ const requiredCapacity = calculateRequiredCapacity(
 
     // NEW: Check for Department Tutorial Clash conflicts
   if (item.raw?.OccType === 'Tutorial' && item.raw?.Departments && item.raw.Departments.length > 0) {
-    const movedDepartments = item.raw.Departments;
-    const movedStartIdx = targetTimeIdx;
-    const movedEndIdx = targetTimeIdx + duration - 1;
+  const movedDepartments = item.raw.Departments;
+  const movedYearLevels = item.raw.YearLevel || []; // ✅ ADD THIS
+  const movedStartIdx = targetTimeIdx;
+  const movedEndIdx = targetTimeIdx + duration - 1;
 
-    // Check all other tutorials on the target day
-    Object.entries(newTimetable[targetDay]).forEach(([checkRoomId, roomSlots]) => {
-      roomSlots.forEach((slot) => {
-        slot.forEach(otherEvent => {
-          // Skip self, skip non-tutorials, skip events without departments
-          if (!otherEvent || otherEvent.id === item.id) return;
-          if (otherEvent.raw?.OccType !== 'Tutorial') return;
-          if (!otherEvent.raw?.Departments || otherEvent.raw.Departments.length === 0) return;
+  // Check all other tutorials on the target day
+  Object.entries(newTimetable[targetDay]).forEach(([checkRoomId, roomSlots]) => {
+    roomSlots.forEach((slot) => {
+      slot.forEach(otherEvent => {
+        // Skip self, skip non-tutorials, skip events without departments
+        if (!otherEvent || otherEvent.id === item.id) return;
+        if (otherEvent.raw?.OccType !== 'Tutorial') return;
+        if (!otherEvent.raw?.Departments || otherEvent.raw.Departments.length === 0) return;
 
-          // Check for shared departments
-          const sharedDepartments = movedDepartments.filter(dept => 
-            otherEvent.raw.Departments.includes(dept)
-          );
+        // ✅ CRITICAL FIX: Check if they share year levels
+        const otherYearLevels = otherEvent.raw.YearLevel || [];
+        const hasSharedYearLevel = movedYearLevels.some(yl => otherYearLevels.includes(yl));
+        
+        if (!hasSharedYearLevel) {
+          console.log(`  ℹ️ Skipping department clash check: ${item.code} (Years: ${movedYearLevels.join(',')}) vs ${otherEvent.code} (Years: ${otherYearLevels.join(',')}) - different year levels`);
+          return; // Different year levels = no conflict possible
+        }
 
-          if (sharedDepartments.length === 0) return;
+        // Check for shared departments
+        const sharedDepartments = movedDepartments.filter(dept => 
+          otherEvent.raw.Departments.includes(dept)
+        );
 
-          // Check time overlap
-          const otherStartIdx = TIMES.findIndex(t => t === otherEvent.raw.StartTime);
-          const otherDuration = otherEvent.raw?.Duration || 1;
-          const otherEndIdx = otherStartIdx + otherDuration - 1;
+        if (sharedDepartments.length === 0) return;
 
-          const hasOverlap = !(movedEndIdx < otherStartIdx || movedStartIdx > otherEndIdx);
+        // Check time overlap
+        const otherStartIdx = TIMES.findIndex(t => t === otherEvent.raw.StartTime);
+        const otherDuration = otherEvent.raw?.Duration || 1;
+        const otherEndIdx = otherStartIdx + otherDuration - 1;
 
-          if (hasOverlap) {
-            const overlapStart = Math.max(movedStartIdx, otherStartIdx);
-            const overlapEnd = Math.min(movedEndIdx, otherEndIdx);
-            const overlapStartTime = TIMES[overlapStart];
-            const overlapEndTime = TIMES[overlapEnd];
-            
-            const overlapTimeSlot = overlapStartTime.includes(' - ') 
-              ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
-              : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+        const hasOverlap = !(movedEndIdx < otherStartIdx || movedStartIdx > otherEndIdx);
 
-            const otherRoomObj = rooms.find(r => r._id === checkRoomId);
+        if (hasOverlap) {
+          const overlapStart = Math.max(movedStartIdx, otherStartIdx);
+          const overlapEnd = Math.min(movedEndIdx, otherEndIdx);
+          const overlapStartTime = TIMES[overlapStart];
+          const overlapEndTime = TIMES[overlapEnd];
+          
+          const overlapTimeSlot = overlapStartTime.includes(' - ') 
+            ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+            : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
 
-            conflicts.push({
-              type: 'Department Tutorial Clash',
-              departments: sharedDepartments,
-              conflictingCourse: otherEvent.code,
-              conflictingCourseType: otherEvent.raw?.OccType,
-              conflictingOccNumber: otherEvent.raw?.OccNumber,
-              conflictingRoomCode: otherRoomObj?.code || 'Unknown Room',
-              timeSlot: overlapTimeSlot,
-              movedCourse: item.code,
-              movedOccNumber: item.raw.OccNumber
-            });
-          }
-        });
+          const otherRoomObj = rooms.find(r => r._id === checkRoomId);
+          
+          const sharedYears = movedYearLevels.filter(yl => otherYearLevels.includes(yl));
+
+          conflicts.push({
+            type: 'Department Tutorial Clash',
+            departments: sharedDepartments,
+            yearLevels: sharedYears, // ✅ ADD THIS
+            conflictingCourse: otherEvent.code,
+            conflictingCourseType: otherEvent.raw?.OccType,
+            conflictingOccNumber: otherEvent.raw?.OccNumber,
+            conflictingRoomCode: otherRoomObj?.code || 'Unknown Room',
+            timeSlot: overlapTimeSlot,
+            movedCourse: item.code,
+            movedOccNumber: item.raw.OccNumber
+          });
+          
+          console.log(`📚 Department clash detected (modal): ${sharedDepartments.join(', ')} Year ${sharedYears.join(', ')} - ${item.code} vs ${otherEvent.code}`);
+        }
       });
     });
-  }
+  });
+}
 
   // NEW: Check for instructor conflicts
   if (item.selectedInstructorId && item.selectedInstructorId.trim() !== "" && 
@@ -3639,7 +3685,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
   return (
     <ProtectedRoute>
       <SideBar>
-        <div style={{ maxWidth: 1700, margin: "0 auto 0 auto", padding: "0 10px 0 30px", paddingLeft: "70px" }}>
+        <div style={{ maxWidth: 1700, margin: "0 auto 0 auto", padding: "0 10px 0 30px", paddingLeft: "10px" }}>
           <h2 className="fw-bold mb-4">Timetable</h2>
           <div
   style={{
