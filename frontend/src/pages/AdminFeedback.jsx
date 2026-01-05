@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { io } from "socket.io-client";
 import axios from "axios";
+import { useLocation } from "react-router-dom";
 import SideBar from "./SideBar";
 import ProtectedRoute from "./ProtectedRoute";
 import CIcon from '@coreui/icons-react';
@@ -17,13 +18,13 @@ const statusMap = {
 const socket = io('http://localhost:3001', { transports: ['websocket'] });
 
 function AdminFeedback() {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("All");
   const [feedbackList, setFeedbackList] = useState([]);
   const [search, setSearch] = useState("");
-  // const [categories, setCategories] = useState([]);
-  // const [priorities, setPriorities] = useState([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [selectedFeedback, setSelectedFeedback] = useState(null);
+  const [highlightedFeedbackId, setHighlightedFeedbackId] = useState(null);
   const [modalForm, setModalForm] = useState({
     status: "",
     priority: "",
@@ -38,6 +39,39 @@ function AdminFeedback() {
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [sortOrder, setSortOrder] = useState("asc");
+
+  // Handle navigation from notification - ONLY highlight if shouldHighlight is true
+useEffect(() => {
+  if (location.state?.feedbackId) {
+    const { feedbackId, shouldHighlight } = location.state;
+    
+    if (shouldHighlight) {
+      console.log('🎨 Highlighting feedback from notification:', feedbackId);
+      setHighlightedFeedbackId(feedbackId);
+      
+      // Remove highlight after 5 seconds
+      setTimeout(() => {
+        setHighlightedFeedbackId(null);
+      }, 5000);
+    } else {
+      console.log('📍 Scrolling to feedback without highlighting:', feedbackId);
+    }
+    
+    // Scroll to the highlighted feedback after a brief delay
+    setTimeout(() => {
+      const element = document.getElementById(`feedback-${feedbackId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 300);
+
+    // Clear the state to prevent re-triggering
+    // Note: We use a slight delay to ensure the effect completes first
+    setTimeout(() => {
+      window.history.replaceState({}, document.title);
+    }, 500);
+  }
+}, [location.state?.feedbackId, location.state?.timestamp]);
 
   // Fetch all feedback for admin
   useEffect(() => {
@@ -56,229 +90,275 @@ function AdminFeedback() {
   }, []);
 
   useEffect(() => {
-  socket.connect();
+    socket.connect();
 
-  socket.on('feedback:new', (newFeedback) => {
-    setFeedbackList(prev => [newFeedback, ...prev]);
-  });
+    socket.on('feedback:new', (newFeedback) => {
+      setFeedbackList(prev => [newFeedback, ...prev]);
+    });
 
-  socket.on('feedback:update', (updatedFeedback) => {
-    setFeedbackList(prev =>
-      prev.map(fb => fb._id === updatedFeedback._id ? updatedFeedback : fb)
-    );
-  });
+    socket.on('feedback:update', (updatedFeedback) => {
+      setFeedbackList(prev =>
+        prev.map(fb => fb._id === updatedFeedback._id ? updatedFeedback : fb)
+      );
+    });
 
-  socket.on('feedback:delete', ({ _id }) => {
-    setFeedbackList(prev => prev.filter(fb => fb._id !== _id));
-  });
+    socket.on('feedback:delete', ({ _id }) => {
+      setFeedbackList(prev => prev.filter(fb => fb._id !== _id));
+    });
 
-  return () => {
-    socket.disconnect();
-    socket.off('feedback:new');
-    socket.off('feedback:update');
-    socket.off('feedback:delete');
-  };
-}, []);
-
-// Prevent body scroll when modal is open
-useEffect(() => {
-  if (selectedFeedback) {
-    document.body.style.overflow = "hidden";
-  } else {
-    document.body.style.overflow = "";
-  }
-  return () => {
-    document.body.style.overflow = "";
-  };
-}, [selectedFeedback]);
-
-useEffect(() => {
-  if (!selectedFeedback) {
-    setSuccessMessage("");
-  }
-}, [selectedFeedback]);
-
-useEffect(() => {
-  if (successMessage) {
-    const timer = setTimeout(() => setSuccessMessage(""), 5000);
-    return () => clearTimeout(timer);
-  }
-}, [successMessage]);
-
-useEffect(() => {
-  if (showCategoryDropdown) {
-    const handleClickOutside = (event) => {
-      const dropdown = event.target.closest('[data-dropdown="category-filter"]');
-      if (!dropdown) {
-        setShowCategoryDropdown(false);
-      }
+    return () => {
+      socket.disconnect();
+      socket.off('feedback:new');
+      socket.off('feedback:update');
+      socket.off('feedback:delete');
     };
-    
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }
-}, [showCategoryDropdown]);
+  }, []);
 
-useEffect(() => {
-  if (showPriorityDropdown) {
-    const handleClickOutside = (event) => {
-      const dropdown = event.target.closest('[data-dropdown="priority-filter"]');
-      if (!dropdown) {
-        setShowPriorityDropdown(false);
-      }
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (selectedFeedback) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
     };
-    
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }
-}, [showPriorityDropdown]);
+  }, [selectedFeedback]);
+
+  useEffect(() => {
+    if (!selectedFeedback) {
+      setSuccessMessage("");
+    }
+  }, [selectedFeedback]);
+
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => setSuccessMessage(""), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage]);
+
+  useEffect(() => {
+    if (showCategoryDropdown) {
+      const handleClickOutside = (event) => {
+        const dropdown = event.target.closest('[data-dropdown="category-filter"]');
+        if (!dropdown) {
+          setShowCategoryDropdown(false);
+        }
+      };
+      
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showCategoryDropdown]);
+
+  useEffect(() => {
+    if (showPriorityDropdown) {
+      const handleClickOutside = (event) => {
+        const dropdown = event.target.closest('[data-dropdown="priority-filter"]');
+        if (!dropdown) {
+          setShowPriorityDropdown(false);
+        }
+      };
+      
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showPriorityDropdown]);
 
   // Filter feedback by tab, search, category, and priority
-const filteredAndSortedFeedback = feedbackList
-  .filter((fb) => {
-    const matchesStatus =
-      activeTab === "All" ||
-      (statusMap[activeTab] ? fb.status === statusMap[activeTab] : true);
-    
-    const matchesCategory = selectedCategories.includes("All") || selectedCategories.includes(fb.type);
-    const matchesPriority = selectedPriorities.includes("All") || selectedPriorities.includes(fb.priority);
-    
-    const matchesSearch =
-      !search ||
-      fb.title.toLowerCase().includes(search.toLowerCase()) ||
-      fb.feedback.toLowerCase().includes(search.toLowerCase());
+  const filteredAndSortedFeedback = feedbackList
+    .filter((fb) => {
+      const matchesStatus =
+        activeTab === "All" ||
+        (statusMap[activeTab] ? fb.status === statusMap[activeTab] : true);
       
-    return matchesStatus && matchesCategory && matchesPriority && matchesSearch;
-  })
-  .sort((a, b) => {
-    const dateA = new Date(a.submitted);
-    const dateB = new Date(b.submitted);
-    return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
-  });
+      const matchesCategory = selectedCategories.includes("All") || selectedCategories.includes(fb.type);
+      const matchesPriority = selectedPriorities.includes("All") || selectedPriorities.includes(fb.priority);
+      
+      const matchesSearch =
+        !search ||
+        fb.title.toLowerCase().includes(search.toLowerCase()) ||
+        fb.feedback.toLowerCase().includes(search.toLowerCase());
+        
+      return matchesStatus && matchesCategory && matchesPriority && matchesSearch;
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.submitted);
+      const dateB = new Date(b.submitted);
+      return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+    });
 
-const openCount = feedbackList.filter((fb) => fb.status === "Pending").length;
-const inProgressCount = feedbackList.filter((fb) => fb.status === "In Progress").length;
-const resolvedCount = feedbackList.filter((fb) => fb.status === "Resolved").length;
+  const openCount = feedbackList.filter((fb) => fb.status === "Pending").length;
+  const inProgressCount = feedbackList.filter((fb) => fb.status === "In Progress").length;
+  const resolvedCount = feedbackList.filter((fb) => fb.status === "Resolved").length;
 
-// Badge count for sidebar: Pending + In Progress
-const feedbackBadge = feedbackList.filter(
-  (fb) => fb.status === "Pending" || fb.status === "In Progress"
-).length;
+  // Badge count for sidebar: Pending + In Progress
+  const feedbackBadge = feedbackList.filter(
+    (fb) => fb.status === "Pending" || fb.status === "In Progress"
+  ).length;
 
-localStorage.setItem("feedbackBadge", feedbackBadge);
+  localStorage.setItem("feedbackBadge", feedbackBadge);
 
-// Open modal and set form values
-const handleOpenModal = (fb) => {
-  setSelectedFeedback(fb);
-  setModalForm({
-    status: fb.status || "Pending",
-    priority: fb.priority || "Low",
-    response: fb.response || "",
-    editing: !fb.response,
-    updateResponse: "",
-  });
-  setErrorMessage("");
-  setSuccessMessage("");
-};
+  // Open modal and set form values
+  const handleOpenModal = (fb) => {
+    setSelectedFeedback(fb);
+    setModalForm({
+      status: fb.status || "Pending",
+      priority: fb.priority || "Low",
+      response: fb.response || "",
+      editing: !fb.response,
+      updateResponse: "",
+    });
+    setErrorMessage("");
+    setSuccessMessage("");
+  };
 
-// Handle modal form changes
-const handleModalChange = (e) => {
-  setModalForm({ ...modalForm, [e.target.name]: e.target.value });
-};
+  // Handle modal form changes
+  const handleModalChange = (e) => {
+    setModalForm({ ...modalForm, [e.target.name]: e.target.value });
+  };
 
   // Handle admin response submit (for first response)
-const handleModalSubmit = async (e) => {
-  e.preventDefault();
-  setModalLoading(true);
-  try {
-    const token = localStorage.getItem("token");
-    // If status is Pending and response is being sent, set to In Progress
-    const newStatus =
-      selectedFeedback.status === "Pending" && modalForm.response.trim()
-        ? "In Progress"
-        : modalForm.status;
-    const response = await axios.put(
-      `http://localhost:3001/feedback/${selectedFeedback._id}`,
-      {
-        status: newStatus,
-        priority: modalForm.priority,
-        response: modalForm.response,
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    setFeedbackList((prev) =>
-      prev.map((fb) =>
-        fb._id === selectedFeedback._id ? { ...fb, ...response.data } : fb
-      )
-    );
-    // Show success message and keep modal open
-    setSuccessMessage("Response sent successfully! User will be notified.");
-    
-    // Update the selected feedback with the new response
-    setSelectedFeedback({ ...selectedFeedback, ...response.data });
-    
-    // Reset the form to show the response was sent
-    setModalForm({
-      status: response.data.status || selectedFeedback.status,
-      priority: response.data.priority || selectedFeedback.priority,
-      response: response.data.response || "",
-      editing: false,
-      updateResponse: "",
-    });
-  } catch (error) {
-    setErrorMessage(error.response?.data?.message || "Failed to update feedback.");
-  }
-  setModalLoading(false);
-};
+  const handleModalSubmit = async (e) => {
+    e.preventDefault();
+    setModalLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const newStatus =
+        selectedFeedback.status === "Pending" && modalForm.response.trim()
+          ? "In Progress"
+          : modalForm.status;
+      const response = await axios.put(
+        `http://localhost:3001/feedback/${selectedFeedback._id}`,
+        {
+          status: newStatus,
+          priority: modalForm.priority,
+          response: modalForm.response,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setFeedbackList((prev) =>
+        prev.map((fb) =>
+          fb._id === selectedFeedback._id ? { ...fb, ...response.data } : fb
+        )
+      );
+      setSuccessMessage("Response sent successfully! User will be notified.");
+      
+      setSelectedFeedback({ ...selectedFeedback, ...response.data });
+      
+      setModalForm({
+        status: response.data.status || selectedFeedback.status,
+        priority: response.data.priority || selectedFeedback.priority,
+        response: response.data.response || "",
+        editing: false,
+        updateResponse: "",
+      });
+    } catch (error) {
+      setErrorMessage(error.response?.data?.message || "Failed to update feedback.");
+    }
+    setModalLoading(false);
+  };
 
   // Handle admin response update (for editing)
-const handleUpdateResponse = async () => {
-  setModalLoading(true);
-  try {
-    const token = localStorage.getItem("token");
-    // If status is Pending and response is being sent, set to In Progress
-    const newStatus =
-      selectedFeedback.status === "Pending" && modalForm.updateResponse.trim()
-        ? "In Progress"
-        : modalForm.status;
-    const response = await axios.put(
-      `http://localhost:3001/feedback/${selectedFeedback._id}`,
-      {
-        status: newStatus,
-        priority: modalForm.priority,
-        response: modalForm.updateResponse,
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    setFeedbackList((prev) =>
-      prev.map((fb) =>
-        fb._id === selectedFeedback._id ? { ...fb, ...response.data } : fb
-      )
-    );
-    // Show success message and keep modal open
-    setSuccessMessage("Response updated successfully! User will be notified.");
-    
-    // Update the selected feedback with the new response
-    setSelectedFeedback({ ...selectedFeedback, ...response.data });
-    
-    // Reset the form to show the updated response
-    setModalForm({
-      status: response.data.status || selectedFeedback.status,
-      priority: response.data.priority || selectedFeedback.priority,
-      response: response.data.response || "",
-      editing: false,
-      updateResponse: "",
-    });
-  } catch (error) {
-    setErrorMessage(error.response?.data?.message || "Failed to update feedback.");
-  }
-  setModalLoading(false);
-};
+  const handleUpdateResponse = async () => {
+    setModalLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      const newStatus =
+        selectedFeedback.status === "Pending" && modalForm.updateResponse.trim()
+          ? "In Progress"
+          : modalForm.status;
+      const response = await axios.put(
+        `http://localhost:3001/feedback/${selectedFeedback._id}`,
+        {
+          status: newStatus,
+          priority: modalForm.priority,
+          response: modalForm.updateResponse,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setFeedbackList((prev) =>
+        prev.map((fb) =>
+          fb._id === selectedFeedback._id ? { ...fb, ...response.data } : fb
+        )
+      );
+      setSuccessMessage("Response updated successfully! User will be notified.");
+      
+      setSelectedFeedback({ ...selectedFeedback, ...response.data });
+      
+      setModalForm({
+        status: response.data.status || selectedFeedback.status,
+        priority: response.data.priority || selectedFeedback.priority,
+        response: response.data.response || "",
+        editing: false,
+        updateResponse: "",
+      });
+    } catch (error) {
+      setErrorMessage(error.response?.data?.message || "Failed to update feedback.");
+    }
+    setModalLoading(false);
+  };
 
   return (
     <ProtectedRoute>
       <SideBar role="admin" feedbackBadge={feedbackBadge}>
         <div>
+          <style>{`
+            @keyframes highlightPulse {
+              0%, 100% {
+                box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.4);
+                border-color: rgba(217, 119, 6, 0.3);
+              }
+              50% {
+                box-shadow: 0 0 0 8px rgba(217, 119, 6, 0);
+                border-color: rgba(217, 119, 6, 0.6);
+              }
+            }
+
+            .feedback-highlight {
+              animation: highlightPulse 2s ease-in-out 2;
+              background: linear-gradient(90deg, 
+                rgba(217, 119, 6, 0.08) 0%, 
+                rgba(217, 119, 6, 0.04) 50%, 
+                rgba(217, 119, 6, 0.08) 100%) !important;
+              border: 2px solid rgba(217, 119, 6, 0.4) !important;
+              transition: all 0.3s ease;
+            }
+
+            .new-feedback-badge {
+              position: relative;
+              overflow: hidden;
+            }
+
+            .new-feedback-badge::before {
+              content: '';
+              position: absolute;
+              top: -50%;
+              left: -50%;
+              width: 200%;
+              height: 200%;
+              background: linear-gradient(
+                45deg,
+                transparent,
+                rgba(255, 255, 255, 0.3),
+                transparent
+              );
+              transform: rotate(45deg);
+              animation: shimmer 2s infinite;
+            }
+
+            @keyframes shimmer {
+              0% {
+                left: -100%;
+              }
+              100% {
+                left: 100%;
+              }
+            }
+          `}</style>
+
           <div
             style={{
               maxWidth: 1200,
@@ -345,211 +425,84 @@ const handleUpdateResponse = async () => {
                 />
               </div>
               <div style={{ position: "relative" }} data-dropdown="category-filter">
-              <div
-                onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                style={{
-                  width: 205,
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #ced4da",
-                  background: "#fff",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  fontSize: 14,
-                  fontFamily: 'inherit',
-                  lineHeight: '1.5'
-                }}
-              >
-                <span>
-                  {selectedCategories.includes("All") 
-                    ? "All Categories" 
-                    : selectedCategories.length === 1 
-                    ? selectedCategories[0]
-                    : `${selectedCategories.length} Categories Selected`
-                  }
-                </span>
-                <span style={{ 
-                  transform: showCategoryDropdown ? "rotate(180deg)" : "rotate(0deg)", 
-                  transition: "transform 0.2s ease",
-                  fontSize: 10,
-                  color: "#666"
-                }}>
-                  ▼
-                </span>
-              </div>
-  
-              {showCategoryDropdown && (
-                <div style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  background: "#fff",
-                  border: "1px solid #ced4da",
-                  borderTop: "none",
-                  borderRadius: "0 0 8px 8px",
-                  zIndex: 1000,
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                  maxHeight: "215px",
-                  overflowY: "auto"
-                }}>
-                {[
-                  { value: "All", label: "All Categories" },
-                  { value: "Schedule Issue", label: "Schedule Issue" },
-                  { value: "Bug", label: "Bug" },
-                  // { value: "Feature Request", label: "Feature Request" },
-                  { value: "Improvement Suggestion", label: "Improvement Suggestion" },
-                  { value: "Other", label: "Other" }
-                ].map((option) => (
                 <div
-                  key={option.value}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    
-                    if (option.value === "All") {
-                      setSelectedCategories(["All"]);
-                      setShowCategoryDropdown(false);
-                    } else {
-                      let newSelection;
-                      if (selectedCategories.includes(option.value)) {
-                        // Remove if already selected
-                        newSelection = selectedCategories.filter(cat => cat !== option.value && cat !== "All");
-                        if (newSelection.length === 0) {
-                          newSelection = ["All"];
-                        }
-                      } else {
-                        // Add to selection
-                        newSelection = selectedCategories.includes("All") 
-                          ? [option.value]
-                          : [...selectedCategories.filter(cat => cat !== "All"), option.value];
-                      }
-                      setSelectedCategories(newSelection);
-                    }
-                  }}
+                  onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
                   style={{
+                    width: 205,
                     padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #ced4da",
+                    background: "#fff",
                     cursor: "pointer",
-                    borderBottom: "1px solid #f0f0f0",
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
+                    justifyContent: "space-between",
                     fontSize: 14,
-                    background: selectedCategories.includes(option.value) ? "#f8f9fa" : "#fff"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!selectedCategories.includes(option.value)) {
-                      e.target.style.background = "#f5f5f5";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!selectedCategories.includes(option.value)) {
-                      e.target.style.background = "#fff";
-                    }
+                    fontFamily: 'inherit',
+                    lineHeight: '1.5'
                   }}
                 >
-                  <div style={{
-                    width: 16,
-                    height: 16,
-                    border: "2px solid #ddd",
-                    borderRadius: 3,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: selectedCategories.includes(option.value) ? "#015551" : "#fff",
-                    borderColor: selectedCategories.includes(option.value) ? "#015551" : "#ddd"
+                  <span>
+                    {selectedCategories.includes("All") 
+                      ? "All Categories" 
+                      : selectedCategories.length === 1 
+                      ? selectedCategories[0]
+                      : `${selectedCategories.length} Categories Selected`
+                    }
+                  </span>
+                  <span style={{ 
+                    transform: showCategoryDropdown ? "rotate(180deg)" : "rotate(0deg)", 
+                    transition: "transform 0.2s ease",
+                    fontSize: 10,
+                    color: "#666"
                   }}>
-                    {selectedCategories.includes(option.value) && (
-                      <span style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>✓</span>
-                    )}
-                  </div>
-                  <span>{option.label}</span>
+                    ▼
+                  </span>
                 </div>
-                ))}
-                </div>
-              )}
-            </div>
-            <div style={{ position: "relative" }} data-dropdown="priority-filter">
-              <div
-                onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
-                style={{
-                  width: 180,
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #ced4da",
-                  background: "#fff",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  fontSize: 14,
-                  fontFamily: 'inherit',
-                  lineHeight: '1.5'
-                }}
-              >
-                <span>
-                  {selectedPriorities.includes("All") 
-                    ? "All Priorities" 
-                    : selectedPriorities.length === 1 
-                    ? selectedPriorities[0]
-                    : `${selectedPriorities.length} Priorities Selected`
-                  }
-                </span>
-                <span style={{ 
-                  transform: showPriorityDropdown ? "rotate(180deg)" : "rotate(0deg)", 
-                  transition: "transform 0.2s ease",
-                  fontSize: 10,
-                  color: "#666"
-                }}>
-                  ▼
-                </span>
-              </div>
   
-              {showPriorityDropdown && (
-                <div style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  background: "#fff",
-                  border: "1px solid #ced4da",
-                  borderTop: "none",
-                  borderRadius: "0 0 8px 8px",
-                  zIndex: 1000,
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                  maxHeight: "200px",
-                  overflowY: "auto"
-                }}>
-                {[
-                  { value: "All", label: "All Priorities" },
-                  { value: "Low", label: "Low" },
-                  { value: "Medium", label: "Medium" },
-                  { value: "High", label: "High" }
-                ].map((option) => (
+                {showCategoryDropdown && (
+                  <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    background: "#fff",
+                    border: "1px solid #ced4da",
+                    borderTop: "none",
+                    borderRadius: "0 0 8px 8px",
+                    zIndex: 1000,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    maxHeight: "215px",
+                    overflowY: "auto"
+                  }}>
+                  {[
+                    { value: "All", label: "All Categories" },
+                    { value: "Schedule Issue", label: "Schedule Issue" },
+                    { value: "Bug", label: "Bug" },
+                    { value: "Improvement Suggestion", label: "Improvement Suggestion" },
+                    { value: "Other", label: "Other" }
+                  ].map((option) => (
                   <div
                     key={option.value}
                     onClick={(e) => {
                       e.stopPropagation();
                       
                       if (option.value === "All") {
-                        setSelectedPriorities(["All"]);
-                        setShowPriorityDropdown(false);
+                        setSelectedCategories(["All"]);
+                        setShowCategoryDropdown(false);
                       } else {
                         let newSelection;
-                        if (selectedPriorities.includes(option.value)) {
-                          // Remove if already selected
-                          newSelection = selectedPriorities.filter(pri => pri !== option.value && pri !== "All");
+                        if (selectedCategories.includes(option.value)) {
+                          newSelection = selectedCategories.filter(cat => cat !== option.value && cat !== "All");
                           if (newSelection.length === 0) {
                             newSelection = ["All"];
                           }
                         } else {
-                          // Add to selection
-                          newSelection = selectedPriorities.includes("All") 
+                          newSelection = selectedCategories.includes("All") 
                             ? [option.value]
-                            : [...selectedPriorities.filter(pri => pri !== "All"), option.value];
+                            : [...selectedCategories.filter(cat => cat !== "All"), option.value];
                         }
-                        setSelectedPriorities(newSelection);
+                        setSelectedCategories(newSelection);
                       }
                     }}
                     style={{
@@ -560,15 +513,15 @@ const handleUpdateResponse = async () => {
                       alignItems: "center",
                       gap: 8,
                       fontSize: 14,
-                      background: selectedPriorities.includes(option.value) ? "#f8f9fa" : "#fff"
+                      background: selectedCategories.includes(option.value) ? "#f8f9fa" : "#fff"
                     }}
                     onMouseEnter={(e) => {
-                      if (!selectedPriorities.includes(option.value)) {
+                      if (!selectedCategories.includes(option.value)) {
                         e.target.style.background = "#f5f5f5";
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!selectedPriorities.includes(option.value)) {
+                      if (!selectedCategories.includes(option.value)) {
                         e.target.style.background = "#fff";
                       }
                     }}
@@ -581,182 +534,336 @@ const handleUpdateResponse = async () => {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      background: selectedPriorities.includes(option.value) ? "#015551" : "#fff",
-                      borderColor: selectedPriorities.includes(option.value) ? "#015551" : "#ddd"
+                      background: selectedCategories.includes(option.value) ? "#015551" : "#fff",
+                      borderColor: selectedCategories.includes(option.value) ? "#015551" : "#ddd"
                     }}>
-                      {selectedPriorities.includes(option.value) && (
+                      {selectedCategories.includes(option.value) && (
                         <span style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>✓</span>
                       )}
                     </div>
                     <span>{option.label}</span>
                   </div>
-                ))}
+                  ))}
+                  </div>
+                )}
               </div>
+              <div style={{ position: "relative" }} data-dropdown="priority-filter">
+                <div
+                  onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
+                  style={{
+                    width: 180,
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #ced4da",
+                    background: "#fff",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    fontSize: 14,
+                    fontFamily: 'inherit',
+                    lineHeight: '1.5'
+                  }}
+                >
+                  <span>
+                    {selectedPriorities.includes("All") 
+                      ? "All Priorities" 
+                      : selectedPriorities.length === 1 
+                      ? selectedPriorities[0]
+                      : `${selectedPriorities.length} Priorities Selected`
+                    }
+                  </span>
+                  <span style={{ 
+                    transform: showPriorityDropdown ? "rotate(180deg)" : "rotate(0deg)", 
+                    transition: "transform 0.2s ease",
+                    fontSize: 10,
+                    color: "#666"
+                  }}>
+                    ▼
+                  </span>
+                </div>
+  
+                {showPriorityDropdown && (
+                  <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    background: "#fff",
+                    border: "1px solid #ced4da",
+                    borderTop: "none",
+                    borderRadius: "0 0 8px 8px",
+                    zIndex: 1000,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                    maxHeight: "200px",
+                    overflowY: "auto"
+                  }}>
+                  {[
+                    { value: "All", label: "All Priorities" },
+                    { value: "Low", label: "Low" },
+                    { value: "Medium", label: "Medium" },
+                    { value: "High", label: "High" }
+                  ].map((option) => (
+                    <div
+                      key={option.value}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        
+                        if (option.value === "All") {
+                          setSelectedPriorities(["All"]);
+                          setShowPriorityDropdown(false);
+                        } else {
+                          let newSelection;
+                          if (selectedPriorities.includes(option.value)) {
+                            newSelection = selectedPriorities.filter(pri => pri !== option.value && pri !== "All");
+                            if (newSelection.length === 0) {
+                              newSelection = ["All"];
+                            }
+                          } else {
+                            newSelection = selectedPriorities.includes("All") 
+                              ? [option.value]
+                              : [...selectedPriorities.filter(pri => pri !== "All"), option.value];
+                          }
+                          setSelectedPriorities(newSelection);
+                        }
+                      }}
+                      style={{
+                        padding: "8px 12px",
+                        cursor: "pointer",
+                        borderBottom: "1px solid #f0f0f0",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontSize: 14,
+                        background: selectedPriorities.includes(option.value) ? "#f8f9fa" : "#fff"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!selectedPriorities.includes(option.value)) {
+                          e.target.style.background = "#f5f5f5";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!selectedPriorities.includes(option.value)) {
+                          e.target.style.background = "#fff";
+                        }
+                      }}
+                    >
+                      <div style={{
+                        width: 16,
+                        height: 16,
+                        border: "2px solid #ddd",
+                        borderRadius: 3,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: selectedPriorities.includes(option.value) ? "#015551" : "#fff",
+                        borderColor: selectedPriorities.includes(option.value) ? "#015551" : "#ddd"
+                      }}>
+                        {selectedPriorities.includes(option.value) && (
+                          <span style={{ color: "#fff", fontSize: 10, fontWeight: "bold" }}>✓</span>
+                        )}
+                      </div>
+                      <span>{option.label}</span>
+                    </div>
+                  ))}
+                </div>
+                )}
+              </div>
+              <button
+                  className="btn"
+                  style={{
+                    background: "#f8f9fa",
+                    color: "#495057",
+                    fontWeight: 500,
+                    borderRadius: 8,
+                    minWidth: 140,
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 12px",
+                    fontSize: 14,
+                    border: "1px solid #dee2e6"
+                  }}
+                  onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                >
+                  {sortOrder === "asc" ? (
+                    <>
+                      <BiSortUp size={18} /> Oldest First
+                    </>
+                  ) : (
+                    <>
+                      <BiSortDown size={18} /> Newest First
+                    </>
+                  )}
+                </button>
+            </div>
+            {/* Status Tabs */}
+            <div className="d-flex mb-4" style={{ gap: 2 }}>
+              {statusTabs.map((tab) => (
+                <button
+                  key={tab}
+                  className="btn"
+                  style={{
+                    flex: 1,
+                    background: activeTab === tab ? "#f8f8f8" : "#e1e1e1",
+                    color: "#222",
+                    fontWeight: activeTab === tab ? 600 : 400,
+                    borderRadius: 6,
+                    border: "none",
+                    boxShadow: "none",
+                    outline: "none",
+                    height: 38,
+                  }}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+            {/* Feedback List */}
+            <div className="d-flex flex-column gap-4">
+              {filteredAndSortedFeedback.length === 0 ? (
+                <div className="text-center text-muted py-5">No feedback found.</div>
+              ) : (
+                filteredAndSortedFeedback.map((fb) => (
+                  <div
+                    key={fb._id}
+                    id={`feedback-${fb._id}`}
+                    className={highlightedFeedbackId === fb._id ? "feedback-highlight p-4" : "p-4"}
+                    style={{
+                      background: "#fff",
+                      border: "1px solid #e0e0e0",
+                      borderRadius: 10,
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                      position: "relative",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => handleOpenModal(fb)}
+                  >
+                    {highlightedFeedbackId === fb._id && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: -12,
+                          left: 20,
+                          background: "#d97706",
+                          color: "#fff",
+                          padding: "4px 12px",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          boxShadow: "0 2px 8px rgba(217, 119, 6, 0.3)",
+                        }}
+                      >
+                        📢 New Feedback
+                      </div>
+                    )}
+                    
+                    <div className="d-flex justify-content-between align-items-start">
+                      <div>
+                        <div className="fw-bold" style={{ fontSize: 18 }}>
+                          {fb.title}
+                        </div>
+                        <div style={{ color: "#888", fontSize: 14, marginBottom: 8 }}>
+                          From {fb.user?.name || fb.user?.email || "unknown"} ({fb.user?.role ? fb.user.role : "user"})
+                          {" - "}
+                          {fb.submitted
+                            ? new Date(fb.submitted).toLocaleString("en-GB", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: false,
+                            })
+                          : ""}
+                        </div>
+                      </div>
+                      <div className="d-flex align-items-center gap-2">
+                        <span
+                          className="badge"
+                          style={{
+                            background: "#f3f3f3",
+                            color: "#222",
+                            fontWeight: 500,
+                            fontSize: 13,
+                          }}
+                        >
+                          {fb.type}
+                        </span>
+                        <span
+                          className="badge"
+                          style={{
+                            background:
+                              fb.priority === "High"
+                                ? "#ffeaea"
+                                : fb.priority === "Medium"
+                                ? "#FFEDD5"
+                                : "#e6f9ed",
+                            color:
+                              fb.priority === "High"
+                                ? "#d91a1a"
+                                : fb.priority === "Medium"
+                                ? "#9A3412"
+                                : "#1db16a",
+                            fontWeight: 500,
+                            fontSize: 13,
+                          }}
+                        >
+                          {fb.priority}
+                        </span>
+                        <span
+                          className="badge"
+                          style={{
+                            background:
+                              fb.status === "Resolved"
+                                ? "#e6f9ed"
+                                : fb.status === "Pending"
+                                ? "#fffbe6"
+                                : "#e6f0ff",
+                            color:
+                              fb.status === "Resolved"
+                                ? "#1db16a"
+                                : fb.status === "Pending"
+                                ? "#b1a100"
+                                : "#1a5ad9",
+                            fontWeight: 500,
+                            fontSize: 13,
+                          }}
+                        >
+                          {fb.status}
+                        </span>
+                        {highlightedFeedbackId === fb._id && (
+                          <span 
+                            className="badge new-feedback-badge"
+                            style={{
+                              background: "#d97706",
+                              color: "#fff",
+                              fontSize: 11,
+                              padding: "3px 8px",
+                            }}
+                          >
+                            NEW
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ color: "#666", margin: "18px 0 0 0", fontSize: 15 }}>
+                      {fb.feedback}
+                    </div>
+                    {fb.response && (
+                      <div className="mt-3">
+                        <div className="fw-bold" style={{ fontSize: 16 }}>
+                          Admin Response:
+                        </div>
+                        <div style={{ color: "#444" }}>{fb.response}</div>
+                      </div>
+                    )}
+                  </div>
+                ))
               )}
             </div>
-            <button
-                className="btn"
-                style={{
-                  background: "#f8f9fa",
-                  color: "#495057",
-                  fontWeight: 500,
-                  borderRadius: 8,
-                  minWidth: 140,
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "8px 12px",
-                  fontSize: 14,
-                  border: "1px solid #dee2e6"
-                }}
-                onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              >
-                {sortOrder === "asc" ? (
-                  <>
-                    <BiSortUp size={18} /> Oldest First
-                  </>
-                ) : (
-                  <>
-                    <BiSortDown size={18} /> Newest First
-                  </>
-                )}
-              </button>
-              </div>
-              {/* Status Tabs */}
-              <div className="d-flex mb-4" style={{ gap: 2 }}>
-                {statusTabs.map((tab) => (
-                  <button
-                    key={tab}
-                    className="btn"
-                    style={{
-                      flex: 1,
-                      background: activeTab === tab ? "#f8f8f8" : "#e1e1e1",
-                      color: "#222",
-                      fontWeight: activeTab === tab ? 600 : 400,
-                      borderRadius: 6,
-                      border: "none",
-                      boxShadow: "none",
-                      outline: "none",
-                      height: 38,
-                    }}
-                    onClick={() => setActiveTab(tab)}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-              {/* Feedback List */}
-              <div className="d-flex flex-column gap-4">
-                {filteredAndSortedFeedback.length === 0 ? (
-                  <div className="text-center text-muted py-5">No feedback found.</div>
-                ) : (
-                  filteredAndSortedFeedback.map((fb) => (
-                    <div
-                      key={fb._id}
-                      className="p-4"
-                      style={{
-                        background: "#fff",
-                        border: "1px solid #e0e0e0",
-                        borderRadius: 10,
-                        boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-                        position: "relative",
-                        cursor: "pointer",
-                      }}
-                      onClick={() => handleOpenModal(fb)}
-                    >
-                      <div className="d-flex justify-content-between align-items-start">
-                        <div>
-                          <div className="fw-bold" style={{ fontSize: 18 }}>
-                            {fb.title}
-                          </div>
-                          <div style={{ color: "#888", fontSize: 14, marginBottom: 8 }}>
-                            From {fb.user?.name || fb.user?.email || "unknown"} ({fb.user?.role ? fb.user.role : "user"})
-                            {" - "}
-                            {fb.submitted
-                              ? new Date(fb.submitted).toLocaleString("en-GB", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                hour12: false,
-                              })
-                            : ""}
-                          </div>
-                        </div>
-                        <div className="d-flex align-items-center gap-2">
-                          <span
-                            className="badge"
-                            style={{
-                              background: "#f3f3f3",
-                              color: "#222",
-                              fontWeight: 500,
-                              fontSize: 13,
-                            }}
-                          >
-                            {fb.type}
-                          </span>
-                          <span
-                            className="badge"
-                            style={{
-                              background:
-                                fb.priority === "High"
-                                  ? "#ffeaea"
-                                  : fb.priority === "Medium"
-                                  ? "#FFEDD5"
-                                  : "#e6f9ed",
-                              color:
-                                fb.priority === "High"
-                                  ? "#d91a1a"
-                                  : fb.priority === "Medium"
-                                  ? "#9A3412"
-                                  : "#1db16a",
-                              fontWeight: 500,
-                              fontSize: 13,
-                            }}
-                          >
-                            {fb.priority}
-                          </span>
-                          <span
-                            className="badge"
-                            style={{
-                              background:
-                                fb.status === "Resolved"
-                                  ? "#e6f9ed"
-                                  : fb.status === "Pending"
-                                  ? "#fffbe6"
-                                  : "#e6f0ff",
-                              color:
-                                fb.status === "Resolved"
-                                  ? "#1db16a"
-                                  : fb.status === "Pending"
-                                  ? "#b1a100"
-                                  : "#1a5ad9",
-                              fontWeight: 500,
-                              fontSize: 13,
-                            }}
-                          >
-                            {fb.status}
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ color: "#666", margin: "18px 0 0 0", fontSize: 15 }}>
-                        {fb.feedback}
-                      </div>
-                      {/* Only show Admin Response if it exists */}
-                      {fb.response && (
-                        <div className="mt-3">
-                          <div className="fw-bold" style={{ fontSize: 16 }}>
-                            Admin Response:
-                          </div>
-                          <div style={{ color: "#444" }}>{fb.response}</div>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
           </div>
           {/* Feedback Details Modal */}
           {selectedFeedback && (
@@ -839,7 +946,6 @@ const handleUpdateResponse = async () => {
                       {/* Admin Response Section */}
                       <div className="mb-3">
                         <label className="form-label fw-bold">Admin Response</label>
-                        {/* If response exists and not editing, show response and Update button */}
                         {selectedFeedback.response && !modalForm.editing ? (
                           <>
                             <div
@@ -919,7 +1025,6 @@ const handleUpdateResponse = async () => {
                             </div>
                           </>
                         ) : (
-                          // No response yet
                           <>
                             <textarea
                               className="form-control"

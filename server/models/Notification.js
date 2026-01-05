@@ -5,7 +5,7 @@ const NotificationSchema = new mongoose.Schema({
   message: { type: String, required: true },
   type: { 
     type: String, 
-    enum: ["timetable_published", "feedback", "general", "conflict", "reminder"], 
+    enum: ["timetable_published", "feedback", "feedback_admin", "general", "conflict", "reminder"], 
     default: "general" 
   },
   recipients: {
@@ -14,16 +14,21 @@ const NotificationSchema = new mongoose.Schema({
   },
   academicYear: { type: String },
   semester: { type: String },
-  // New fields for feedback notifications
+  // Fields for feedback notifications (both user and admin)
   feedbackId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Feedback',
-    required: function() { return this.type === 'feedback'; }
+    required: function() { return this.type === 'feedback' || this.type === 'feedback_admin'; }
   },
   feedbackTitle: { 
     type: String,
-    required: function() { return this.type === 'feedback'; }
+    required: function() { return this.type === 'feedback' || this.type === 'feedback_admin'; }
   },
+  // Additional fields for admin feedback notifications
+  feedbackType: { type: String }, // "Schedule Issue", "Bug", etc.
+  feedbackPriority: { type: String }, // "Low", "Medium", "High"
+  submittedBy: { type: String }, // User name who submitted the feedback
+  submittedByRole: { type: String }, // User role who submitted the feedback
   isRead: { 
     type: Map, 
     of: Boolean, 

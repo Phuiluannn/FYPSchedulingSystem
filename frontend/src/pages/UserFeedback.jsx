@@ -27,28 +27,38 @@ function UserFeedback() {
   const [sortOrder, setSortOrder] = useState("desc");
   const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
 
-  // Handle navigation from notification
+  // Handle navigation from notification - ONLY highlight if shouldHighlight is true
   useEffect(() => {
-    if (location.state?.feedbackId) {
-      setHighlightedFeedbackId(location.state.feedbackId);
+  if (location.state?.feedbackId) {
+    const { feedbackId, shouldHighlight } = location.state;
+    
+    if (shouldHighlight) {
+      console.log('🎨 Highlighting feedback from notification:', feedbackId);
+      setHighlightedFeedbackId(feedbackId);
       
-      // Scroll to the highlighted feedback after a brief delay
-      setTimeout(() => {
-        const element = document.getElementById(`feedback-${location.state.feedbackId}`);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 300);
-
       // Remove highlight after 5 seconds
       setTimeout(() => {
         setHighlightedFeedbackId(null);
       }, 5000);
-
-      // Clear the state to prevent re-highlighting on refresh
-      window.history.replaceState({}, document.title);
+    } else {
+      console.log('📍 Scrolling to feedback without highlighting:', feedbackId);
     }
-  }, [location.state]);
+    
+    // Scroll to the highlighted feedback after a brief delay
+    setTimeout(() => {
+      const element = document.getElementById(`feedback-${feedbackId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 300);
+
+    // Clear the state to prevent re-triggering
+    // Note: We use a slight delay to ensure the effect completes first
+    setTimeout(() => {
+      window.history.replaceState({}, document.title);
+    }, 500);
+  }
+}, [location.state?.feedbackId, location.state?.timestamp]);
 
   // Fetch feedback on mount and when activeTab changes
   useEffect(() => {
@@ -121,41 +131,43 @@ function UserFeedback() {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.title.trim() || !form.feedback.trim()) {
-      setErrorMessage("Please fill in both Subject and Description fields.");
-      return;
+  e.preventDefault();
+  if (!form.title.trim() || !form.feedback.trim()) {
+    setErrorMessage("Please fill in both Subject and Description fields.");
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem("token");
+
+    let priority = "Low";
+    if (form.type === "Schedule Issue") {
+      priority = "High";
+    } else if (form.type === "Bug") {
+      priority = "Medium";
     }
 
-    try {
-      const token = localStorage.getItem("token");
+    await axios.post(  // Remove the 'const response =' since we won't use it
+      "http://localhost:3001/user/feedback",
+      {
+        title: form.title,
+        type: form.type,
+        feedback: form.feedback,
+        priority: priority
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
 
-      let priority = "Low";
-      if (form.type === "Schedule Issue") {
-        priority = "High";
-      } else if (form.type === "Bug") {
-        priority = "Medium";
-      }
-
-      const response = await axios.post(
-        "http://localhost:3001/user/feedback",
-        {
-          title: form.title,
-          type: form.type,
-          feedback: form.feedback,
-          priority: priority
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      setFeedbackList([response.data, ...feedbackList]);
-      setShowModal(false);
-      setForm({ title: "", type: "", feedback: "" });
-      setErrorMessage("");
-    } catch (error) {
-      setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
-    }
-  };
+    // Remove this line:
+    // setFeedbackList([response.data, ...feedbackList]);
+    
+    setShowModal(false);
+    setForm({ title: "", type: "", feedback: "" });
+    setErrorMessage("");
+  } catch (error) {
+    setErrorMessage(error.response?.data?.message || "Failed to submit feedback.");
+  }
+};
 
   const handleDeleteClick = (feedback) => {
     setFeedbackToDelete(feedback);

@@ -8,12 +8,12 @@ export const createNotification = async (notificationData) => {
 
     // Emit to all relevant users
     if (notificationData.recipients && Array.isArray(notificationData.recipients)) {
-      // Role-based notifications (timetable, announcements, etc.)
+      // Role-based notifications (timetable, announcements, admin feedback notifications, etc.)
       io.emit('notification', {
         recipients: notificationData.recipients,
         notification: saved
       });
-    } else if (notificationData.type === "feedback" && notificationData.isRead) {
+    } else if ((notificationData.type === "feedback" || notificationData.type === "feedback_admin") && notificationData.isRead) {
       // User-specific feedback notifications
       // Extract user IDs from the isRead Map
       const userIds = Array.from(notificationData.isRead.keys());
@@ -74,11 +74,15 @@ export const getUserNotifications = async (userRole, userId, limit = 20, userCre
       $or: [
         { 
           recipients: userRole,
-          type: { $ne: "feedback" } // Exclude feedback type from role-based notifications
+          type: { $ne: "feedback" } // Exclude user-specific feedback type from role-based notifications
         },
         { 
           type: "feedback",
           [`isRead.${userId}`]: { $exists: true } // Only feedback notifications for this specific user
+        },
+        {
+          type: "feedback_admin",
+          recipients: userRole // Admin feedback notifications for admin role
         }
       ],
       createdAt: { $gte: minDate }
@@ -151,10 +155,17 @@ export const getUnreadNotificationCount = async (userRole, userId, userCreatedAt
     // Get all notifications for this user role OR specific feedback notifications
     const notifications = await Notification.find({
       $or: [
-        { recipients: userRole }, // General notifications for user role
+        { 
+          recipients: userRole,
+          type: { $ne: "feedback" } // Exclude user-specific feedback from general role-based count
+        },
         { 
           type: "feedback",
           [`isRead.${userId}`]: { $exists: true } // Feedback notifications specifically for this user
+        },
+        {
+          type: "feedback_admin",
+          recipients: userRole // Admin feedback notifications for admin role
         }
       ],
       createdAt: { $gte: minDate }

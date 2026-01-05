@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 import CIcon from '@coreui/icons-react';
-import { cilBell } from '@coreui/icons';
+import { cilBell, cilCalendar, cilSpeech, cilWarning, cilBullhorn } from '@coreui/icons';
 
 const NotificationDropdown = () => {
   const [notifications, setNotifications] = useState([]);
@@ -78,55 +78,86 @@ const NotificationDropdown = () => {
     };
   }, []);
 
-  const handleNotificationClick = async (notification) => {
-    try {
-      if (!notification.isRead) {
-        await markAsRead(notification._id);
-      }
+const handleNotificationClick = async (notification) => {
+  try {
+    // Store whether notification was unread BEFORE marking as read
+    const wasUnread = !notification.isRead;
 
-      setIsOpen(false);
-
-      if (notification.type === 'timetable_published') {
-        const isOnHomePage = window.location.pathname === '/user/home';
-        
-        if (isOnHomePage) {
-          window.location.reload();
-        } else {
-          navigate('/user/home', { 
-            replace: true,
-            state: { 
-              year: notification.academicYear, 
-              semester: notification.semester 
-            } 
-          });
-        }
-      } else if (notification.type === 'feedback') {
-        const isOnFeedbackPage = window.location.pathname === '/user/feedback';
-        
-        if (isOnFeedbackPage) {
-          // If already on feedback page, reload with feedbackId highlight
-          navigate('/user/feedback', { 
-            replace: true,
-            state: { 
-              feedbackId: notification.feedbackId 
-            } 
-          });
-          window.location.reload();
-        } else {
-          // Navigate to feedback page with feedbackId to highlight
-          navigate('/user/feedback', {
-            state: { 
-              feedbackId: notification.feedbackId 
-            }
-          });
-        }
-      }
-      
-      console.log('✅ Navigated based on notification');
-    } catch (error) {
-      console.error('❌ Error handling notification click:', error);
+    // Mark notification as read FIRST, before any navigation
+    if (wasUnread) {
+      console.log('📝 Marking notification as read:', notification._id);
+      await markAsRead(notification._id);
     }
-  };
+
+    setIsOpen(false);
+
+    if (notification.type === 'timetable_published') {
+      const isOnHomePage = window.location.pathname === '/user/home';
+      
+      if (isOnHomePage) {
+        window.location.reload();
+      } else {
+        navigate('/user/home', { 
+          replace: true,
+          state: { 
+            year: notification.academicYear, 
+            semester: notification.semester 
+          } 
+        });
+      }
+    } else if (notification.type === 'feedback') {
+      // User feedback response notification
+      const isOnFeedbackPage = window.location.pathname === '/user/feedback';
+      
+      if (isOnFeedbackPage) {
+        // ✅ FIX: Navigate without reload, let React handle the state change
+        navigate('/user/feedback', { 
+          replace: false, // Use replace: false to trigger a re-render
+          state: { 
+            feedbackId: notification.feedbackId,
+            shouldHighlight: wasUnread,
+            timestamp: Date.now() // Add timestamp to force state change detection
+          } 
+        });
+      } else {
+        // Navigate to feedback page with feedbackId to highlight
+        navigate('/user/feedback', {
+          state: { 
+            feedbackId: notification.feedbackId,
+            shouldHighlight: wasUnread
+          }
+        });
+      }
+    } else if (notification.type === 'feedback_admin') {
+      // Admin feedback notification
+      const isOnAdminFeedbackPage = window.location.pathname === '/feedback';
+      
+      if (isOnAdminFeedbackPage) {
+        // ✅ FIX: Navigate without reload, let React handle the state change
+        navigate('/feedback', { 
+          replace: false, // Use replace: false to trigger a re-render
+          state: { 
+            feedbackId: notification.feedbackId,
+            shouldHighlight: wasUnread,
+            timestamp: Date.now() // Add timestamp to force state change detection
+          } 
+        });
+      } else {
+        // Navigate to admin feedback page with feedbackId to highlight
+        navigate('/feedback', {
+          state: { 
+            feedbackId: notification.feedbackId,
+            shouldHighlight: wasUnread
+          }
+        });
+      }
+    }
+    
+    console.log('✅ Navigated based on notification');
+  } catch (error) {
+    console.error('❌ Error handling notification click:', error);
+  }
+};
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -229,6 +260,7 @@ const NotificationDropdown = () => {
       const { token, userId, role } = getUserCredentials();
 
       if (!token || !userId || !role) {
+        console.log('⚠️ Missing credentials for unread count');
         return;
       }
 
@@ -242,12 +274,9 @@ const NotificationDropdown = () => {
       
       if (response.data && typeof response.data.unreadCount === 'number') {
         setUnreadCount(response.data.unreadCount);
-      } else {
-        setUnreadCount(0);
       }
     } catch (error) {
-      console.error('Error fetching unread count:', error);
-      setUnreadCount(0);
+      console.error('❌ Error fetching unread count:', error);
     }
   };
 
@@ -256,27 +285,43 @@ const NotificationDropdown = () => {
       const { token, userId } = getUserCredentials();
 
       if (!token || !userId) {
+        console.log('⚠️ Missing credentials for mark as read');
         return;
       }
 
-      await axios.patch(`http://localhost:3001/api/notifications/${notificationId}/read`, {}, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'x-user-id': userId
-        }
-      });
+      console.log('🔄 Sending mark as read request for notification:', notificationId);
 
-      setNotifications(prev => 
-        prev.map(notif => 
-          notif._id === notificationId 
-            ? { ...notif, isRead: true }
-            : notif
-        )
+      // FIX: Changed from PUT to PATCH to match backend route
+      const response = await axios.patch(
+        `http://localhost:3001/api/notifications/${notificationId}/read`,
+        {},
+        {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'x-user-id': userId
+          }
+        }
       );
       
+      console.log('✅ Mark as read response:', response.data);
+      
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => n._id === notificationId ? { ...n, isRead: true } : n)
+      );
       setUnreadCount(prev => Math.max(0, prev - 1));
+      
+      console.log('✅ Local state updated for notification:', notificationId);
     } catch (error) {
       console.error('❌ Error marking notification as read:', error);
+      console.error('Error details:', error.response?.data);
+    }
+  };
+
+  const handleToggleClick = async () => {
+    setIsOpen(!isOpen);
+    if (!isOpen) {
+      await fetchNotifications();
     }
   };
 
@@ -286,42 +331,32 @@ const NotificationDropdown = () => {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchNotifications();
+  const getNotificationIcon = (type) => {
+    switch (type) {
+      case 'timetable_published':
+        return <CIcon icon={cilCalendar} style={{ color: '#015551' }} />;
+      case 'feedback':
+        return <CIcon icon={cilSpeech} style={{ color: '#0d7377' }} />;
+      case 'feedback_admin':
+        return <CIcon icon={cilBullhorn} style={{ color: '#d97706' }} />;
+      case 'conflict':
+        return <CIcon icon={cilWarning} style={{ color: '#dc2626' }} />;
+      default:
+        return <CIcon icon={cilBell} style={{ color: '#6b7280' }} />;
     }
-  }, [isOpen]);
+  };
 
   const formatDate = (dateString) => {
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffTime = Math.abs(now - date);
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
-      const diffMinutes = Math.floor(diffTime / (1000 * 60));
-
-      if (diffDays > 0) return `${diffDays}d ago`;
-      if (diffHours > 0) return `${diffHours}h ago`;
-      if (diffMinutes > 0) return `${diffMinutes}m ago`;
-      return 'Just now';
-    } catch (error) {
-      return 'Unknown time';
-    }
-  };
-
-  const handleToggleClick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsOpen(!isOpen);
-  };
-
-  const getNotificationIcon = (type) => {
-    const iconMap = {
-      timetable_published: '📅',
-      feedback: '💬'
-    };
-    return iconMap[type] || '🔔';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   };
 
   return (

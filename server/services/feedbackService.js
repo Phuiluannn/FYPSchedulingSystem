@@ -26,8 +26,33 @@ export const getFeedbackById = async (id) => {
 export const createFeedback = async (data) => {
   const feedback = new FeedbackModel(data);
   const savedFeedback = await feedback.save();
+  
   // Populate the user data before returning
-  return await FeedbackModel.findById(savedFeedback._id).populate("user", "name email role");
+  const populatedFeedback = await FeedbackModel.findById(savedFeedback._id).populate("user", "name email role");
+  
+  // Create notification for admins about new feedback
+  try {
+    const notificationData = {
+      title: "New Feedback Received",
+      message: `${populatedFeedback.user.name} submitted feedback: "${populatedFeedback.title}"`,
+      type: "feedback_admin",
+      recipients: ["admin"], // Send to all admins
+      feedbackId: populatedFeedback._id,
+      feedbackTitle: populatedFeedback.title,
+      feedbackType: populatedFeedback.type,
+      feedbackPriority: populatedFeedback.priority,
+      submittedBy: populatedFeedback.user.name,
+      submittedByRole: populatedFeedback.user.role
+    };
+
+    await createNotification(notificationData);
+    console.log(`✅ Admin notification created for new feedback ${populatedFeedback._id}`);
+  } catch (notificationError) {
+    console.error("Error creating admin feedback notification:", notificationError);
+    // Don't throw error here - feedback creation should still succeed even if notification fails
+  }
+  
+  return populatedFeedback;
 };
 
 // Update a feedback
@@ -58,7 +83,6 @@ export const updateFeedback = async (id, data) => {
         title: "Feedback Response Received",
         message: `Your feedback "${originalFeedback.title}" has received ${isNewResponse ? 'a' : 'an updated'} response from the administrator.`,
         type: "feedback",
-        // recipients: [originalFeedback.user.role], // Send to the user's role
         feedbackId: originalFeedback._id,
         feedbackTitle: originalFeedback.title,
         // Create a user-specific notification by using isRead Map
