@@ -78,8 +78,10 @@ export const deleteFeedback = async (req, res) => {
       return res.status(403).json({ message: "Unauthorized" });
     }
     await feedbackService.deleteFeedback(req.params.id);
-    // Emit to all clients
+    // Emit to all clients about feedback deletion
     io.emit('feedback:delete', { _id: req.params.id });
+    // Emit to all clients about notification deletion
+    io.emit('notification:deleteFeedback', { feedbackId: req.params.id });
     res.status(200).json({ message: "Feedback deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });

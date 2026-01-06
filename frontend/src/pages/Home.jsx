@@ -63,7 +63,7 @@ function Home() {
   roomDoubleBooking: 0,
   instructorConflict: 0,
   timeSlotExceeded: 0,
-  departmentTutorialClash: 0 
+  departmentTutorialClash: 0
 });
 const navigate = useNavigate();
 const { showAlert, showConfirm } = useAlert();
@@ -209,6 +209,60 @@ const handlePublish = async () => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
     showAlert("Timetable published successfully!", "success");
+    
+    // Re-fetch the timetable to show updated instructor assignments
+    const response = await axios.get(
+      `http://localhost:3001/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const schedules = response.data.schedules;
+    
+    const allTimetables = {};
+    DAYS.forEach(day => {
+      allTimetables[day] = {};
+      rooms.forEach(room => {
+        allTimetables[day][room._id] = TIMES.map(() => []);
+      });
+    });
+    
+    schedules.forEach(sch => {
+      const roomId = sch.RoomID;
+      const day = sch.Day;
+      const timeIdx = TIMES.findIndex(t => t === sch.StartTime);
+      const duration = sch.Duration || 1;
+      
+      if (roomId && timeIdx !== -1 && allTimetables[day]) {
+        let selectedInstructor = "";
+        let selectedInstructorId = "";
+
+        // Handle instructor assignment properly
+        if (sch.InstructorID) {
+          selectedInstructorId = sch.InstructorID;
+          const foundInstructor = instructors.find(inst => inst._id === sch.InstructorID);
+          selectedInstructor = foundInstructor ? foundInstructor.name : "";
+        }
+        else if (sch.Instructors && Array.isArray(sch.Instructors) && sch.Instructors.length === 1) {
+          selectedInstructor = sch.Instructors[0];
+          const foundInstructor = instructors.find(inst => inst.name === selectedInstructor);
+          selectedInstructorId = foundInstructor ? foundInstructor._id : "";
+        }
+
+        const scheduleItem = {
+          id: String(sch._id),
+          code: sch.CourseCode,
+          instructors: sch.OriginalInstructors || sch.Instructors || [],
+          selectedInstructor: selectedInstructor,
+          selectedInstructorId: selectedInstructorId,
+          raw: {
+            ...sch,
+          },
+        };
+
+        allTimetables[day][roomId][timeIdx].push(scheduleItem);
+      }
+    });
+    
+    setTimetable(allTimetables);
   } catch (error) {
     console.error("Error publishing timetable:", error);
     showAlert("Failed to publish timetable", "error");
@@ -1618,6 +1672,12 @@ if (moved.raw?.OccType === 'Tutorial' && moved.raw?.Departments && moved.raw.Dep
         if (otherEvent.raw?.OccType !== 'Tutorial') return;
         if (!otherEvent.raw?.Departments || otherEvent.raw.Departments.length === 0) return;
 
+        // ✅ CRITICAL FIX: Skip if same course code (different occurrences of the same course are NOT a conflict)
+        if (otherEvent.code === moved.code) {
+          console.log(`  ℹ️ Skipping department clash check: ${moved.code} vs ${otherEvent.code} - same course, different occurrences are allowed`);
+          return;
+        }
+
         // ✅ CRITICAL FIX: Check if they share year levels
         const otherYearLevels = otherEvent.raw.YearLevel || [];
         const hasSharedYearLevel = movedYearLevels.some(yl => otherYearLevels.includes(yl));
@@ -1792,20 +1852,14 @@ conflicts.push({
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
 
-    // const confirmed = await new Promise(resolve => {
-    //     showConfirm(
-    //       alertMessage,
-    //       "Conflicts Detected",
-    //       () => resolve(true),
-    //       () => resolve(false)
-    //     );
-    //   });
-      
-    //   if (!confirmed) return;
-
-      if (!confirm(alertMessage)) {
-  return;
-}
+    const confirmed = await showConfirm(
+      alertMessage,
+      "Conflicts Detected"
+    );
+    
+    if (!confirmed) {
+      return;
+    }
   }
 
   console.log("=== BEFORE REMOVAL ===");
@@ -2212,6 +2266,12 @@ const requiredCapacity = calculateRequiredCapacity(
         if (otherEvent.raw?.OccType !== 'Tutorial') return;
         if (!otherEvent.raw?.Departments || otherEvent.raw.Departments.length === 0) return;
 
+        // ✅ CRITICAL FIX: Skip if same course code (different occurrences of the same course are NOT a conflict)
+        if (otherEvent.code === item.code) {
+          console.log(`  ℹ️ Skipping department clash check: ${item.code} vs ${otherEvent.code} - same course, different occurrences are allowed`);
+          return;
+        }
+
         // ✅ CRITICAL FIX: Check if they share year levels
         const otherYearLevels = otherEvent.raw.YearLevel || [];
         const hasSharedYearLevel = movedYearLevels.some(yl => otherYearLevels.includes(yl));
@@ -2513,20 +2573,14 @@ conflicts.push({
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
     
-    // const confirmed = await new Promise(resolve => {
-    //     showConfirm(
-    //       alertMessage,
-    //       "Conflicts Detected",
-    //       () => resolve(true),
-    //       () => resolve(false)
-    //     );
-    //   });
-      
-    //   if (!confirmed) return;
-
-    if (!confirm(alertMessage)) {
-  return;
-}
+    const confirmed = await showConfirm(
+      alertMessage,
+      "Conflicts Detected"
+    );
+    
+    if (!confirmed) {
+      return;
+    }
   }
 
   // ALWAYS PERFORM THE MOVE (even with conflicts)
@@ -2600,16 +2654,35 @@ const handleGenerateTimetable = async () => {
       const duration = sch.Duration || 1;
       
       if (roomId && timeIdx !== -1) {
+        // ✅ FIX: Auto-assign instructor when there's only one available
+        let selectedInstructor = "";
+        let selectedInstructorId = "";
+        
+        const availableInstructors = sch.OriginalInstructors || sch.Instructors || [];
+        
+        // If there's exactly one instructor, auto-assign them
+        if (Array.isArray(availableInstructors) && availableInstructors.length === 1) {
+          selectedInstructor = availableInstructors[0];
+          // Look up the instructor ID from the instructors list
+          const foundInstructor = instructors.find(inst => inst.name === selectedInstructor);
+          selectedInstructorId = foundInstructor ? foundInstructor._id : "";
+          
+          console.log(`Auto-assigned single instructor for ${sch.CourseCode}: ${selectedInstructor} (ID: ${selectedInstructorId})`);
+        }
+        // Otherwise, check if InstructorID was already set (from saved timetable)
+        else if (sch.InstructorID) {
+          selectedInstructorId = sch.InstructorID;
+          const foundInstructor = instructors.find(inst => inst._id === sch.InstructorID);
+          selectedInstructor = foundInstructor ? foundInstructor.name : "";
+        }
+
         // Only place in the starting slot, let UI handle colspan for multi-hour events
         newTimetable[sch.Day][roomId][timeIdx].push({
           id: String(sch._id),
           code: sch.CourseCode,
-          instructors: sch.OriginalInstructors || sch.Instructors || [],
-          selectedInstructor:
-            Array.isArray(sch.Instructors) && sch.Instructors.length === 1
-              ? sch.Instructors[0]
-              : "",
-          selectedInstructorId: sch.InstructorID || "",
+          instructors: availableInstructors,
+          selectedInstructor: selectedInstructor,
+          selectedInstructorId: selectedInstructorId,
           raw: {
             ...sch,
             Duration: duration,

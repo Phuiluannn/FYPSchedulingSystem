@@ -41,37 +41,37 @@ function AdminFeedback() {
   const [sortOrder, setSortOrder] = useState("asc");
 
   // Handle navigation from notification - ONLY highlight if shouldHighlight is true
-useEffect(() => {
-  if (location.state?.feedbackId) {
-    const { feedbackId, shouldHighlight } = location.state;
-    
-    if (shouldHighlight) {
-      console.log('🎨 Highlighting feedback from notification:', feedbackId);
-      setHighlightedFeedbackId(feedbackId);
+  useEffect(() => {
+    if (location.state?.feedbackId) {
+      const { feedbackId, shouldHighlight } = location.state;
       
-      // Remove highlight after 5 seconds
-      setTimeout(() => {
-        setHighlightedFeedbackId(null);
-      }, 5000);
-    } else {
-      console.log('📍 Scrolling to feedback without highlighting:', feedbackId);
-    }
-    
-    // Scroll to the highlighted feedback after a brief delay
-    setTimeout(() => {
-      const element = document.getElementById(`feedback-${feedbackId}`);
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (shouldHighlight) {
+        console.log('🎨 Highlighting feedback from notification:', feedbackId);
+        setHighlightedFeedbackId(feedbackId);
+        
+        // Remove highlight after 5 seconds
+        setTimeout(() => {
+          setHighlightedFeedbackId(null);
+        }, 5000);
+      } else {
+        console.log('📍 Scrolling to feedback without highlighting:', feedbackId);
       }
-    }, 300);
+      
+      // Scroll to the highlighted feedback after a brief delay
+      setTimeout(() => {
+        const element = document.getElementById(`feedback-${feedbackId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
 
-    // Clear the state to prevent re-triggering
-    // Note: We use a slight delay to ensure the effect completes first
-    setTimeout(() => {
-      window.history.replaceState({}, document.title);
-    }, 500);
-  }
-}, [location.state?.feedbackId, location.state?.timestamp]);
+      // Clear the state to prevent re-triggering
+      // Use a slight delay to ensure the effect completes first
+      setTimeout(() => {
+        window.history.replaceState({}, document.title);
+      }, 500);
+    }
+  }, [location.state?.feedbackId, location.state?.timestamp]);
 
   // Fetch all feedback for admin
   useEffect(() => {

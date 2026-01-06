@@ -67,6 +67,29 @@ const NotificationDropdown = () => {
           console.log('ℹ️ Notification not for current user, ignoring');
         }
       });
+
+      // Listen for feedback deletion to remove associated notifications
+      socket.on('notification:deleteFeedback', (data) => {
+        console.log('🗑️ Feedback deleted, removing associated notifications:', data.feedbackId);
+        
+        setNotifications(prev => {
+          const filtered = prev.filter(notif => notif.feedbackId?.toString() !== data.feedbackId);
+          const removedCount = prev.length - filtered.length;
+          
+          if (removedCount > 0) {
+            console.log(`✅ Removed ${removedCount} notification(s) for deleted feedback`);
+            // Decrease unread count for any unread notifications that were removed
+            const unreadRemoved = prev.filter(
+              notif => notif.feedbackId?.toString() === data.feedbackId && !notif.isRead
+            ).length;
+            if (unreadRemoved > 0) {
+              setUnreadCount(prev => Math.max(0, prev - unreadRemoved));
+            }
+          }
+          
+          return filtered;
+        });
+      });
     }
 
     return () => {

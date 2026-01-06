@@ -1,4 +1,5 @@
 import FeedbackModel from '../models/Feedback.js';
+import Notification from '../models/Notification.js';
 import { createNotification } from './notificationService.js';
 
 // Get all feedback (admin or user)
@@ -102,5 +103,18 @@ export const updateFeedback = async (id, data) => {
 
 // Delete a feedback
 export const deleteFeedback = async (id) => {
-  return await FeedbackModel.findByIdAndDelete(id);
+  const feedback = await FeedbackModel.findByIdAndDelete(id);
+  
+  if (feedback) {
+    // Delete all notifications related to this feedback (both admin and user notifications)
+    try {
+      const result = await Notification.deleteMany({ feedbackId: id });
+      console.log(`✅ Deleted ${result.deletedCount} notification(s) associated with feedback ${id}`);
+    } catch (notificationError) {
+      console.error("Error deleting feedback notifications:", notificationError);
+      // Don't throw error here - feedback deletion already succeeded
+    }
+  }
+  
+  return feedback;
 };

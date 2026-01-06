@@ -27,126 +27,126 @@ function Analytics() {
   const [searchParams] = useSearchParams();
   const { showAlert, showConfirm } = useAlert()
 
- useEffect(() => {
-  // Only fetch if this is not the initial load with URL parameters
-  const hasUrlParams = searchParams.get('year') || searchParams.get('semester') || searchParams.get('tab');
-  
-  if (!hasUrlParams) {
-    fetchAnalyticsData();
-  }
-}, [workloadYear, workloadSemester, conflictYear, conflictSemester]);
-
-useEffect(() => {
-  const tabParam = searchParams.get('tab');
-  const yearParam = searchParams.get('year');
-  const semesterParam = searchParams.get('semester');
-  
-  let shouldFetch = false;
-  
-  if (tabParam === 'conflicts') {
-    setActiveTab('conflicts');
-  }
-  
-  if (yearParam) {
-    setConflictYear(yearParam);
-    setWorkloadYear(yearParam);
-    shouldFetch = true;
-  }
-  
-  if (semesterParam) {
-    const semesterText = `Semester ${semesterParam}`;
-    setConflictSemester(semesterText);
-    setWorkloadSemester(semesterText);
-    shouldFetch = true;
-  }
-  
-  // CRITICAL FIX: Fetch data immediately if URL params were provided
-  if (shouldFetch) {
-    // Use a timeout to ensure state has been updated
-    setTimeout(() => {
+  useEffect(() => {
+    // Only fetch if this is not the initial load with URL parameters
+    const hasUrlParams = searchParams.get('year') || searchParams.get('semester') || searchParams.get('tab');
+    
+    if (!hasUrlParams) {
       fetchAnalyticsData();
-    }, 100);
-  }
-}, [searchParams]); // Remove fetchAnalyticsData from dependencies
-
-  const fetchAnalyticsData = async () => {
-  setLoading(true);
-  try {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setError('Please log in to view analytics.');
-      console.error('No token found in localStorage');
-      return;
     }
+  }, [workloadYear, workloadSemester, conflictYear, conflictSemester]);
 
-    // Get current values from URL params if available, otherwise use state
-    const urlYear = searchParams.get('year');
-    const urlSemester = searchParams.get('semester');
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    const yearParam = searchParams.get('year');
+    const semesterParam = searchParams.get('semester');
     
-    const currentWorkloadYear = urlYear || workloadYear;
-    const currentConflictYear = urlYear || conflictYear;
-    const currentWorkloadSemester = urlSemester ? `Semester ${urlSemester}` : workloadSemester;
-    const currentConflictSemester = urlSemester ? `Semester ${urlSemester}` : conflictSemester;
+    let shouldFetch = false;
+    
+    if (tabParam === 'conflicts') {
+      setActiveTab('conflicts');
+    }
+    
+    if (yearParam) {
+      setConflictYear(yearParam);
+      setWorkloadYear(yearParam);
+      shouldFetch = true;
+    }
+    
+    if (semesterParam) {
+      const semesterText = `Semester ${semesterParam}`;
+      setConflictSemester(semesterText);
+      setWorkloadSemester(semesterText);
+      shouldFetch = true;
+    }
+    
+    // Fetch data immediately if URL params were provided
+    if (shouldFetch) {
+      // Use a timeout to ensure state has been updated
+      setTimeout(() => {
+        fetchAnalyticsData();
+      }, 100);
+    }
+  }, [searchParams]); // Remove fetchAnalyticsData from dependencies
 
-    console.log('Fetching analytics data with parameters:', {
-      workloadYear: currentWorkloadYear,
-      workloadSemester: currentWorkloadSemester.replace('Semester ', ''),
-      conflictYear: currentConflictYear,
-      conflictSemester: currentConflictSemester.replace('Semester ', '')
-    });
+    const fetchAnalyticsData = async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setError('Please log in to view analytics.');
+        console.error('No token found in localStorage');
+        return;
+      }
 
-    const publishedOnly = false;
-    
-    // Fetch workload data from backend
-    const workloadResponse = await axios.get(
-      `http://localhost:3001/analytics/instructor-workload?year=${currentWorkloadYear}&semester=${currentWorkloadSemester.replace('Semester ', '')}&publishedOnly=${publishedOnly}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    
-    console.log('Workload API response:', workloadResponse.data);
-    setWorkloadData(workloadResponse.data.workload || []);
+      // Get current values from URL params if available, otherwise use state
+      const urlYear = searchParams.get('year');
+      const urlSemester = searchParams.get('semester');
+      
+      const currentWorkloadYear = urlYear || workloadYear;
+      const currentConflictYear = urlYear || conflictYear;
+      const currentWorkloadSemester = urlSemester ? `Semester ${urlSemester}` : workloadSemester;
+      const currentConflictSemester = urlSemester ? `Semester ${urlSemester}` : conflictSemester;
 
-    // Fetch conflict data
-    const conflictResponse = await axios.get(
-      `http://localhost:3001/analytics/conflicts?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    
-    console.log('Conflict API response:', conflictResponse.data);
-    setConflictData(conflictResponse.data.conflicts || []);
+      console.log('Fetching analytics data with parameters:', {
+        workloadYear: currentWorkloadYear,
+        workloadSemester: currentWorkloadSemester.replace('Semester ', ''),
+        conflictYear: currentConflictYear,
+        conflictSemester: currentConflictSemester.replace('Semester ', '')
+      });
 
-    // Fetch conflict statistics
-    const statsResponse = await axios.get(
-      `http://localhost:3001/analytics/conflict-stats?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    
-    setConflictStats(statsResponse.data.stats || {
-      total: 0,
-      pending: 0,
-      resolved: 0,
-      byType: [],
-      byPriority: []
-    });
-    
-    setError(null);
-  } catch (error) {
-    console.error("Error fetching analytics data:", error);
-    console.error("Error details:", error.response?.data);
-    setError(error.response?.data?.message || 'Failed to fetch analytics data.');
-    setWorkloadData([]);
-    setConflictData([]);
-    setConflictStats({
-      total: 0,
-      pending: 0,
-      resolved: 0,
-      byType: [],
-      byPriority: []
-    });
-  } finally {
-    setLoading(false);
-  }
-};
+      const publishedOnly = false;
+      
+      // Fetch workload data from backend
+      const workloadResponse = await axios.get(
+        `http://localhost:3001/analytics/instructor-workload?year=${currentWorkloadYear}&semester=${currentWorkloadSemester.replace('Semester ', '')}&publishedOnly=${publishedOnly}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      console.log('Workload API response:', workloadResponse.data);
+      setWorkloadData(workloadResponse.data.workload || []);
+
+      // Fetch conflict data
+      const conflictResponse = await axios.get(
+        `http://localhost:3001/analytics/conflicts?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      console.log('Conflict API response:', conflictResponse.data);
+      setConflictData(conflictResponse.data.conflicts || []);
+
+      // Fetch conflict statistics
+      const statsResponse = await axios.get(
+        `http://localhost:3001/analytics/conflict-stats?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      setConflictStats(statsResponse.data.stats || {
+        total: 0,
+        pending: 0,
+        resolved: 0,
+        byType: [],
+        byPriority: []
+      });
+      
+      setError(null);
+    } catch (error) {
+      console.error("Error fetching analytics data:", error);
+      console.error("Error details:", error.response?.data);
+      setError(error.response?.data?.message || 'Failed to fetch analytics data.');
+      setWorkloadData([]);
+      setConflictData([]);
+      setConflictStats({
+        total: 0,
+        pending: 0,
+        resolved: 0,
+        byType: [],
+        byPriority: []
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const resolveConflict = async (conflictId) => {
     setResolvingConflict(conflictId);
