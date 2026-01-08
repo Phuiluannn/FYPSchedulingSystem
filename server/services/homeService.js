@@ -44,7 +44,8 @@ const recordGenerationConflict = async (conflictData) => {
       'Instructor Conflict', 
       'Course Overlap', 
       'Time Slot Exceeded',
-      'Department Tutorial Clash'
+      'Department Tutorial Clash',
+      'Lecture-Tutorial Clash'
     ];
 
     let mappedType = conflictData.Type;
@@ -218,6 +219,53 @@ const hasDepartmentConflict = (schedules, newSchedule, day, startTimeIdx, durati
   }
 
   return { hasConflict: false };
+};
+
+// NEW FUNCTION: Check for lecture-tutorial clashes based on year level (not department)
+const checkLectureTutorialClash = (schedules, newSchedule, day, startTimeIdx, duration) => {
+  const newYearLevels = newSchedule.YearLevel || [];
+  const newEndTimeIdx = startTimeIdx + duration - 1;
+  const newOccType = newSchedule.OccType;
+
+  // Only check if the new schedule is a tutorial
+  if (newOccType !== "Tutorial") return { hasClash: false };
+
+  // Check all existing schedules for lecture-tutorial clashes
+  for (const existingSchedule of schedules) {
+    // Skip if different day
+    if (existingSchedule.Day !== day) continue;
+    
+    // Only check against lectures
+    if (existingSchedule.OccType !== "Lecture") continue;
+
+    const existingYearLevels = existingSchedule.YearLevel || [];
+    
+    // Check if there's a shared year level
+    const hasSharedYearLevel = newYearLevels.some(yl => existingYearLevels.includes(yl));
+    
+    // If shared year level exists, this could be a clash
+    if (hasSharedYearLevel) {
+      const existingStartTimeIdx = TIMES.findIndex(time => time === existingSchedule.StartTime);
+      const existingEndTimeIdx = existingStartTimeIdx + (existingSchedule.Duration || 1) - 1;
+
+      // Check if time slots overlap
+      const timeSlotsOverlap = !(newEndTimeIdx < existingStartTimeIdx || startTimeIdx > existingEndTimeIdx);
+      
+      if (timeSlotsOverlap) {
+        return {
+          hasClash: true,
+          lectureCoursefCode: existingSchedule.CourseCode,
+          tutorialCourseCode: newSchedule.CourseCode,
+          sharedYearLevels: newYearLevels.filter(yl => existingYearLevels.includes(yl)),
+          timeSlot: existingSchedule.StartTime,
+          lectureOccNumber: existingSchedule.OccNumber,
+          tutorialOccNumber: newSchedule.OccNumber
+        };
+      }
+    }
+  }
+
+  return { hasClash: false };
 };
 
 
@@ -820,6 +868,14 @@ for (const course of courses) {
         continue; // Try next slot
       }
 
+      // **NEW: Check for lecture-tutorial clashes based on year level**
+      const lectureTutorialClash = checkLectureTutorialClash(schedules, tentativeSchedule, day, timeIdx, tutorialDuration);
+      
+      if (lectureTutorialClash.hasClash) {
+        console.log(`    ⚠️ Lecture-Tutorial clash detected: ${lectureTutorialClash.tutorialCourseCode} Tutorial Occ${lectureTutorialClash.tutorialOccNumber} conflicts with ${lectureTutorialClash.lectureCoursefCode} Lecture (shared year levels: ${lectureTutorialClash.sharedYearLevels.join(', ')})`);
+        continue; // Try next slot
+      }
+
       // No conflicts - schedule it!
       const tutorialSchedule = {
         _id: new mongoose.Types.ObjectId().toString(),
@@ -876,13 +932,23 @@ for (const course of courses) {
 };
 
             const deptConflict = hasDepartmentConflict(schedules, tentativeSchedule, day, timeIdx, tutorialDuration);
+            const lectureTutorialClash = checkLectureTutorialClash(schedules, tentativeSchedule, day, timeIdx, tutorialDuration);
+            
+            // Calculate priority: 0 = no conflicts, 1 = lecture-tutorial clash only, 2 = dept conflict
+            let priority = 0;
+            if (lectureTutorialClash.hasClash && !deptConflict.hasConflict) {
+              priority = 1;
+            } else if (deptConflict.hasConflict) {
+              priority = 2;
+            }
             
             forceSlots.push({
               day,
               timeIdx,
               room,
               deptConflict,
-              priority: deptConflict.hasConflict ? 1 : 0 // Prefer slots without dept conflicts
+              lectureTutorialClash,
+              priority
             });
           }
         }
@@ -937,8 +1003,24 @@ for (const course of courses) {
           });
           
           console.log(`  🔴 FORCE PLACED with DEPARTMENT CONFLICT: ${code} Occ${grouping.occNumber} at ${bestSlot.day} ${TIMES[bestSlot.timeIdx]}`);
+        } else if (bestSlot.lectureTutorialClash.hasClash) {
+          // **NEW: Record lecture-tutorial clash if it exists**
+          await recordGenerationConflict({
+            Year: year,
+            Semester: semester,
+            Type: 'Lecture-Tutorial Clash',
+            Description: `${bestSlot.lectureTutorialClash.tutorialCourseCode} (Tutorial Occ${bestSlot.lectureTutorialClash.tutorialOccNumber}) clashes with ${bestSlot.lectureTutorialClash.lectureCoursefCode} (Lecture) for year level(s): ${bestSlot.lectureTutorialClash.sharedYearLevels.join(', ')} at ${bestSlot.day} ${TIMES[bestSlot.timeIdx]}`,
+            CourseCode: code,
+            RoomID: bestSlot.room._id,
+            Day: bestSlot.day,
+            StartTime: TIMES[bestSlot.timeIdx],
+            Priority: 'Medium',
+            Status: 'Pending'
+          });
+          
+          console.log(`  🟠 FORCE PLACED with LECTURE-TUTORIAL CLASH: ${code} Occ${grouping.occNumber} at ${bestSlot.day} ${TIMES[bestSlot.timeIdx]}`);
         } else {
-          console.log(`  🟡 FORCE PLACED without department conflict: ${code} Occ${grouping.occNumber} at ${bestSlot.day} ${TIMES[bestSlot.timeIdx]}`);
+          console.log(`  🟡 FORCE PLACED without conflicts: ${code} Occ${grouping.occNumber} at ${bestSlot.day} ${TIMES[bestSlot.timeIdx]}`);
         }
       } else {
         // Absolute last resort

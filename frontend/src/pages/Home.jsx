@@ -63,7 +63,8 @@ function Home() {
   roomDoubleBooking: 0,
   instructorConflict: 0,
   timeSlotExceeded: 0,
-  departmentTutorialClash: 0
+  departmentTutorialClash: 0,
+  lectureTutorialClash: 0
 });
 const navigate = useNavigate();
 const { showAlert, showConfirm } = useAlert();
@@ -178,6 +179,78 @@ const checkInstructorConflicts = (timetable, movedEvent, targetDay, targetTimeId
               conflictingEvent: event
             });
           }
+        }
+      });
+    });
+  });
+  
+  return conflicts;
+};
+
+// NEW: Check for lecture-tutorial clashes based on year level
+const checkLectureTutorialClash = (timetable, movedEvent, targetDay, targetTimeIdx, targetDuration) => {
+  const conflicts = [];
+  
+  // Only check if the moved event is a tutorial
+  if (movedEvent.raw?.OccType !== 'Tutorial') {
+    return conflicts;
+  }
+  
+  const movedYearLevels = movedEvent.raw.YearLevel || [];
+  const movedStartIdx = targetTimeIdx;
+  const movedEndIdx = targetTimeIdx + targetDuration - 1;
+  
+  // Check all lectures on the target day for clashes
+  Object.entries(timetable[targetDay] || {}).forEach(([checkRoomId, roomSlots]) => {
+    roomSlots.forEach((slot) => {
+      slot.forEach(otherEvent => {
+        // Skip self
+        if (!otherEvent || otherEvent.id === movedEvent.id) return;
+        
+        // Only check against lectures
+        if (otherEvent.raw?.OccType !== 'Lecture') return;
+        
+        // Check if they share year levels
+        const otherYearLevels = otherEvent.raw.YearLevel || [];
+        const hasSharedYearLevel = movedYearLevels.some(yl => otherYearLevels.includes(yl));
+        
+        if (!hasSharedYearLevel) {
+          console.log(`  ℹ️ No lecture-tutorial clash: ${movedEvent.code} Tutorial (Years: ${movedYearLevels.join(',')}) vs ${otherEvent.code} Lecture (Years: ${otherYearLevels.join(',')}) - different year levels`);
+          return; // Different year levels = no conflict
+        }
+        
+        // Check time overlap
+        const otherStartIdx = TIMES.findIndex(t => t === otherEvent.raw.StartTime);
+        const otherDuration = otherEvent.raw?.Duration || 1;
+        const otherEndIdx = otherStartIdx + otherDuration - 1;
+        
+        const hasOverlap = !(movedEndIdx < otherStartIdx || movedStartIdx > otherEndIdx);
+        
+        if (hasOverlap) {
+          const overlapStart = Math.max(movedStartIdx, otherStartIdx);
+          const overlapEnd = Math.min(movedEndIdx, otherEndIdx);
+          const overlapStartTime = TIMES[overlapStart];
+          const overlapEndTime = TIMES[overlapEnd];
+          
+          const overlapTimeSlot = overlapStartTime.includes(' - ') 
+            ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+            : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+          
+          const otherRoomObj = rooms.find(r => r._id === checkRoomId);
+          const sharedYears = movedYearLevels.filter(yl => otherYearLevels.includes(yl));
+          
+          conflicts.push({
+            type: 'Lecture-Tutorial Clash',
+            tutorialCourse: movedEvent.code,
+            tutorialOccNumber: movedEvent.raw.OccNumber,
+            lectureCourse: otherEvent.code,
+            lectureOccNumber: otherEvent.raw.OccNumber,
+            yearLevels: sharedYears,
+            conflictingRoomCode: otherRoomObj?.code || 'Unknown Room',
+            timeSlot: overlapTimeSlot
+          });
+          
+          console.log(`🎓 Lecture-Tutorial clash detected: ${movedEvent.code} Tutorial (Year ${sharedYears.join(', ')}) vs ${otherEvent.code} Lecture at ${overlapTimeSlot}`);
         }
       });
     });
@@ -429,7 +502,8 @@ const detectAllConflicts = (currentTimetable, currentCourses, currentRooms) => {
     roomDoubleBooking: [],
     instructorConflict: [],
     timeSlotExceeded: [],
-    departmentTutorialClash: [] 
+    departmentTutorialClash: [],
+    lectureTutorialClash: []
   };
 
   // Helper function to get events from all days/rooms
@@ -761,17 +835,120 @@ for (let i = 0; i < tutorialEvents.length; i++) {
 conflicts.departmentTutorialClash = Array.from(departmentTutorialConflicts.values());
 console.log(`Department tutorial clashes found: ${conflicts.departmentTutorialClash.length}`);
 
+// 6. NEW: Check Lecture-Tutorial Clashes (based on year level)
+console.log("=== CHECKING LECTURE-TUTORIAL CLASHES ===");
+const lectureTutorialConflicts = new Map();
+
+// Get all tutorial and lecture events
+const tutorialEventsForLT = allEvents.filter(event => event.raw?.OccType === 'Tutorial');
+const lectureEvents = allEvents.filter(event => event.raw?.OccType === 'Lecture');
+
+console.log(`Found ${tutorialEventsForLT.length} tutorials and ${lectureEvents.length} lectures to check for lecture-tutorial clashes`);
+
+// Check each tutorial against each lecture
+tutorialEventsForLT.forEach(tutorial => {
+  lectureEvents.forEach(lecture => {
+    // Must be on same day
+    if (tutorial.day !== lecture.day) return;
+    
+    // Check if they share year levels
+    const tutorialYears = tutorial.raw.YearLevel || [];
+    const lectureYears = lecture.raw.YearLevel || [];
+    const hasSharedYearLevel = tutorialYears.some(yl => lectureYears.includes(yl));
+    
+    if (!hasSharedYearLevel) {
+      console.log(`  ℹ️ No shared year: ${tutorial.code} Tutorial (Years: ${tutorialYears.join(',')}) vs ${lecture.code} Lecture (Years: ${lectureYears.join(',')})`);
+      return; // Different year levels = no conflict
+    }
+    
+    const sharedYears = tutorialYears.filter(yl => lectureYears.includes(yl));
+    console.log(`  ✓ Shared year levels: ${sharedYears.join(', ')} - ${tutorial.code} Tutorial vs ${lecture.code} Lecture`);
+    
+    // Check if time periods overlap
+    const tutorialStart = TIMES.findIndex(t => t === tutorial.raw.StartTime);
+    const tutorialDuration = tutorial.raw?.Duration || 1;
+    const tutorialEnd = tutorialStart + tutorialDuration - 1;
+    
+    const lectureStart = TIMES.findIndex(t => t === lecture.raw.StartTime);
+    const lectureDuration = lecture.raw?.Duration || 1;
+    const lectureEnd = lectureStart + lectureDuration - 1;
+    
+    const hasOverlap = !(tutorialEnd < lectureStart || tutorialStart > lectureEnd);
+    
+    if (hasOverlap) {
+      // Create unique conflict ID including occurrence numbers to distinguish different clashes
+      const sortedCourses = [tutorial.code, lecture.code].sort();
+      const sortedYears = sharedYears.sort();
+      
+      // Include occurrence numbers to make each clash unique
+      const tutorialOcc = Array.isArray(tutorial.raw.OccNumber) 
+        ? tutorial.raw.OccNumber.join('-') 
+        : tutorial.raw.OccNumber || 'unknown';
+      const lectureOcc = Array.isArray(lecture.raw.OccNumber) 
+        ? lecture.raw.OccNumber.join('-') 
+        : lecture.raw.OccNumber || 'unknown';
+      
+      const conflictId = `lecture-tutorial-${tutorial.day}-${sortedYears.join('-')}-${tutorial.code}-Occ${tutorialOcc}-${lecture.code}-Occ${lectureOcc}`;
+      
+      if (!lectureTutorialConflicts.has(conflictId)) {
+        const overlapStart = Math.max(tutorialStart, lectureStart);
+        const overlapEnd = Math.min(tutorialEnd, lectureEnd);
+        const overlapStartTime = TIMES[overlapStart];
+        const overlapEndTime = TIMES[overlapEnd];
+        
+        const fullTimeRange = overlapStartTime.includes(' - ') 
+          ? `${overlapStartTime.split(' - ')[0]} - ${overlapEndTime.split(' - ')[1]}`
+          : `${overlapStartTime} - ${overlapEndTime.split(' - ')[1]}`;
+        
+        lectureTutorialConflicts.set(conflictId, {
+          id: conflictId,
+          type: 'Lecture-Tutorial Clash',
+          yearLevels: sortedYears,
+          day: tutorial.day,
+          time: fullTimeRange,
+          conflictingEvents: [
+            {
+              id: tutorial.id,
+              courseCode: tutorial.code,
+              occType: tutorial.raw.OccType,
+              occNumber: tutorial.raw.OccNumber,
+              yearLevels: tutorialYears,
+              roomCode: currentRooms.find(r => r._id === tutorial.roomId)?.code || 'Unknown'
+            },
+            {
+              id: lecture.id,
+              courseCode: lecture.code,
+              occType: lecture.raw.OccType,
+              occNumber: lecture.raw.OccNumber,
+              yearLevels: lectureYears,
+              roomCode: currentRooms.find(r => r._id === lecture.roomId)?.code || 'Unknown'
+            }
+          ],
+          description: `${tutorial.code} Tutorial clashes with ${lecture.code} Lecture for Year ${sortedYears.join(', ')} students on ${tutorial.day}`
+        });
+        
+        console.log(`🎓 Lecture-Tutorial clash: ${tutorial.code} vs ${lecture.code} for Year ${sortedYears.join(', ')} at ${fullTimeRange}`);
+      }
+    }
+  });
+});
+
+conflicts.lectureTutorialClash = Array.from(lectureTutorialConflicts.values());
+console.log(`Lecture-tutorial clashes found: ${conflicts.lectureTutorialClash.length}`);
+
 const summary = {
   total: conflicts.roomCapacity.length + 
          conflicts.roomDoubleBooking.length + 
          conflicts.instructorConflict.length + 
          conflicts.timeSlotExceeded.length +
-         conflicts.departmentTutorialClash.length,  // ADD THIS
+         conflicts.departmentTutorialClash.length +
+         conflicts.lectureTutorialClash.length,
   roomCapacity: conflicts.roomCapacity.length,
   roomDoubleBooking: conflicts.roomDoubleBooking.length,
   instructorConflict: conflicts.instructorConflict.length,
   timeSlotExceeded: conflicts.timeSlotExceeded.length,
-  departmentTutorialClash: conflicts.departmentTutorialClash.length  // ADD THIS
+  departmentTutorialClash: conflicts.departmentTutorialClash.length,
+  lectureTutorialClash: conflicts.lectureTutorialClash.length
 };
 
 console.log("Conflict Summary:", summary);
@@ -877,6 +1054,24 @@ details.departmentTutorialClash.forEach(conflict => {
   };
   conflictsToRecord.push(conflictData);
 });
+
+    // NEW: Process Lecture-Tutorial Clash conflicts
+    details.lectureTutorialClash.forEach(conflict => {
+      const conflictData = {
+        Year: selectedYear,
+        Semester: selectedSemester,
+        Type: 'Lecture-Tutorial Clash',
+        Description: `Lecture-Tutorial Clash: ${conflict.conflictingEvents.map(e => 
+          `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''})`
+        ).join(' and ')} for year level(s): ${conflict.yearLevels.join(', ')} on ${conflict.day} at ${conflict.time}`,
+        CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+        Day: conflict.day,
+        StartTime: conflict.time,
+        Priority: 'Medium',
+        Status: 'Pending'
+      };
+      conflictsToRecord.push(conflictData);
+    });
 
     // Record all conflicts in batch
     if (conflictsToRecord.length > 0) {
@@ -1188,7 +1383,8 @@ useEffect(() => {
         roomDoubleBooking: 0,
         instructorConflict: 0,
         timeSlotExceeded: 0,
-        departmentTutorialClash: 0
+        departmentTutorialClash: 0,
+        lectureTutorialClash: 0
       });
       return;
     }
@@ -1228,7 +1424,8 @@ useEffect(() => {
         roomDoubleBooking: filterResolvedConflicts(details.roomDoubleBooking, 'Room Double Booking'),
         instructorConflict: filterResolvedConflicts(details.instructorConflict, 'Instructor Conflict'),
         timeSlotExceeded: filterResolvedConflicts(details.timeSlotExceeded, 'Time Slot Exceeded'),
-        departmentTutorialClash: filterResolvedConflicts(details.departmentTutorialClash, 'Department Tutorial Clash')
+        departmentTutorialClash: filterResolvedConflicts(details.departmentTutorialClash, 'Department Tutorial Clash'),
+        lectureTutorialClash: filterResolvedConflicts(details.lectureTutorialClash, 'Lecture-Tutorial Clash')
       };
       
       const adjustedSummary = {
@@ -1236,12 +1433,14 @@ useEffect(() => {
                filteredDetails.roomDoubleBooking.length + 
                filteredDetails.instructorConflict.length + 
                filteredDetails.timeSlotExceeded.length +
-               filteredDetails.departmentTutorialClash.length,
+               filteredDetails.departmentTutorialClash.length +
+               filteredDetails.lectureTutorialClash.length,
         roomCapacity: filteredDetails.roomCapacity.length,
         roomDoubleBooking: filteredDetails.roomDoubleBooking.length,
         instructorConflict: filteredDetails.instructorConflict.length,
         timeSlotExceeded: filteredDetails.timeSlotExceeded.length,
-        departmentTutorialClash: filteredDetails.departmentTutorialClash.length
+        departmentTutorialClash: filteredDetails.departmentTutorialClash.length,
+        lectureTutorialClash: filteredDetails.lectureTutorialClash.length
       };
       
       console.log(`Adjusted conflict summary (excluding ${resolvedConflicts.length} resolved):`, adjustedSummary);
@@ -1735,6 +1934,10 @@ if (moved.raw?.OccType === 'Tutorial' && moved.raw?.Departments && moved.raw.Dep
   });
 }
 
+  // NEW: Check for lecture-tutorial clashes based on year level
+  const lectureTutorialClashes = checkLectureTutorialClash(newTimetable, moved, selectedDay, destTimeIdx, duration);
+  conflicts.push(...lectureTutorialClashes);
+
   // Check for instructor conflicts (keeping existing logic)
   if (moved.selectedInstructorId && moved.selectedInstructorId.trim() !== "" && 
       moved.selectedInstructor && moved.selectedInstructor.trim() !== "") {
@@ -1848,6 +2051,20 @@ conflicts.push({
               : `Occ ${conflict.conflictingOccNumber}`
             : ""
         }) in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
+      } else if (conflict.type === 'Lecture-Tutorial Clash') {
+        alertMessage += `${index + 1}. Lecture-Tutorial Clash: ${conflict.tutorialCourse} Tutorial ${
+          conflict.tutorialOccNumber
+            ? Array.isArray(conflict.tutorialOccNumber)
+              ? `(Occ ${conflict.tutorialOccNumber.join(", ")})`
+              : `(Occ ${conflict.tutorialOccNumber})`
+            : ""
+        } clashes with ${conflict.lectureCourse} Lecture ${
+          conflict.lectureOccNumber
+            ? Array.isArray(conflict.lectureOccNumber)
+              ? `(Occ ${conflict.lectureOccNumber.join(", ")})`
+              : `(Occ ${conflict.lectureOccNumber})`
+            : ""
+        } for Year ${conflict.yearLevels.join(', ')} students in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
       }
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
@@ -2086,6 +2303,40 @@ conflicts.push({
           Day: selectedDay,
           StartTime: conflict.timeSlot,
           Priority: 'High',
+          Status: 'Pending'
+        };
+        // await recordDragDropConflict(conflictData);
+      } else if (conflict.type === 'Lecture-Tutorial Clash') {
+        const movedStartTime = TIMES[destTimeIdx];
+        const movedEndTime = destTimeIdx + duration - 1 < TIMES.length 
+          ? TIMES[destTimeIdx + duration - 1].split(" - ")[1]
+          : TIMES[TIMES.length - 1].split(" - ")[1];
+        
+        const movedTimeRange = movedStartTime.includes(' - ') 
+          ? `${movedStartTime.split(' - ')[0]} - ${movedEndTime}`
+          : `${movedStartTime} - ${movedEndTime}`;
+
+        const conflictData = {
+          Year: selectedYear,
+          Semester: selectedSemester,
+          Type: 'Lecture-Tutorial Clash',
+          Description: `${conflict.tutorialCourse} (Tutorial ${
+            conflict.tutorialOccNumber
+              ? Array.isArray(conflict.tutorialOccNumber)
+                ? `Occ ${conflict.tutorialOccNumber.join(", ")}`
+                : `Occ ${conflict.tutorialOccNumber}`
+              : ""
+          }) clashes with ${conflict.lectureCourse} (Lecture ${
+            conflict.lectureOccNumber
+              ? Array.isArray(conflict.lectureOccNumber)
+                ? `Occ ${conflict.lectureOccNumber.join(", ")}`
+                : `Occ ${conflict.lectureOccNumber}`
+              : ""
+          }) for year level(s): ${conflict.yearLevels.join(', ')} in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.timeSlot}`,
+          CourseCode: moved.code,
+          Day: selectedDay,
+          StartTime: conflict.timeSlot,
+          Priority: 'Medium',
           Status: 'Pending'
         };
         // await recordDragDropConflict(conflictData);
@@ -2329,6 +2580,10 @@ const requiredCapacity = calculateRequiredCapacity(
   });
 }
 
+  // NEW: Check for lecture-tutorial clashes based on year level
+  const lectureTutorialClashes = checkLectureTutorialClash(newTimetable, item, targetDay, targetTimeIdx, duration);
+  conflicts.push(...lectureTutorialClashes);
+
   // NEW: Check for instructor conflicts
   if (item.selectedInstructorId && item.selectedInstructorId.trim() !== "" && 
       item.selectedInstructor && item.selectedInstructor.trim() !== "") {
@@ -2534,6 +2789,45 @@ conflicts.push({
     // } catch (error) {
     //   console.error("Failed to record department tutorial clash conflict:", error);
     // }
+  } else if (conflict.type === 'Lecture-Tutorial Clash') {
+    const movedStartTime = targetTime;
+    const movedEndTime = targetTimeIdx + duration - 1 < TIMES.length 
+      ? TIMES[targetTimeIdx + duration - 1].split(" - ")[1]
+      : TIMES[TIMES.length - 1].split(" - ")[1];
+    
+    const movedTimeRange = movedStartTime.includes(' - ') 
+      ? `${movedStartTime.split(' - ')[0]} - ${movedEndTime}`
+      : `${movedStartTime} - ${movedEndTime}`;
+
+    const lectureClashConflictData = {
+      Year: selectedYear,
+      Semester: selectedSemester,
+      Type: 'Lecture-Tutorial Clash',
+      Description: `${conflict.tutorialCourse} (Tutorial ${
+        conflict.tutorialOccNumber
+          ? Array.isArray(conflict.tutorialOccNumber)
+            ? `Occ ${conflict.tutorialOccNumber.join(", ")}`
+            : `Occ ${conflict.tutorialOccNumber}`
+          : ""
+      }) clashes with ${conflict.lectureCourse} (Lecture ${
+        conflict.lectureOccNumber
+          ? Array.isArray(conflict.lectureOccNumber)
+            ? `Occ ${conflict.lectureOccNumber.join(", ")}`
+            : `Occ ${conflict.lectureOccNumber}`
+          : ""
+      }) for year level(s): ${conflict.yearLevels.join(', ')} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.timeSlot}`,
+      CourseCode: item.code,
+      Day: targetDay,
+      StartTime: conflict.timeSlot,
+      Priority: 'Medium',
+      Status: 'Pending'
+    };
+    
+    // try {
+    //   await recordDragDropConflict(lectureClashConflictData);
+    // } catch (error) {
+    //   console.error("Failed to record lecture-tutorial clash conflict:", error);
+    // }
   }
 }
 
@@ -2569,6 +2863,20 @@ conflicts.push({
               : `Occ ${conflict.conflictingOccNumber}`
             : ""
         }) in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
+      } else if (conflict.type === 'Lecture-Tutorial Clash') {
+        alertMessage += `${index + 1}. Lecture-Tutorial Clash: ${conflict.tutorialCourse} Tutorial ${
+          conflict.tutorialOccNumber
+            ? Array.isArray(conflict.tutorialOccNumber)
+              ? `(Occ ${conflict.tutorialOccNumber.join(", ")})`
+              : `(Occ ${conflict.tutorialOccNumber})`
+            : ""
+        } clashes with ${conflict.lectureCourse} Lecture ${
+          conflict.lectureOccNumber
+            ? Array.isArray(conflict.lectureOccNumber)
+              ? `(Occ ${conflict.lectureOccNumber.join(", ")})`
+              : `(Occ ${conflict.lectureOccNumber})`
+            : ""
+        } for Year ${conflict.yearLevels.join(', ')} students in ${conflict.conflictingRoomCode} at ${conflict.timeSlot}\n`;
       }
     });
     alertMessage += "\nThe move will still be performed, and conflicts will be recorded in the analytics section.";
@@ -2840,6 +3148,65 @@ const generateConflictId = (conflict, conflictType) => {
       const deptDay = conflict.day || conflict.Day;
       const deptTime = conflict.time || conflict.StartTime;
       return `dept_clash_${sortedDepts.join('_')}_${sortedDeptCourses.join('_')}_${deptDay}_${deptTime}`;
+    
+    case 'Lecture-Tutorial Clash':
+      // For database conflicts, extract from Description
+      let sortedLTCourses;
+      let sortedYears;
+      let tutorialOcc = 'unknown';
+      let lectureOcc = 'unknown';
+      
+      if (conflict.conflictingEvents && conflict.yearLevels) {
+        // Frontend-detected conflict
+        const tutorial = conflict.conflictingEvents.find(e => e.occType === 'Tutorial');
+        const lecture = conflict.conflictingEvents.find(e => e.occType === 'Lecture');
+        
+        if (tutorial && lecture) {
+          sortedLTCourses = [tutorial.courseCode, lecture.courseCode];
+          sortedYears = conflict.yearLevels.sort();
+          
+          tutorialOcc = Array.isArray(tutorial.occNumber) 
+            ? tutorial.occNumber.join('-') 
+            : tutorial.occNumber || 'unknown';
+          lectureOcc = Array.isArray(lecture.occNumber) 
+            ? lecture.occNumber.join('-') 
+            : lecture.occNumber || 'unknown';
+        } else {
+          sortedLTCourses = conflict.conflictingEvents.map(e => e.courseCode).sort();
+          sortedYears = conflict.yearLevels.sort();
+        }
+      } else if (conflict.Description) {
+        // Database conflict - extract from description
+        const ltCourseMatches = conflict.Description.match(/[A-Z]{3}\d{4}(?:-\d+)?/g);
+        const yearMatch = conflict.Description.match(/year level\(s\):\s*([\d,\s]+)/i);
+        
+        // Try to extract occurrence numbers from description
+        // Format: "WIX2002 (Tutorial Occ 6) and WIA2001 (Lecture Occ 1)"
+        const tutorialMatch = conflict.Description.match(/(\w+)\s*\(Tutorial\s+Occ\s+([\d,\s-]+)\)/i);
+        const lectureMatch = conflict.Description.match(/(\w+)\s*\(Lecture\s+Occ\s+([\d,\s-]+)\)/i);
+        
+        if (tutorialMatch && lectureMatch) {
+          sortedLTCourses = [tutorialMatch[1], lectureMatch[1]];
+          tutorialOcc = tutorialMatch[2].replace(/[\s,]/g, '-');
+          lectureOcc = lectureMatch[2].replace(/[\s,]/g, '-');
+        } else if (ltCourseMatches && ltCourseMatches.length >= 2) {
+          sortedLTCourses = [...new Set(ltCourseMatches.slice(0, 2))].sort();
+        } else {
+          sortedLTCourses = [conflict.CourseCode, 'unknown'].sort();
+        }
+        
+        if (yearMatch && yearMatch[1]) {
+          sortedYears = yearMatch[1].split(',').map(y => y.trim()).filter(y => y.length > 0).sort();
+        } else {
+          sortedYears = ['unknown'];
+        }
+      } else {
+        sortedLTCourses = [conflict.CourseCode || 'unknown', 'unknown'].sort();
+        sortedYears = ['unknown'];
+      }
+      
+      const ltDay = conflict.day || conflict.Day;
+      return `lecture-tutorial-${ltDay}-${sortedYears.join('-')}-${sortedLTCourses[0]}-Occ${tutorialOcc}-${sortedLTCourses[1]}-Occ${lectureOcc}`;
     
     default:
       return `unknown_${Date.now()}_${Math.random()}`;
@@ -3207,6 +3574,37 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
           }
         } else {
           console.log(`EXISTING ACTIVE Department Tutorial Clash Conflict: ${conflictId}`);
+        }
+      }
+      
+      // STEP 6b: Check Lecture-Tutorial Clash Conflicts for new ones
+      for (const conflict of conflictResults.details.lectureTutorialClash) {
+        const conflictId = generateConflictId(conflict, 'Lecture-Tutorial Clash');
+        
+        if (!existingActiveConflictIds.has(conflictId)) {
+          const conflictData = {
+            Year: selectedYear,
+            Semester: selectedSemester,
+            Type: 'Lecture-Tutorial Clash',
+            Description: `Lecture-Tutorial Clash: ${conflict.conflictingEvents.map(e => 
+              `${e.courseCode} (${e.occType}${e.occNumber ? ` Occ ${Array.isArray(e.occNumber) ? e.occNumber.join(', ') : e.occNumber}` : ''})`
+            ).join(' and ')} for year level(s): ${conflict.yearLevels.join(', ')} on ${conflict.day} at ${conflict.time}`,
+            CourseCode: conflict.conflictingEvents[0]?.courseCode || 'Multiple',
+            Day: conflict.day,
+            StartTime: conflict.time,
+            Priority: 'Medium',
+            Status: 'Pending'
+          };
+          
+          try {
+            await recordDragDropConflict(conflictData);
+            newConflictsCount++;
+            console.log(`NEW Lecture-Tutorial Clash Conflict: ${conflictId}`);
+          } catch (error) {
+            console.error("Failed to record new lecture-tutorial clash conflict:", error);
+          }
+        } else {
+          console.log(`EXISTING ACTIVE Lecture-Tutorial Clash Conflict: ${conflictId}`);
         }
       }
       

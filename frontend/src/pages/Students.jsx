@@ -182,7 +182,7 @@ function Students() {
               <input
                 type="text"
                 className="form-control"
-                placeholder="Search year or numbers..."
+                placeholder="Search by year or numbers..."
                 style={{ width: 260, padding: "8px 35px 8px 35px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14 }}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}

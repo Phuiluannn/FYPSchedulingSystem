@@ -337,6 +337,8 @@ const exportConflictData = () => {
         return '📚';
       case 'Department Tutorial Clash':
         return '🏢';
+      case 'Lecture-Tutorial Clash':
+        return '🎓';
       default:
         return '⚠️';
     }

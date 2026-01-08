@@ -6,7 +6,7 @@ const ConflictSchema = new mongoose.Schema({
   Type: { 
     type: String, 
     required: true,
-    enum: ['Room Capacity', 'Room Double Booking', 'Instructor Conflict', 'Course Overlap', 'Time Slot Exceeded', 'Department Tutorial Clash']
+    enum: ['Room Capacity', 'Room Double Booking', 'Instructor Conflict', 'Course Overlap', 'Time Slot Exceeded', 'Department Tutorial Clash', 'Lecture-Tutorial Clash']
   },
   Description: { type: String, required: true },
   Status: { 

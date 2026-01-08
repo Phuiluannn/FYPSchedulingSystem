@@ -569,6 +569,9 @@ const validateConflictStillExists = async (conflict, currentSchedules) => {
     case 'Department Tutorial Clash':
       return await validateDepartmentTutorialClashConflict(conflict, currentSchedules);
     
+    case 'Lecture-Tutorial Clash':
+      return await validateLectureTutorialClashConflict(conflict, currentSchedules);
+    
     default:
       // For unknown conflict types, assume they're still valid
       console.log(`Unknown conflict type: ${Type}, assuming still valid`);
@@ -916,6 +919,106 @@ const validateDepartmentTutorialClashConflict = async (conflict, schedules) => {
   }
   
   return conflictExists;
+};
+
+const validateLectureTutorialClashConflict = async (conflict, schedules) => {
+  const { Day, Description, StartTime } = conflict;
+  
+  console.log("\n=== VALIDATING LECTURE-TUTORIAL CLASH ===");
+  console.log("Conflict Description:", Description);
+  console.log("Conflict Day:", Day);
+  console.log("Conflict StartTime:", StartTime);
+  
+  // Extract course codes from description (tutorial course first, then lecture course)
+  const courseMatches = Description.match(/([A-Z]{3}\d{4}(?:-\d+)?)/g);
+  
+  if (!courseMatches || courseMatches.length < 2) {
+    console.log('❌ Could not extract course codes from lecture-tutorial clash description');
+    return true; // Keep conflict if we can't parse it
+  }
+  
+  const tutorialCourseCode = courseMatches[0];
+  const lectureCourseCode = courseMatches[1];
+  
+  console.log(`Extracted courses: ${tutorialCourseCode} (Tutorial) vs ${lectureCourseCode} (Lecture)`);
+  
+  // Extract year levels from description
+  const yearMatch = Description.match(/year level\(s\):\s+([\d,\s]+)/i);
+  let conflictYearLevels = [];
+  if (yearMatch && yearMatch[1]) {
+    conflictYearLevels = yearMatch[1]
+      .split(',')
+      .map(y => y.trim())
+      .filter(y => y.length > 0);
+    console.log(`Extracted year levels: ${conflictYearLevels.join(', ')}`);
+  } else {
+    console.log('⚠️ No year level found in conflict description');
+    return true; // Keep conflict if we can't determine year levels
+  }
+  
+  // Find tutorial events for the first course
+  const tutorialEvents = schedules.filter(sch => 
+    sch.CourseCode === tutorialCourseCode && 
+    sch.Day === Day && 
+    sch.OccType === 'Tutorial'
+  );
+  
+  // Find lecture events for the second course
+  const lectureEvents = schedules.filter(sch => 
+    sch.CourseCode === lectureCourseCode && 
+    sch.Day === Day && 
+    sch.OccType === 'Lecture'
+  );
+  
+  console.log(`Found ${tutorialEvents.length} tutorial(s) for ${tutorialCourseCode}`);
+  console.log(`Found ${lectureEvents.length} lecture(s) for ${lectureCourseCode}`);
+  
+  if (tutorialEvents.length === 0 || lectureEvents.length === 0) {
+    console.log(`✅ Lecture-Tutorial clash auto-resolved: One of the events no longer exists`);
+    return false; // One course no longer has the event
+  }
+  
+  // Check each combination for conflicts
+  for (const tutorial of tutorialEvents) {
+    for (const lecture of lectureEvents) {
+      const tutorialYearLevels = tutorial.YearLevel || [];
+      const lectureYearLevels = lecture.YearLevel || [];
+      
+      console.log(`  Checking: ${tutorialCourseCode} Tutorial (Years: ${tutorialYearLevels.join(',')}) vs ${lectureCourseCode} Lecture (Years: ${lectureYearLevels.join(',')})`);
+      
+      // Check if they share year levels
+      const hasSharedYearLevel = tutorialYearLevels.some(yl => lectureYearLevels.includes(yl));
+      
+      if (!hasSharedYearLevel) {
+        console.log(`  ℹ️ No shared year levels - no conflict`);
+        continue; // Different year levels = no conflict
+      }
+      
+      const sharedYearLevels = tutorialYearLevels.filter(yl => lectureYearLevels.includes(yl));
+      console.log(`  ✓ Shared year levels: ${sharedYearLevels.join(', ')}`);
+      
+      // Check time overlap
+      const tutorialStart = TIMES.indexOf(tutorial.StartTime);
+      const tutorialDuration = tutorial.Duration || 1;
+      const tutorialEnd = tutorialStart + tutorialDuration - 1;
+      
+      const lectureStart = TIMES.indexOf(lecture.StartTime);
+      const lectureDuration = lecture.Duration || 1;
+      const lectureEnd = lectureStart + lectureDuration - 1;
+      
+      const hasOverlap = !(tutorialEnd < lectureStart || tutorialStart > lectureEnd);
+      
+      console.log(`  Time check: ${tutorial.StartTime} vs ${lecture.StartTime} = ${hasOverlap ? 'OVERLAP' : 'NO OVERLAP'}`);
+      
+      if (hasOverlap) {
+        console.log(`✅ CONFLICT STILL VALID: ${tutorialCourseCode} tutorial clashes with ${lectureCourseCode} lecture for year ${sharedYearLevels.join(', ')}`);
+        return true;
+      }
+    }
+  }
+  
+  console.log(`✅ Lecture-Tutorial clash auto-resolved: No overlapping events with shared year levels found`);
+  return false;
 };
 
 // Helper function to calculate required capacity (same logic as in Home.jsx)
