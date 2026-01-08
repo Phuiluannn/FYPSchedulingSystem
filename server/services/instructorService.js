@@ -62,12 +62,12 @@ export const updateInstructor = async (id, data) => {
       throw new Error('This email is already registered as an instructor.');
     }
     
-    // Check in User collection
+    // Check in User collection (exclude the current instructor's user account)
     const existingUser = await UserModel.findOne({ 
-      email: data.email,
-      email: { $ne: oldInstructor.email } // Exclude current user's email
+      email: data.email
     });
-    if (existingUser) {
+    // Only throw error if the user exists AND it's not the current instructor's account
+    if (existingUser && existingUser.email !== oldInstructor.email) {
       throw new Error('This email is already registered in the system.');
     }
   }
