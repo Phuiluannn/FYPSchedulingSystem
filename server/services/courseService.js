@@ -19,39 +19,31 @@ const getDepartmentStudentCounts = async (academicYear, semester, yearLevel) => 
 
 // Helper function to automatically generate lecture groupings
 const generateLectureGroupings = (departmentStudents, numLectures, allDepartments) => {
-  const groupings = [];
+  const groupings = Array.from({ length: numLectures }, (_, i) => ({
+    occNumber: i + 1,
+    departments: [],
+    estimatedStudents: 0
+  }));
   
-  // Get departments with students
+  // Sort departments by count descending
   const deptArray = allDepartments
     .filter(dept => departmentStudents[dept] > 0)
-    .sort((a, b) => departmentStudents[b] - departmentStudents[a]); // Sort by count descending
+    .sort((a, b) => departmentStudents[b] - departmentStudents[a]);
   
-  if (deptArray.length === 0 || numLectures === 0) {
-    return [];
-  }
+  if (deptArray.length === 0 || numLectures === 0) return [];
   
-  // Distribute departments evenly across lectures
-  const deptsPerLecture = Math.ceil(deptArray.length / numLectures);
-  
-  for (let i = 0; i < numLectures; i++) {
-    const startIdx = i * deptsPerLecture;
-    const endIdx = Math.min(startIdx + deptsPerLecture, deptArray.length);
-    const lectureDepts = deptArray.slice(startIdx, endIdx);
+  // Greedy assignment: always add to the smallest group
+  deptArray.forEach(dept => {
+    // Find the group with fewest students
+    const minGroup = groupings.reduce((min, curr) => 
+      curr.estimatedStudents < min.estimatedStudents ? curr : min
+    );
     
-    if (lectureDepts.length > 0) {
-      const estimatedStudents = lectureDepts.reduce((sum, dept) => 
-        sum + (departmentStudents[dept] || 0), 0
-      );
-      
-      groupings.push({
-        occNumber: i + 1,
-        departments: lectureDepts,
-        estimatedStudents
-      });
-    }
-  }
+    minGroup.departments.push(dept);
+    minGroup.estimatedStudents += departmentStudents[dept] || 0;
+  });
   
-  return groupings;
+  return groupings.filter(g => g.departments.length > 0);
 };
 
 // Get all courses
