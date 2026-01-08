@@ -4415,19 +4415,22 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 </div>
     <button
       ref={exportButtonRef}
+      disabled={!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 8,
         padding: "8px 24px",
         borderRadius: 8,
-        background: "#015551",
+        background: (!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? "#ccc" : "#015551",
         fontWeight: 500,
         fontSize: 16,
         color: "#fff",
-        cursor: "pointer"
+        cursor: (!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? "not-allowed" : "pointer",
+        opacity: (!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? 0.6 : 1
       }}
       onClick={handleExportClick}
+      title={(!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? "Generate a timetable first to enable export" : "Export timetable"}
     >
       <BiExport style={{ fontSize: 20}} />
       Export
@@ -4491,7 +4494,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
                   margin: '20px 0'
                 }}>
                   <p style={{ margin: 0, fontSize: '18px', fontWeight: 500 }}>No timetable data available</p>
-                  <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>Click "Generate" to create a timetable for this day</p>
+                  <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>Click "Generate" to create a timetable for this semester</p>
                 </div>
               ) : (
               <DragDropContext onDragEnd={onDragEnd}>
@@ -5071,20 +5074,26 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
               )}
               <button
   style={{
-    background: isModified ? "#ccc" : "#08CB00",
+    background: (isModified || !timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? "#ccc" : "#08CB00",
     color: "#fff",
     border: "none",
     borderRadius: 8,
     padding: "9px 36px",
     fontWeight: 500,
     fontSize: 16,
-    cursor: isModified ? "not-allowed" : "pointer",
-    opacity: isModified ? 0.6 : 1,
+    cursor: (isModified || !timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? "not-allowed" : "pointer",
+    opacity: (isModified || !timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? 0.6 : 1,
     transition: "all 0.2s ease"
   }}
   onClick={handlePublish}
-  disabled={isModified}
-  title={isModified ? "Please save your changes before publishing" : "Publish the current timetable"}
+  disabled={isModified || !timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0}
+  title={
+    isModified 
+      ? "Please save your changes before publishing" 
+      : (!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0)
+        ? "Generate a timetable first to enable publishing"
+        : "Publish the current timetable"
+  }
 >
   Publish
 </button>
