@@ -32,7 +32,7 @@ const app = express();
 // CORS Configuration - MUST BE FIRST
 // ============================================
 const corsOptions = {
-    origin: 'http://localhost:5173', // Your frontend URL
+    origin: 'https://atss-frontend.onrender.com', // Your frontend URL
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: [
@@ -74,7 +74,7 @@ app.use('/students', studentRoutes);
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: "https://atss-frontend.onrender.com",
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -100,5 +100,5 @@ export { io };
 
 server.listen(PORT, () => {
   console.log(`Server started on port ${PORT}`);
-  console.log(`CORS enabled for: http://localhost:5173`);
+  console.log(`CORS enabled for: https://atss-frontend.onrender.com`);
 });

@@ -108,7 +108,7 @@ export const forgotPassword = async (email) => {
     }
 
     // Create reset URL
-    const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
+    const resetUrl = `https://atss-frontend.onrender.com/reset-password/${resetToken}`;
     
     // 🔥 CUSTOMIZE EMAIL CONTENT based on whether it's first-time setup
     const emailSubject = isFirstTimeSetup ? 'Set Your Password - Welcome!' : 'Password Reset Request';
