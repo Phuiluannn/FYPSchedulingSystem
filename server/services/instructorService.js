@@ -13,6 +13,18 @@ export const getInstructorById = async (id) => {
 
 // Create a new instructor
 export const createInstructor = async (data) => {
+  // 🔥 CHECK 1: Check if instructor already exists
+  const existingInstructor = await InstructorModel.findOne({ email: data.email });
+  if (existingInstructor) {
+    throw new Error('This email is already registered as an instructor.');
+  }
+  
+  // 🔥 CHECK 2: Check if user account already exists with this email
+  const existingUser = await UserModel.findOne({ email: data.email });
+  if (existingUser) {
+    throw new Error('This email is already registered in the system.');
+  }
+  
   const instructor = new InstructorModel(data);
   const savedInstructor = await instructor.save();
   
@@ -37,6 +49,27 @@ export const updateInstructor = async (id, data) => {
   const oldInstructor = await InstructorModel.findById(id);
   if (!oldInstructor) {
     throw new Error('Instructor not found');
+  }
+  
+  // 🔥 If email is being changed, check if new email already exists
+  if (oldInstructor.email !== data.email) {
+    // Check in Instructor collection
+    const existingInstructor = await InstructorModel.findOne({ 
+      email: data.email,
+      _id: { $ne: id } // Exclude current instructor
+    });
+    if (existingInstructor) {
+      throw new Error('This email is already registered as an instructor.');
+    }
+    
+    // Check in User collection
+    const existingUser = await UserModel.findOne({ 
+      email: data.email,
+      email: { $ne: oldInstructor.email } // Exclude current user's email
+    });
+    if (existingUser) {
+      throw new Error('This email is already registered in the system.');
+    }
   }
   
   const updatedInstructor = await InstructorModel.findByIdAndUpdate(id, data, { new: true });

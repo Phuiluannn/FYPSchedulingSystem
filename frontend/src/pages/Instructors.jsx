@@ -152,13 +152,18 @@ function Instructors() {
       setError(null);
     } catch (error) {
       console.error("Error saving instructor:", error);
-      // Handle duplicate email error
+      // 🔥 IMPROVED ERROR HANDLING - Handle both duplicate errors and explicit error messages
       if (
         error.response?.data?.message?.includes("duplicate key error") ||
         error.response?.data?.message?.includes("E11000") ||
         error.response?.data?.error?.includes("duplicate key error")
       ) {
         setError("This email is already registered.");
+      } else if (
+        error.response?.data?.message?.includes("already registered")
+      ) {
+        // 🔥 Handle explicit error messages from backend validation
+        setError(error.response.data.message);
       } else {
         setError(error.response?.data?.message || 'Failed to save instructor.');
       }
@@ -225,94 +230,77 @@ function Instructors() {
     <ProtectedRoute>
       <SideBar>
         <div
-          style={{
-            maxWidth: 1380,
-            margin: "0 auto 0 auto",
-            padding: "0 10px 0px 5px"
-          }}
+          className="container mt-4"
+          style={{ maxWidth: "1400px", margin: "0 auto" }}
         >
-          <h2 className="fw-bold mb-4">Instructors</h2>
-          {/* {error && (
-            <div className="alert alert-danger mt-3" role="alert">
-              {error}
-            </div>
-          )} */}
-          <div className="d-flex align-items-center mb-3">
-          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-                      <BiSearch 
-                                style={{ 
-                                  position: "absolute", 
-                                  left: 10, 
-                                  fontSize: 18, 
-                                  color: "#666", 
-                                  zIndex: 1 
-                                }} 
-                      />
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Search by name or email..."
-              style={{
-                width: 240,
-                padding: "8px 35px 8px 35px",
-                borderRadius: 8,
-                border: "1px solid #ddd",
-                fontSize: 14
-              }}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            </div>
-            <div className="ms-auto">
-              <button
-                className="btn d-flex align-items-start"
-                style={{
-                  backgroundColor: "#015551",
-                  color: "#fff",
-                  fontWeight: 500,
-                borderRadius: 8,
-                minWidth: 130,
-                display: "flex",           // For centering content
-                justifyContent: "center",  // Center horizontally
-                alignItems: "center",      // Center vertically
-                gap: 6,                    // Space between "+" and text
-                padding: "7px 12px",       // Reduce padding to decrease height (originally larger due to btn class)
-                fontSize: 16, }}
-                onClick={() => openModal()}
-              >
-                <span className="me-2">+</span> Add Instructor
-              </button>
-            </div>
+          <div
+            className="d-flex justify-content-between align-items-center mb-3"
+            style={{ paddingLeft: "20px", paddingRight: "20px" }}
+          >
+            <h2 style={{ fontWeight: "bold", fontSize: "2rem" }}>
+              Instructors
+            </h2>
+            <button
+              type="button"
+              className="btn btn-dark"
+              onClick={() => openModal()}
+              style={{ borderRadius: "10px" }}
+            >
+              <span style={{ fontWeight: "bold", fontSize: "1rem" }}>
+                + Add Instructor
+              </span>
+            </button>
           </div>
 
-          <div
-            className="bg-white rounded-3 shadow-sm mt-3 p-4"
-            // style={{ height: "450px", display: "flex", flexDirection: "column" }}
-          >
-            <h5 className="fw-bold mb-3">Instructor List</h5>
+          {error && !showModal && (
             <div
-              className="table-responsive"
-              // style={{ flex: 1, overflowY: "auto" }}
+              className="alert alert-danger mt-3"
+              role="alert"
+              style={{ marginLeft: "20px", marginRight: "20px" }}
             >
-              <table
-                className="table align-middle text-center"
-                style={{ minWidth: "800px", borderCollapse: "separate", borderSpacing: "0 12px" }}
-              >
-                <thead
-                  style={{ position: "sticky", top: 0, backgroundColor: "#fff", zIndex: 1 }}
-                >
+              {error}
+            </div>
+          )}
+
+          <div className="card mb-4" style={{ borderRadius: "15px" }}>
+            <div className="card-body">
+              <div className="position-relative" style={{ marginBottom: 10 }}>
+                <BiSearch
+                  style={{
+                    position: "absolute",
+                    left: "10px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: "1.2rem",
+                    color: "#6c757d",
+                  }}
+                />
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Search by name or email"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{ paddingLeft: "35px", borderRadius: "10px" }}
+                />
+              </div>
+
+              <table className="table table-hover">
+                <thead>
                   <tr>
                     <th>Name</th>
                     <th>Email</th>
-                    <th style={{ position: "relative", textAlign: "center" }} ref={departmentRef}>
-  Department
-  <button
-    className="btn btn-sm btn-link p-0"
-    onClick={() => setShowDepartmentDropdown((prev) => !prev)}
-    style={{ marginLeft: "2px", fontSize: "12px" }}
-  >
-    <CIcon icon={cilFilter} />
-  </button>
+                    <th style={{ position: "relative" }} ref={departmentRef}>
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
+    Department
+    <button
+      className="btn btn-sm btn-link p-0"
+      onClick={() => setShowDepartmentDropdown((prev) => !prev)}
+      style={{ fontSize: "14px" }}
+    >
+      <CIcon icon={cilFilter} />
+    </button>
+  </div>
   {showDepartmentDropdown && (
     <div
       className="dropdown-menu show"
@@ -325,7 +313,7 @@ function Instructors() {
         overflowY: "auto", 
         padding: "5px",
         zIndex: 1050,
-        minWidth: "200px"
+        minWidth: "250px"
       }}
     >
       <div className="form-check d-flex align-items-center mb-1">
