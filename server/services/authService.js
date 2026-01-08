@@ -1,6 +1,6 @@
 import UserModel from '../models/User.js';
 import FeedbackModel from '../models/Feedback.js';
-import bcrypt from 'bcrypt';
+import bcrypt from "bcryptjs";
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';  // 🔥 Added for generating random placeholder password
 

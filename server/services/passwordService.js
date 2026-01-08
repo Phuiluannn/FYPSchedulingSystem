@@ -1,6 +1,6 @@
 import UserModel from '../models/User.js';
 import PasswordResetModel from '../models/PasswordReset.js';
-import bcrypt from 'bcrypt';
+import bcrypt from "bcryptjs";
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
