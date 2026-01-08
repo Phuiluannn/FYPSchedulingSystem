@@ -4479,6 +4479,21 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 )}
 </div>
             <div className="table-responsive" style={{ flex: 1, overflowY: "auto"}}>
+              {(!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? (
+                <div style={{ 
+                  textAlign: 'center', 
+                  padding: '60px 20px', 
+                  color: '#666',
+                  fontSize: '16px',
+                  background: '#f9f9f9',
+                  borderRadius: '8px',
+                  border: '1px dashed #ddd',
+                  margin: '20px 0'
+                }}>
+                  <p style={{ margin: 0, fontSize: '18px', fontWeight: 500 }}>No timetable data available</p>
+                  <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>Click "Generate" to create a timetable for this day</p>
+                </div>
+              ) : (
               <DragDropContext onDragEnd={onDragEnd}>
                 <table ref={tableRef} style={{minWidth: "800px", borderCollapse: "collapse" }}>
                   <thead>
@@ -4864,6 +4879,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 </tbody>
                 </table>
               </DragDropContext>
+              )}
             </div>
             {showDaySelector && (
               <div 
