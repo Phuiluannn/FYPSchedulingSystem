@@ -22,7 +22,7 @@ function ForgotPassword() {
         axios.post('https://atss-backend.onrender.com/forgot-password', { email })
             .then(res => {
                 if(res.data.Status === "Success") {
-                    alert('Password reset link has been sent to your email. Please check your inbox.');
+                    alert('Password reset link has been sent to your email. Please check your inbox or spam folder.');
                     navigate('/login');
                 }
             })
