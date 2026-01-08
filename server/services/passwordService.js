@@ -1,116 +1,13 @@
-import UserModel from '../models/User.js';
-import PasswordResetModel from '../models/PasswordReset.js';
-import bcrypt from "bcryptjs";
-import crypto from 'crypto';
-import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
+import sgMail from '@sendgrid/mail';
 
-// Load environment variables
-dotenv.config();
-
-// Debug: Log environment variables (remove in production)
-console.log('=== EMAIL CONFIGURATION DEBUG ===');
-console.log('EMAIL_USER:', process.env.EMAIL_USER || '❌ NOT SET');
-console.log('EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? '✅ SET (length: ' + process.env.EMAIL_PASSWORD.length + ')' : '❌ NOT SET');
-console.log('================================');
-
-const createTransporter = () => {
-    // Check if email credentials are configured
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-        console.error('❌ EMAIL_USER or EMAIL_PASSWORD not set in .env file');
-        console.error('Current EMAIL_USER:', process.env.EMAIL_USER);
-        console.error('Current EMAIL_PASSWORD exists:', !!process.env.EMAIL_PASSWORD);
-        return null;
+// Replace createTransporter and email sending code
+const sendPasswordResetEmail = async (email, resetUrl, user, isFirstTimeSetup) => {
+    if (!process.env.SENDGRID_API_KEY) {
+        throw new Error("SENDGRID_API_KEY not set in .env file");
     }
 
-    // Trim any whitespace from credentials
-    const emailUser = process.env.EMAIL_USER.trim();
-    const emailPassword = process.env.EMAIL_PASSWORD.trim();
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-    console.log('📧 Creating transporter with user:', emailUser);
-
-    try {
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 587,
-            secure: false,
-            auth: {
-                user: emailUser,
-                pass: emailPassword
-            },
-            tls: {
-                rejectUnauthorized: false
-            }
-        });
-
-        return transporter;
-    } catch (error) {
-        console.error('❌ Error creating email transporter:', error);
-        return null;
-    }
-};
-
-export const forgotPassword = async (email) => {
-    console.log('🔍 Forgot password request for:', email);
-
-    // Find user by email
-    const user = await UserModel.findOne({ email });
-    
-    if (!user) {
-        console.log('❌ User not found:', email);
-        throw new Error("User with this email does not exist.");
-    }
-
-    // 🔥 SPECIAL HANDLING FOR INSTRUCTORS - Check if setting password for first time
-    const isFirstTimeSetup = user.role === 'instructor' && (!user.password || user.password === '');
-    if (isFirstTimeSetup) {
-        console.log('ℹ️ Instructor setting password for first time:', user.name);
-    } else {
-        console.log('✅ User found:', user.name);
-    }
-
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    console.log('🔑 Generated reset token');
-    
-    // Hash the token before storing
-    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    
-    // Save token to database
-    try {
-        await PasswordResetModel.create({
-            userId: user._id,
-            token: hashedToken
-        });
-        console.log('✅ Token saved to database');
-    } catch (error) {
-        console.error('❌ Error saving token to database:', error);
-        throw new Error("Database error. Please try again.");
-    }
-
-    // Create transporter
-    const transporter = createTransporter();
-    
-    if (!transporter) {
-        // Clean up the token if email is not configured
-        await PasswordResetModel.deleteOne({ token: hashedToken });
-        throw new Error("Email service is not configured. Please check EMAIL_USER and EMAIL_PASSWORD in .env file.");
-    }
-
-    // Verify transporter connection before sending
-    try {
-        await transporter.verify();
-        console.log('✅ Email transporter verified');
-    } catch (error) {
-        await PasswordResetModel.deleteOne({ token: hashedToken });
-        console.error('❌ Transporter verification failed:', error);
-        throw new Error("Email authentication failed. Please check your email credentials.");
-    }
-
-    // Create reset URL
-    const resetUrl = `https://atss-frontend.onrender.com/reset-password/${resetToken}`;
-    
-    // 🔥 CUSTOMIZE EMAIL CONTENT based on whether it's first-time setup
     const emailSubject = isFirstTimeSetup ? 'Set Your Password - Welcome!' : 'Password Reset Request';
     const emailTitle = isFirstTimeSetup ? 'Welcome! Set Your Password' : 'Password Reset Request';
     const emailMessage = isFirstTimeSetup 
@@ -119,11 +16,10 @@ export const forgotPassword = async (email) => {
         : `<p>Hello ${user.name},</p>
            <p>You requested to reset your password. Click the button below to reset it:</p>`;
     const buttonText = isFirstTimeSetup ? 'Set Password' : 'Reset Password';
-    
-    // Email content
-    const mailOptions = {
-        from: process.env.EMAIL_USER,
+
+    const msg = {
         to: email,
+        from: process.env.SENDGRID_VERIFIED_SENDER, // Must be verified in SendGrid
         subject: emailSubject,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -150,86 +46,49 @@ export const forgotPassword = async (email) => {
         `
     };
 
-    // Send email with detailed error logging
     try {
-        console.log('📨 Attempting to send email to:', email);
-        const info = await transporter.sendMail(mailOptions);
-        console.log('✅ Email sent successfully:', info.messageId);
+        await sgMail.send(msg);
+        console.log('✅ Email sent via SendGrid');
         return { message: isFirstTimeSetup ? "Password setup link sent to email" : "Password reset link sent to email" };
     } catch (error) {
-        // If email fails, delete the token
-        await PasswordResetModel.deleteOne({ token: hashedToken });
-        console.error('❌ Email sending failed:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
-        
-        // Provide more specific error messages
-        if (error.code === 'EAUTH') {
-            throw new Error("Email authentication failed. Please check your email credentials.");
-        } else if (error.code === 'ESOCKET') {
-            throw new Error("Network error. Please check your internet connection.");
-        } else if (error.code === 'ECONNECTION') {
-            throw new Error("Could not connect to email server. Please try again later.");
-        } else {
-            throw new Error(`Failed to send email: ${error.message}`);
-        }
+        console.error('❌ SendGrid error:', error.response?.body || error);
+        throw new Error(`Failed to send email: ${error.message}`);
     }
 };
 
-export const resetPassword = async (token, newPassword) => {
-    console.log('🔄 Reset password request received');
+export const forgotPassword = async (email) => {
+    console.log('🔍 Forgot password request for:', email);
 
-    // Hash the token to compare with stored hash
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    
-    // Find the reset token in database
-    const resetRecord = await PasswordResetModel.findOne({ token: hashedToken });
-    
-    if (!resetRecord) {
-        console.log('❌ Invalid or expired token');
-        throw new Error("Invalid or expired reset token.");
-    }
-
-    console.log('✅ Valid token found');
-
-    // Find user
-    const user = await UserModel.findById(resetRecord.userId);
+    const user = await UserModel.findOne({ email });
     
     if (!user) {
-        console.log('❌ User not found');
-        throw new Error("User not found.");
+        console.log('❌ User not found:', email);
+        throw new Error("User with this email does not exist.");
     }
 
-    console.log('✅ User found:', user.email);
-
-    // 🔥 CHECK IF THIS IS FIRST-TIME PASSWORD SETUP FOR INSTRUCTOR
     const isFirstTimeSetup = user.role === 'instructor' && (!user.password || user.password === '');
-    if (isFirstTimeSetup) {
-        console.log('ℹ️ First-time password setup for instructor:', user.email);
+    
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    
+    try {
+        await PasswordResetModel.create({
+            userId: user._id,
+            token: hashedToken
+        });
+        console.log('✅ Token saved to database');
+    } catch (error) {
+        console.error('❌ Error saving token:', error);
+        throw new Error("Database error. Please try again.");
     }
 
-    // Hash new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const resetUrl = `https://atss-frontend.onrender.com/reset-password/${resetToken}`;
     
-    // Update user password
-    user.password = hashedPassword;
-    
-    // 🔥 UPDATE STATUS TO VERIFIED after setting password (no longer need to wait for login)
-    if (isFirstTimeSetup || user.status === 'unverified') {
-        user.status = 'verified';
-        console.log('ℹ️ Status updated to verified after password setup');
+    try {
+        return await sendPasswordResetEmail(email, resetUrl, user, isFirstTimeSetup);
+    } catch (error) {
+        // Clean up token if email fails
+        await PasswordResetModel.deleteOne({ token: hashedToken });
+        throw error;
     }
-    
-    await user.save();
-
-    console.log('✅ Password updated successfully');
-
-    // Delete the used token
-    await PasswordResetModel.deleteOne({ _id: resetRecord._id });
-
-    console.log('✅ Token deleted');
-
-    return { 
-        message: isFirstTimeSetup ? "Password set successfully! You can now log in." : "Password reset successful" 
-    };
 };
