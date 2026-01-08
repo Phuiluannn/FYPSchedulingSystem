@@ -1,3 +1,8 @@
+// ADD THESE MISSING IMPORTS AT THE TOP
+import UserModel from '../models/User.js';
+import PasswordResetModel from '../models/PasswordReset.js';
+import bcrypt from "bcryptjs";
+import crypto from 'crypto';
 import sgMail from '@sendgrid/mail';
 
 // Replace createTransporter and email sending code
@@ -91,4 +96,62 @@ export const forgotPassword = async (email) => {
         await PasswordResetModel.deleteOne({ token: hashedToken });
         throw error;
     }
+};
+
+export const resetPassword = async (token, newPassword) => {
+    console.log('🔄 Reset password request received');
+
+    // Hash the token to compare with stored hash
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    
+    // Find the reset token in database
+    const resetRecord = await PasswordResetModel.findOne({ token: hashedToken });
+    
+    if (!resetRecord) {
+        console.log('❌ Invalid or expired token');
+        throw new Error("Invalid or expired reset token.");
+    }
+
+    console.log('✅ Valid token found');
+
+    // Find user
+    const user = await UserModel.findById(resetRecord.userId);
+    
+    if (!user) {
+        console.log('❌ User not found');
+        throw new Error("User not found.");
+    }
+
+    console.log('✅ User found:', user.email);
+
+    // Check if this is first-time password setup for instructor
+    const isFirstTimeSetup = user.role === 'instructor' && (!user.password || user.password === '');
+    if (isFirstTimeSetup) {
+        console.log('ℹ️ First-time password setup for instructor:', user.email);
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    // Update user password
+    user.password = hashedPassword;
+    
+    // Update status to verified after setting password
+    if (isFirstTimeSetup || user.status === 'unverified') {
+        user.status = 'verified';
+        console.log('ℹ️ Status updated to verified after password setup');
+    }
+    
+    await user.save();
+
+    console.log('✅ Password updated successfully');
+
+    // Delete the used token
+    await PasswordResetModel.deleteOne({ _id: resetRecord._id });
+
+    console.log('✅ Token deleted');
+
+    return { 
+        message: isFirstTimeSetup ? "Password set successfully! You can now log in." : "Password reset successful" 
+    };
 };
