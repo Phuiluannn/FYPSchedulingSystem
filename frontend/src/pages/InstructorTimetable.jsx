@@ -71,7 +71,7 @@ function InstructorTimetable() {
         // Get instructor details from instructor collection
         console.log("📡 Fetching instructors list...");
         const token = localStorage.getItem('token');
-        const instructorsResponse = await axios.get("http://localhost:3001/instructors", {
+        const instructorsResponse = await axios.get("https://atss-backend.onrender.com/instructors", {
           headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -137,7 +137,7 @@ function InstructorTimetable() {
     const fetchRooms = async () => {
       try {
         const token = localStorage.getItem('token');
-        const response = await axios.get("http://localhost:3001/rooms", {
+        const response = await axios.get("https://atss-backend.onrender.com/rooms", {
           headers: { Authorization: `Bearer ${token}` }
         });
         setRooms(response.data);
@@ -159,7 +159,7 @@ function InstructorTimetable() {
         const token = localStorage.getItem('token');
         // Fetch published timetables only
         const response = await axios.get(
-          `http://localhost:3001/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}&publishedOnly=true`,
+          `https://atss-backend.onrender.com/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}&publishedOnly=true`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         

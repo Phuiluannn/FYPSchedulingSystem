@@ -89,7 +89,7 @@ const [selectedCourseForStudents, setSelectedCourseForStudents] = useState(null)
           setError("Please log in to view instructors.");
           return;
         }
-        const response = await axios.get("http://localhost:3001/instructors", {
+        const response = await axios.get("https://atss-backend.onrender.com/instructors", {
           headers: { Authorization: `Bearer ${token}` },
         });
         const activeInstructors = response.data.filter(
@@ -110,7 +110,7 @@ const [selectedCourseForStudents, setSelectedCourseForStudents] = useState(null)
       try {
         const token = localStorage.getItem("token");
         if (!token) return;
-        const response = await axios.get("http://localhost:3001/students", {
+        const response = await axios.get("https://atss-backend.onrender.com/students", {
           headers: { Authorization: `Bearer ${token}` },
         });
         setStudents(response.data || []);
@@ -129,7 +129,7 @@ const [selectedCourseForStudents, setSelectedCourseForStudents] = useState(null)
         setError("Please log in to view courses.");
         return;
       }
-      const response = await axios.get("http://localhost:3001/courses", {
+      const response = await axios.get("https://atss-backend.onrender.com/courses", {
         headers: { Authorization: `Bearer ${token}` },
       });
       setCourses(response.data);
@@ -255,7 +255,7 @@ const handleChange = async (e) => {
     // When editing, fetch fresh data including department groupings
     try {
       const token = localStorage.getItem("token");
-      const response = await axios.get(`http://localhost:3001/courses/${course._id}`, {
+      const response = await axios.get(`https://atss-backend.onrender.com/courses/${course._id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       
@@ -358,7 +358,7 @@ const handleChange = async (e) => {
         // Remove _id from the payload
         const { _id, ...formWithoutId } = form;
         const response = await axios.put(
-          `http://localhost:3001/courses/${editCourseId}`,
+          `https://atss-backend.onrender.com/courses/${editCourseId}`,
           formWithoutId,
           {
             headers: { Authorization: `Bearer ${token}` },
@@ -371,7 +371,7 @@ const handleChange = async (e) => {
         );
       } else {
         // POST for new course
-        const response = await axios.post("http://localhost:3001/courses", form, {
+        const response = await axios.post("https://atss-backend.onrender.com/courses", form, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setCourses([...courses, response.data]);
@@ -400,7 +400,7 @@ const handleChange = async (e) => {
         setError("Please log in to delete courses.");
         return;
       }
-      await axios.delete(`http://localhost:3001/courses/${courseId}`, {
+      await axios.delete(`https://atss-backend.onrender.com/courses/${courseId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setCourses(courses.filter((c) => c._id !== courseId));
@@ -457,7 +457,7 @@ const handleChange = async (e) => {
     try {
       const token = localStorage.getItem("token");
       await axios.post(
-        "http://localhost:3001/courses/copy",
+        "https://atss-backend.onrender.com/courses/copy",
         {
           fromYear: copyFromYear,
           fromSemester: copyFromSemester,
@@ -514,7 +514,7 @@ const handleChange = async (e) => {
     // Fetch student data
     const studentPromises = currentForm.year.map(yearLevel =>
       axios.get(
-        `http://localhost:3001/students?academicYear=${currentForm.academicYear}&semester=${currentForm.semester}&year=${yearLevel}`,
+        `https://atss-backend.onrender.com/students?academicYear=${currentForm.academicYear}&semester=${currentForm.semester}&year=${yearLevel}`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
     );

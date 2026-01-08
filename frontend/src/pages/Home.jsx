@@ -264,7 +264,7 @@ const checkLectureTutorialClash = (timetable, movedEvent, targetDay, targetTimeI
     const token = localStorage.getItem('token');
     
     await axios.post(
-      "http://localhost:3001/analytics/record-conflict",
+      "https://atss-backend.onrender.com/analytics/record-conflict",
       conflictData, // Use original conflictData without modification
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -277,7 +277,7 @@ const checkLectureTutorialClash = (timetable, movedEvent, targetDay, targetTimeI
 const handlePublish = async () => {
   try {
     const token = localStorage.getItem("token");
-    await axios.post("http://localhost:3001/home/publish-timetable", 
+    await axios.post("https://atss-backend.onrender.com/home/publish-timetable", 
       { year: selectedYear, semester: selectedSemester },
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -285,7 +285,7 @@ const handlePublish = async () => {
     
     // Re-fetch the timetable to show updated instructor assignments
     const response = await axios.get(
-      `http://localhost:3001/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}`,
+      `https://atss-backend.onrender.com/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const schedules = response.data.schedules;
@@ -1080,7 +1080,7 @@ details.departmentTutorialClash.forEach(conflict => {
       // Record each conflict
       const recordPromises = conflictsToRecord.map(conflictData => 
         axios.post(
-          "http://localhost:3001/analytics/record-conflict",
+          "https://atss-backend.onrender.com/analytics/record-conflict",
           conflictData,
           { headers: { Authorization: `Bearer ${token}` } }
         ).catch(error => {
@@ -1118,7 +1118,7 @@ useEffect(() => {
     const fetchInstructors = async () => {
       try {
         const token = localStorage.getItem('token');
-        const response = await axios.get("http://localhost:3001/instructors", {
+        const response = await axios.get("https://atss-backend.onrender.com/instructors", {
           headers: { Authorization: `Bearer ${token}` }
         });
         setInstructors(response.data);
@@ -1133,7 +1133,7 @@ useEffect(() => {
     const fetchRooms = async () => {
       try {
         const token = localStorage.getItem('token');
-        const response = await axios.get("http://localhost:3001/rooms", {
+        const response = await axios.get("https://atss-backend.onrender.com/rooms", {
           headers: { Authorization: `Bearer ${token}` }
         });
         setRooms(response.data);
@@ -1152,7 +1152,7 @@ useEffect(() => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `http://localhost:3001/courses?year=${selectedYear}&semester=${selectedSemester}`,
+        `https://atss-backend.onrender.com/courses?year=${selectedYear}&semester=${selectedSemester}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setCourses(response.data);
@@ -1174,7 +1174,7 @@ useEffect(() => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `http://localhost:3001/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}`,
+        `https://atss-backend.onrender.com/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const schedules = response.data.schedules;
@@ -1397,7 +1397,7 @@ useEffect(() => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `http://localhost:3001/analytics/conflicts?year=${selectedYear}&semester=${selectedSemester}`,
+        `https://atss-backend.onrender.com/analytics/conflicts?year=${selectedYear}&semester=${selectedSemester}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -2941,7 +2941,7 @@ const handleGenerateTimetable = async () => {
   try {
     const token = localStorage.getItem('token');
     const response = await axios.post(
-      "http://localhost:3001/home/generate-timetable",
+      "https://atss-backend.onrender.com/home/generate-timetable",
       { year: selectedYear, semester: selectedSemester },
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -3007,7 +3007,7 @@ const handleGenerateTimetable = async () => {
     // CLEAR EXISTING FRONTEND CONFLICTS BEFORE RECORDING NEW ONES
     try {
       await axios.delete(
-        `http://localhost:3001/analytics/clear-frontend-conflicts`,
+        `https://atss-backend.onrender.com/analytics/clear-frontend-conflicts`,
         { 
           headers: { Authorization: `Bearer ${token}` },
           data: { year: selectedYear, semester: selectedSemester }
@@ -3220,7 +3220,7 @@ const fetchExistingActiveConflicts = async () => {
     
     // Fetch only active/pending conflicts, not resolved ones
     const response = await axios.get(
-      `http://localhost:3001/analytics/conflicts?year=${selectedYear}&semester=${selectedSemester}&status=active`,
+      `https://atss-backend.onrender.com/analytics/conflicts?year=${selectedYear}&semester=${selectedSemester}&status=active`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     
@@ -3613,7 +3613,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 
     // STEP 7: Save the timetable
     await axios.post(
-      "http://localhost:3001/home/save-timetable",
+      "https://atss-backend.onrender.com/home/save-timetable",
       { year: selectedYear, semester: selectedSemester, timetable: timetableArr },
       { headers: { Authorization: `Bearer ${token}` } }
     );

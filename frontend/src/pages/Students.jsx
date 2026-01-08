@@ -39,7 +39,7 @@ function Students() {
     const fetchStudents = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await axios.get("http://localhost:3001/students", {
+        const res = await axios.get("https://atss-backend.onrender.com/students", {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStudents(res.data || []);
@@ -125,12 +125,12 @@ function Students() {
         return;
       }
       if (editId) {
-        const res = await axios.put(`http://localhost:3001/students/${editId}`, payload, {
+        const res = await axios.put(`https://atss-backend.onrender.com/students/${editId}`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStudents(prev => prev.map(s => s._id === editId ? res.data : s));
       } else {
-        const res = await axios.post("http://localhost:3001/students", payload, {
+        const res = await axios.post("https://atss-backend.onrender.com/students", payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStudents(prev => [...prev, res.data]);
@@ -146,7 +146,7 @@ function Students() {
   const handleDelete = async (id) => {
     try {
       const token = localStorage.getItem("token");
-      await axios.delete(`http://localhost:3001/students/${id}`, {
+      await axios.delete(`https://atss-backend.onrender.com/students/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudents(prev => prev.filter(s => s._id !== id));

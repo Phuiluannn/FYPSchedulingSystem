@@ -15,7 +15,7 @@ const statusMap = {
   Resolved: "Resolved",
 };
 
-const socket = io('http://localhost:3001', { transports: ['websocket'] });
+const socket = io('https://atss-backend.onrender.com', { transports: ['websocket'] });
 
 function AdminFeedback() {
   const location = useLocation();
@@ -78,7 +78,7 @@ function AdminFeedback() {
     const fetchFeedback = async () => {
       try {
         const token = localStorage.getItem("token");
-        const response = await axios.get("http://localhost:3001/feedback", {
+        const response = await axios.get("https://atss-backend.onrender.com/feedback", {
           headers: { Authorization: `Bearer ${token}` },
         });
         setFeedbackList(response.data);
@@ -231,7 +231,7 @@ function AdminFeedback() {
           ? "In Progress"
           : modalForm.status;
       const response = await axios.put(
-        `http://localhost:3001/feedback/${selectedFeedback._id}`,
+        `https://atss-backend.onrender.com/feedback/${selectedFeedback._id}`,
         {
           status: newStatus,
           priority: modalForm.priority,
@@ -271,7 +271,7 @@ function AdminFeedback() {
           ? "In Progress"
           : modalForm.status;
       const response = await axios.put(
-        `http://localhost:3001/feedback/${selectedFeedback._id}`,
+        `https://atss-backend.onrender.com/feedback/${selectedFeedback._id}`,
         {
           status: newStatus,
           priority: modalForm.priority,

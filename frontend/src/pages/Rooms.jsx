@@ -37,7 +37,7 @@ function Rooms() {
           setError('Please log in to view rooms.');
           return;
         }
-        const response = await axios.get("http://localhost:3001/rooms", {
+        const response = await axios.get("https://atss-backend.onrender.com/rooms", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -47,7 +47,7 @@ function Rooms() {
       } catch (error) {
         console.error("Error fetching rooms:", error);
         if (error.code === 'ECONNREFUSED') {
-          setError('Cannot connect to the server. Please ensure the backend is running on http://localhost:3001.');
+          setError('Cannot connect to the server. Please ensure the backend is running on https://atss-backend.onrender.com.');
         } else {
           setError(error.response?.data?.message || 'Failed to fetch rooms.');
         }
@@ -120,7 +120,7 @@ function Rooms() {
       }
       if (editIndex !== null) {
         const response = await axios.put(
-          `http://localhost:3001/rooms/${rooms[editIndex]._id}`,
+          `https://atss-backend.onrender.com/rooms/${rooms[editIndex]._id}`,
           form,
           {
             headers: {
@@ -132,7 +132,7 @@ function Rooms() {
         updated[editIndex] = response.data;
         setRooms(updated);
       } else {
-        const response = await axios.post("http://localhost:3001/rooms", form, {
+        const response = await axios.post("https://atss-backend.onrender.com/rooms", form, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -154,7 +154,7 @@ function Rooms() {
         setError('Please log in to delete rooms.');
         return;
       }
-      await axios.delete(`http://localhost:3001/rooms/${rooms[idx]._id}`, {
+      await axios.delete(`https://atss-backend.onrender.com/rooms/${rooms[idx]._id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },

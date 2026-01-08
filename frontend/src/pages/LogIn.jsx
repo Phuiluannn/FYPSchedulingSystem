@@ -50,7 +50,7 @@ function LogIn() {
             return;
         }
 
-        axios.post('http://localhost:3001/login', { email, password, role })
+        axios.post('https://atss-backend.onrender.com/login', { email, password, role })
             .then(result => {
                 console.log('Login response:', result.data);
                 showAlert(result.data.message, "success");
