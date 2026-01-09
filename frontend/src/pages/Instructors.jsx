@@ -481,6 +481,11 @@ function Instructors() {
                     ></button>
                   </div>
                   <div className="modal-body">
+                    {editIndex === null && (
+                      <div className="alert alert-info" role="alert">
+                        <strong>ℹ️ Note:</strong> Creating a new instructor will automatically generate an account for them in the system using their email address.
+                      </div>
+                    )}
                     {error && (
                       <div className="alert alert-danger mt-3" role="alert">
                         {error}
