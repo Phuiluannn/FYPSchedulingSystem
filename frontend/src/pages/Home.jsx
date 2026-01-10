@@ -4492,33 +4492,13 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 </div>
             <div className="table-responsive" style={{ flex: 1, overflowY: "auto"}}>
               {loading && (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '60px 20px', 
-                  color: '#015551',
-                  fontSize: '16px',
-                  background: '#f0f9f9',
-                  borderRadius: '8px',
-                  border: '1px solid #015551',
-                  margin: '20px 0'
-                }}>
-                  <p style={{ margin: 0, fontSize: '18px', fontWeight: 500 }}>Loading timetable...</p>
-                  <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>Please wait</p>
+                <div style={{ textAlign: "center", padding: "50px", fontSize: "16px", color: "#666" }}>
+                  Loading timetable...
                 </div>
               )}
               {generating && (
-                <div style={{ 
-                  textAlign: 'center', 
-                  padding: '60px 20px', 
-                  color: '#015551',
-                  fontSize: '16px',
-                  background: '#f0f9f9',
-                  borderRadius: '8px',
-                  border: '1px solid #015551',
-                  margin: '20px 0'
-                }}>
-                  <p style={{ margin: 0, fontSize: '18px', fontWeight: 500 }}>Generating timetable...</p>
-                  <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>This may take a few moments</p>
+                <div style={{ textAlign: "center", padding: "50px", fontSize: "16px", color: "#666" }}>
+                  Generating timetable...
                 </div>
               )}
               {!loading && !generating && (!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? (
