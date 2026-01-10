@@ -57,6 +57,7 @@ function Home() {
   const containerRef = useRef(null);
   const [selectedStudentYears, setSelectedStudentYears] = useState(["All"]);
   const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [conflictSummary, setConflictSummary] = useState({
   total: 0,
   roomCapacity: 0,
@@ -2938,6 +2939,7 @@ conflicts.push({
   };
 
 const handleGenerateTimetable = async () => {
+  setLoading(true);
   try {
     const token = localStorage.getItem('token');
     const response = await axios.post(
@@ -3035,12 +3037,14 @@ const handleGenerateTimetable = async () => {
     // Show appropriate success/warning message based on conflicts
     if (conflictsDetected || summary.total > 0) {
       const totalConflicts = summary.total;
+      setLoading(false);
       showAlert(
         `Timetable generated with ${totalSchedules} scheduled events.\n\n⚠️ ${totalConflicts} conflict${totalConflicts !== 1 ? 's' : ''} detected and recorded in the Analytics section. Please review the conflict reports for details.`,
         "warning",
         8000
       );
     } else {
+      setLoading(false);
       showAlert(
         `Timetable generated successfully with ${totalSchedules} scheduled events and no conflicts detected!`,
         "success"
@@ -3048,6 +3052,7 @@ const handleGenerateTimetable = async () => {
     }
     
   } catch (error) {
+    setLoading(false);
     showAlert("Failed to generate timetable.", "error");
     console.error(error);
   }
@@ -4482,7 +4487,22 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 )}
 </div>
             <div className="table-responsive" style={{ flex: 1, overflowY: "auto"}}>
-              {(!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? (
+              {loading && (
+                <div style={{ 
+                  textAlign: 'center', 
+                  padding: '60px 20px', 
+                  color: '#015551',
+                  fontSize: '16px',
+                  background: '#f0f9f9',
+                  borderRadius: '8px',
+                  border: '1px solid #015551',
+                  margin: '20px 0'
+                }}>
+                  <p style={{ margin: 0, fontSize: '18px', fontWeight: 500 }}>Generating timetable...</p>
+                  <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>This may take a few moments</p>
+                </div>
+              )}
+              {!loading && (!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0) ? (
                 <div style={{ 
                   textAlign: 'center', 
                   padding: '60px 20px', 
@@ -4496,7 +4516,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
                   <p style={{ margin: 0, fontSize: '18px', fontWeight: 500 }}>No timetable data available</p>
                   <p style={{ margin: '10px 0 0 0', fontSize: '14px' }}>Click "Generate" to create a timetable for this semester</p>
                 </div>
-              ) : (
+              ) : !loading ? (
               <DragDropContext onDragEnd={onDragEnd}>
                 <table ref={tableRef} style={{minWidth: "800px", borderCollapse: "collapse" }}>
                   <thead>
@@ -4882,7 +4902,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 </tbody>
                 </table>
               </DragDropContext>
-              )}
+              ) : null}
             </div>
             {showDaySelector && (
               <div 
