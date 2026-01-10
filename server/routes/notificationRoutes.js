@@ -7,5 +7,6 @@ const router = express.Router();
 router.get('/notifications', authenticateToken, notificationController.getUserNotifications);
 router.patch('/notifications/:notificationId/read', authenticateToken, notificationController.markAsRead);
 router.get('/notifications/unread-count', authenticateToken, notificationController.getUnreadCount);
+router.post('/notifications/mark-all-read', authenticateToken, notificationController.markAllAsRead);
 
 export default router;

@@ -341,6 +341,43 @@ const handleNotificationClick = async (notification) => {
     }
   };
 
+  const markAllAsRead = async () => {
+    try {
+      const { token, userId, role } = getUserCredentials();
+
+      if (!token || !userId || !role) {
+        console.log('⚠️ Missing credentials for mark all as read');
+        return;
+      }
+
+      console.log('🔄 Marking all notifications as read...');
+
+      const response = await axios.post(
+        'https://atss-backend.onrender.com/api/notifications/mark-all-read',
+        {},
+        {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'x-user-id': userId,
+            'x-user-role': role
+          }
+        }
+      );
+      
+      console.log('✅ Mark all as read response:', response.data);
+      
+      // Update local state - mark all notifications as read
+      setNotifications(prev => 
+        prev.map(n => ({ ...n, isRead: true }))
+      );
+      setUnreadCount(0);
+      
+      console.log('✅ All notifications marked as read');
+    } catch (error) {
+      console.error('❌ Error marking all notifications as read:', error);
+      console.error('Error details:', error.response?.data);
+    }
+  };
   const handleToggleClick = async () => {
     setIsOpen(!isOpen);
     if (!isOpen) {
@@ -504,11 +541,38 @@ const handleNotificationClick = async (notification) => {
                 <h6 className="mb-0 fw-bold text-white" style={{ fontSize: '16px' }}>
                   Notifications
                 </h6>
-                {unreadCount > 0 && (
-                  <span className="badge bg-white text-dark" style={{ fontSize: '12px' }}>
-                    {unreadCount} new
-                  </span>
-                )}
+                <div className="d-flex align-items-center gap-2">
+                  {unreadCount > 0 && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markAllAsRead();
+                        }}
+                        className="btn btn-sm text-white"
+                        style={{
+                          fontSize: '11px',
+                          padding: '4px 12px',
+                          backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                          border: '1px solid rgba(255, 255, 255, 0.3)',
+                          borderRadius: '6px',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.2)';
+                        }}
+                      >
+                        Mark all read
+                      </button>
+                      <span className="badge bg-white text-dark" style={{ fontSize: '12px' }}>
+                        {unreadCount} new
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
             

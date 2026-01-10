@@ -62,3 +62,24 @@ export const getUnreadCount = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+export const markAllAsRead = async (req, res) => {
+  try {
+    const userRole = req.user?.role || req.headers['x-user-role'];
+    const userId = req.user?.id || req.headers['x-user-id'];
+    const userCreatedAt = req.user?.createdAt;
+
+    if (!userRole || !userId) {
+      return res.status(400).json({ error: "User role and ID required" });
+    }
+
+    const result = await notificationService.markAllNotificationsAsRead(
+      userRole,
+      userId,
+      userCreatedAt
+    );
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error("Error in markAllAsRead:", error);
+    res.status(500).json({ error: error.message });
+  }
+};

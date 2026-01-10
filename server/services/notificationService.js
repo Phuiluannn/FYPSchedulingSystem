@@ -198,3 +198,52 @@ export const getUnreadNotificationCount = async (userRole, userId, userCreatedAt
     return 0;
   }
 };
+export const markAllNotificationsAsRead = async (userRole, userId, userCreatedAt = null) => {
+  try {
+    console.log(`Marking all notifications as read for user ${userId}, role ${userRole}`);
+    
+    // Determine the earliest date to fetch notifications from
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const minDate = userCreatedAt && new Date(userCreatedAt) > thirtyDaysAgo 
+      ? new Date(userCreatedAt) 
+      : thirtyDaysAgo;
+    
+    // Find all notifications for this user
+    const notifications = await Notification.find({
+      $or: [
+        { 
+          recipients: userRole,
+          type: { $ne: "feedback" }
+        },
+        { 
+          type: "feedback",
+          [`isRead.${userId}`]: { $exists: true }
+        },
+        {
+          type: "feedback_admin",
+          recipients: userRole
+        }
+      ],
+      createdAt: { $gte: minDate }
+    });
+    
+    console.log(`Found ${notifications.length} notifications to mark as read`);
+    
+    // Update each notification to mark as read for this user
+    const updatePromises = notifications.map(notification => 
+      Notification.findByIdAndUpdate(
+        notification._id,
+        { $set: { [`isRead.${userId}`]: true } },
+        { new: true }
+      )
+    );
+    
+    await Promise.all(updatePromises);
+    
+    console.log(`Successfully marked ${notifications.length} notifications as read for user ${userId}`);
+    return { success: true, count: notifications.length };
+  } catch (error) {
+    console.error("Error marking all notifications as read:", error);
+    throw error;
+  }
+};
