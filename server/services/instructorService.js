@@ -171,9 +171,32 @@ export const deleteInstructor = async (id) => {
   
   // 🔥 DELETE USER ACCOUNT associated with this instructor
   try {
-    const deletedUser = await UserModel.findOneAndDelete({ email: instructor.email });
-    if (deletedUser) {
-      console.log(`✅ Deleted user account for: ${instructor.email}`);
+    const userAccount = await UserModel.findOne({ email: instructor.email });
+    if (userAccount) {
+      // 🔥 MARK ALL FEEDBACK from this user as "deleted user"
+      try {
+        const FeedbackModel = (await import('../models/Feedback.js')).default;
+        const result = await FeedbackModel.updateMany(
+          { user: userAccount._id },
+          { 
+            $set: { 
+              isUserDeleted: true,
+              deletedUserName: userAccount.name,
+              deletedUserEmail: userAccount.email,
+              deletedUserRole: userAccount.role
+            } 
+          }
+        );
+        console.log(`✅ Marked ${result.modifiedCount} feedback(s) as from deleted user: ${instructor.name}`);
+      } catch (error) {
+        console.error('❌ Error marking feedback as deleted user:', error);
+      }
+      
+      // Now delete the user account
+      const deletedUser = await UserModel.findOneAndDelete({ email: instructor.email });
+      if (deletedUser) {
+        console.log(`✅ Deleted user account for: ${instructor.email}`);
+      }
     }
   } catch (error) {
     console.error('❌ Error deleting user account:', error);

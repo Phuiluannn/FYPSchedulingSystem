@@ -766,7 +766,15 @@ function AdminFeedback() {
                           {fb.title}
                         </div>
                         <div style={{ color: "#888", fontSize: 14, marginBottom: 8 }}>
-                          From {fb.user?.name || fb.user?.email || "unknown"} ({fb.user?.role ? fb.user.role : "user"})
+                          From {
+                            fb.isUserDeleted 
+                              ? `${fb.deletedUserName || "Unknown"} (Deleted User)` 
+                              : fb.user?.name || fb.user?.email || "unknown"
+                          } ({
+                            fb.isUserDeleted 
+                              ? fb.deletedUserRole || "user"
+                              : fb.user?.role ? fb.user.role : "user"
+                          })
                           {" - "}
                           {fb.submitted
                             ? new Date(fb.submitted).toLocaleString("en-GB", {
@@ -779,6 +787,22 @@ function AdminFeedback() {
                             })
                           : ""}
                         </div>
+                        {fb.isUserDeleted && (
+                          <div 
+                            style={{
+                              display: "inline-block",
+                              background: "#fef3c7",
+                              color: "#92400e",
+                              padding: "4px 10px",
+                              borderRadius: 6,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              marginBottom: 8
+                            }}
+                          >
+                            ⚠️ User Account Deleted
+                          </div>
+                        )}
                       </div>
                       <div className="d-flex align-items-center gap-2">
                         <span
@@ -900,15 +924,44 @@ function AdminFeedback() {
                         {selectedFeedback.title}
                       </div>
                       <div className="mb-4">{selectedFeedback.feedback}</div>
+                      
+                      {/* Deleted User Warning */}
+                      {selectedFeedback.isUserDeleted && (
+                        <div 
+                          className="alert alert-warning d-flex align-items-center mb-3" 
+                          style={{ fontSize: 14 }}
+                        >
+                          <CIcon icon={cilWarning} size="lg" className="me-2" />
+                          <div>
+                            <strong>User Account Deleted</strong>
+                            <div style={{ fontSize: 13 }}>
+                              This feedback was submitted by a user whose account has been deleted from the system.
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
                       <div className="mb-3" style={{ fontSize: 15 }}>
                         <div>
-                          <span className="fw-bold">Submitted by:</span> {selectedFeedback.user?.name || "-"}
+                          <span className="fw-bold">Submitted by:</span> {
+                            selectedFeedback.isUserDeleted 
+                              ? `${selectedFeedback.deletedUserName || "-"} (Deleted User)`
+                              : selectedFeedback.user?.name || "-"
+                          }
                         </div>
                         <div>
-                          <span className="fw-bold">Email:</span> {selectedFeedback.user?.email || "-"}
+                          <span className="fw-bold">Email:</span> {
+                            selectedFeedback.isUserDeleted 
+                              ? `${selectedFeedback.deletedUserEmail || "-"} (Deleted)`
+                              : selectedFeedback.user?.email || "-"
+                          }
                         </div>
                         <div>
-                          <span className="fw-bold">Role:</span> {selectedFeedback.user?.role || "-"}
+                          <span className="fw-bold">Role:</span> {
+                            selectedFeedback.isUserDeleted 
+                              ? `${selectedFeedback.deletedUserRole || "-"}`
+                              : selectedFeedback.user?.role || "-"
+                          }
                         </div>
                         <div>
                           <span className="fw-bold">Date:</span>{" "}

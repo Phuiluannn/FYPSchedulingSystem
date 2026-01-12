@@ -15,6 +15,12 @@ const FeedbackSchema = new mongoose.Schema({
   resolved: { type: Date },
   response: { type: String, default: "" },
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  
+  // Fields to track if the user who submitted the feedback has been deleted
+  isUserDeleted: { type: Boolean, default: false },
+  deletedUserName: { type: String },
+  deletedUserEmail: { type: String },
+  deletedUserRole: { type: String }
 });
 
 export default mongoose.model("Feedback", FeedbackSchema);
