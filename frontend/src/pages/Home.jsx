@@ -3295,15 +3295,17 @@ const handleSaveTimetable = async () => {
             if (item.raw && !timetableArr.some(s => s._id === item.raw._id)) {
               // ✅ FIXED: Only assign instructor if manually selected
               let instructorsToSave = [];
-              let instructorIdToSave = null;
+let instructorIdToSave = null;
 
-              if (item.selectedInstructor && item.selectedInstructor.trim() !== "") {
-                instructorsToSave = [item.selectedInstructor];
-                instructorIdToSave = item.selectedInstructorId || null;
-              }
-              // Do NOT auto-assign - keep empty if not manually selected
+if (item.selectedInstructor && item.selectedInstructor.trim() !== "") {
+  instructorsToSave = [item.selectedInstructor];
+  instructorIdToSave = item.selectedInstructorId || null;
+} else {
+  // Keep empty if not selected - don't auto-assign
+  instructorsToSave = [];
+}
 
-              timetableArr.push({
+timetableArr.push({
   ...item.raw,
   RoomID: roomId,
   Day: day,
@@ -3312,8 +3314,9 @@ const handleSaveTimetable = async () => {
   Duration: item.raw.Duration || 1,
   Instructors: instructorsToSave,
   InstructorID: instructorIdToSave && instructorIdToSave.length === 24 ? instructorIdToSave : null,
-  OriginalInstructors: item.raw.OriginalInstructors || [],
-  // ✅ CRITICAL: Ensure these fields are preserved
+  selectedInstructor: item.selectedInstructor || "",  // ✅ ADD THIS
+  selectedInstructorId: item.selectedInstructorId || "",  // ✅ ADD THIS
+  OriginalInstructors: item.instructors || item.raw.OriginalInstructors || [],  // ✅ FIX THIS
   EstimatedStudents: item.raw.EstimatedStudents,
   Departments: item.raw.Departments,
   OccType: item.raw.OccType,
