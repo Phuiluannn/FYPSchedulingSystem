@@ -36,7 +36,7 @@ function Instructors() {
           setError('Please log in to view instructors.');
           return;
         }
-        const response = await axios.get("https://atss-backend.onrender.com/instructors", {
+        const response = await axios.get("http://localhost:3001/instructors", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -46,7 +46,7 @@ function Instructors() {
       } catch (error) {
         console.error("Error fetching instructors:", error);
         if (error.code === 'ECONNREFUSED') {
-          setError('Cannot connect to the server. Please ensure the backend is running on https://atss-backend.onrender.com.');
+          setError('Cannot connect to the server. Please ensure the backend is running on http://localhost:3001.');
         } else {
           setError(error.response?.data?.message || 'Failed to fetch instructors.');
         }
@@ -125,7 +125,7 @@ function Instructors() {
       }
       if (editIndex !== null) {
         const response = await axios.put(
-          `https://atss-backend.onrender.com/instructors/${instructors[editIndex]._id}`,
+          `http://localhost:3001/instructors/${instructors[editIndex]._id}`,
           form,
           {
             headers: {
@@ -138,7 +138,7 @@ function Instructors() {
         setInstructors(updated);
       } else {
         const response = await axios.post(
-          "https://atss-backend.onrender.com/instructors",
+          "http://localhost:3001/instructors",
           form,
           {
             headers: {
@@ -173,7 +173,7 @@ function Instructors() {
         return;
       }
       await axios.delete(
-        `https://atss-backend.onrender.com/instructors/${instructors[idx]._id}`,
+        `http://localhost:3001/instructors/${instructors[idx]._id}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

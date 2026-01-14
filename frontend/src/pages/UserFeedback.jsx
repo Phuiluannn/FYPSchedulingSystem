@@ -6,7 +6,7 @@ import SideBar from "./SideBar";
 import ProtectedRoute from "./ProtectedRoute";
 import { BiSort, BiSortUp, BiSortDown } from "react-icons/bi";
 
-const socket = io('https://atss-backend.onrender.com', { transports: ['websocket'] });
+const socket = io('http://localhost:3001', { transports: ['websocket'] });
 const statusTabs = ["All", "Pending", "In Progress", "Resolved"];
 
 function UserFeedback() {
@@ -66,7 +66,7 @@ function UserFeedback() {
       try {
         const token = localStorage.getItem("token");
         const response = await axios.get(
-          "https://atss-backend.onrender.com/user/feedback",
+          "http://localhost:3001/user/feedback",
           {
             headers: { Authorization: `Bearer ${token}` },
             params: { status: activeTab }
@@ -148,7 +148,7 @@ function UserFeedback() {
     }
 
     await axios.post(  // Remove the 'const response =' since we won't use it
-      "https://atss-backend.onrender.com/user/feedback",
+      "http://localhost:3001/user/feedback",
       {
         title: form.title,
         type: form.type,
@@ -181,7 +181,7 @@ function UserFeedback() {
     try {
       const token = localStorage.getItem("token");
       await axios.delete(
-        `https://atss-backend.onrender.com/user/feedback/${feedbackToDelete._id}`,
+        `http://localhost:3001/user/feedback/${feedbackToDelete._id}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       

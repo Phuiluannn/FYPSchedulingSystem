@@ -12,7 +12,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     const token = localStorage.getItem('token');
     const headers = token && token !== 'null' ? { 'Authorization': token } : {};
 
-    fetch('https://atss-backend.onrender.com/protected', { headers })
+    fetch('http://localhost:3001/protected', { headers })
       .then(response => {
         if (!response.ok) {
           return response.json().then(err => { throw err; });

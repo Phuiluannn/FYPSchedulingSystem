@@ -55,7 +55,7 @@ function ResetPassword() {
         }
 
         setLoading(true);
-        axios.post(`https://atss-backend.onrender.com/reset-password/${token}`, { password })
+        axios.post(`http://localhost:3001/reset-password/${token}`, { password })
             .then(res => {
                 if(res.data.Status === "Success") {
                     alert('Your password has been reset successfully. You can now login with your new password.');

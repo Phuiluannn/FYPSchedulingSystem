@@ -87,7 +87,7 @@ export const forgotPassword = async (email) => {
         throw new Error("Database error. Please try again.");
     }
 
-    const resetUrl = `https://atss-frontend.onrender.com/reset-password/${resetToken}`;
+    const resetUrl = `http://localhost:5173/reset-password/${resetToken}`;
     
     try {
         return await sendPasswordResetEmail(email, resetUrl, user, isFirstTimeSetup);

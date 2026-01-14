@@ -99,7 +99,7 @@ function Analytics() {
       
       // Fetch workload data from backend
       const workloadResponse = await axios.get(
-        `https://atss-backend.onrender.com/analytics/instructor-workload?year=${currentWorkloadYear}&semester=${currentWorkloadSemester.replace('Semester ', '')}&publishedOnly=${publishedOnly}`,
+        `http://localhost:3001/analytics/instructor-workload?year=${currentWorkloadYear}&semester=${currentWorkloadSemester.replace('Semester ', '')}&publishedOnly=${publishedOnly}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -108,7 +108,7 @@ function Analytics() {
 
       // Fetch conflict data
       const conflictResponse = await axios.get(
-        `https://atss-backend.onrender.com/analytics/conflicts?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
+        `http://localhost:3001/analytics/conflicts?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -117,7 +117,7 @@ function Analytics() {
 
       // Fetch conflict statistics
       const statsResponse = await axios.get(
-        `https://atss-backend.onrender.com/analytics/conflict-stats?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
+        `http://localhost:3001/analytics/conflict-stats?year=${currentConflictYear}&semester=${currentConflictSemester.replace('Semester ', '')}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -153,7 +153,7 @@ function Analytics() {
     try {
       const token = localStorage.getItem('token');
       await axios.put(
-        `https://atss-backend.onrender.com/analytics/conflicts/${conflictId}/resolve`,
+        `http://localhost:3001/analytics/conflicts/${conflictId}/resolve`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -188,7 +188,7 @@ function Analytics() {
   try {
     const token = localStorage.getItem('token');
     const response = await axios.post(
-      `https://atss-backend.onrender.com/analytics/auto-resolve?year=${conflictYear}&semester=${conflictSemester.replace('Semester ', '')}`,
+      `http://localhost:3001/analytics/auto-resolve?year=${conflictYear}&semester=${conflictSemester.replace('Semester ', '')}`,
       {},
       { headers: { Authorization: `Bearer ${token}` } }
     );
