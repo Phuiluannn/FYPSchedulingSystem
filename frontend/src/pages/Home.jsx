@@ -199,6 +199,7 @@ const checkLectureTutorialClash = (timetable, movedEvent, targetDay, targetTimeI
   }
   
   const movedYearLevels = movedEvent.raw.YearLevel || [];
+  const movedDepartments = movedEvent.raw.Departments || [];
   const movedStartIdx = targetTimeIdx;
   const movedEndIdx = targetTimeIdx + targetDuration - 1;
   
@@ -212,13 +213,21 @@ const checkLectureTutorialClash = (timetable, movedEvent, targetDay, targetTimeI
         // Only check against lectures
         if (otherEvent.raw?.OccType !== 'Lecture') return;
         
-        // Check if they share year levels
+        // ✅ FIX: Check if they share BOTH year levels AND departments
         const otherYearLevels = otherEvent.raw.YearLevel || [];
+        const otherDepartments = otherEvent.raw.Departments || [];
+        
         const hasSharedYearLevel = movedYearLevels.some(yl => otherYearLevels.includes(yl));
+        const hasSharedDepartment = movedDepartments.some(dept => otherDepartments.includes(dept));
         
         if (!hasSharedYearLevel) {
           console.log(`  ℹ️ No lecture-tutorial clash: ${movedEvent.code} Tutorial (Years: ${movedYearLevels.join(',')}) vs ${otherEvent.code} Lecture (Years: ${otherYearLevels.join(',')}) - different year levels`);
           return; // Different year levels = no conflict
+        }
+        
+        if (!hasSharedDepartment) {
+          console.log(`  ℹ️ No lecture-tutorial clash: ${movedEvent.code} Tutorial (Depts: ${movedDepartments.join(',')}) vs ${otherEvent.code} Lecture (Depts: ${otherDepartments.join(',')}) - different departments`);
+          return; // Different departments = no conflict
         }
         
         // Check time overlap
@@ -240,6 +249,7 @@ const checkLectureTutorialClash = (timetable, movedEvent, targetDay, targetTimeI
           
           const otherRoomObj = rooms.find(r => r._id === checkRoomId);
           const sharedYears = movedYearLevels.filter(yl => otherYearLevels.includes(yl));
+          const sharedDepts = movedDepartments.filter(dept => otherDepartments.includes(dept));
           
           conflicts.push({
             type: 'Lecture-Tutorial Clash',
@@ -248,11 +258,12 @@ const checkLectureTutorialClash = (timetable, movedEvent, targetDay, targetTimeI
             lectureCourse: otherEvent.code,
             lectureOccNumber: otherEvent.raw.OccNumber,
             yearLevels: sharedYears,
+            departments: sharedDepts, // ✅ ADD THIS
             conflictingRoomCode: otherRoomObj?.code || 'Unknown Room',
             timeSlot: overlapTimeSlot
           });
           
-          console.log(`🎓 Lecture-Tutorial clash detected: ${movedEvent.code} Tutorial (Year ${sharedYears.join(', ')}) vs ${otherEvent.code} Lecture at ${overlapTimeSlot}`);
+          console.log(`🎓 Lecture-Tutorial clash detected: ${movedEvent.code} Tutorial vs ${otherEvent.code} Lecture for Year ${sharedYears.join(', ')} ${sharedDepts.join(', ')} students at ${overlapTimeSlot}`);
         }
       });
     });
@@ -853,18 +864,28 @@ tutorialEventsForLT.forEach(tutorial => {
     // Must be on same day
     if (tutorial.day !== lecture.day) return;
     
-    // Check if they share year levels
+    // ✅ FIX: Check if they share BOTH year levels AND departments
     const tutorialYears = tutorial.raw.YearLevel || [];
     const lectureYears = lecture.raw.YearLevel || [];
+    const tutorialDepts = tutorial.raw.Departments || [];
+    const lectureDepts = lecture.raw.Departments || [];
+    
     const hasSharedYearLevel = tutorialYears.some(yl => lectureYears.includes(yl));
+    const hasSharedDepartment = tutorialDepts.some(dept => lectureDepts.includes(dept));
     
     if (!hasSharedYearLevel) {
       console.log(`  ℹ️ No shared year: ${tutorial.code} Tutorial (Years: ${tutorialYears.join(',')}) vs ${lecture.code} Lecture (Years: ${lectureYears.join(',')})`);
       return; // Different year levels = no conflict
     }
     
+    if (!hasSharedDepartment) {
+      console.log(`  ℹ️ No shared department: ${tutorial.code} Tutorial (Depts: ${tutorialDepts.join(',')}) vs ${lecture.code} Lecture (Depts: ${lectureDepts.join(',')})`);
+      return; // Different departments = no conflict
+    }
+    
     const sharedYears = tutorialYears.filter(yl => lectureYears.includes(yl));
-    console.log(`  ✓ Shared year levels: ${sharedYears.join(', ')} - ${tutorial.code} Tutorial vs ${lecture.code} Lecture`);
+    const sharedDepts = tutorialDepts.filter(dept => lectureDepts.includes(dept));
+    console.log(`  ✓ Shared year levels AND departments: Year ${sharedYears.join(', ')}, Depts ${sharedDepts.join(', ')} - ${tutorial.code} Tutorial vs ${lecture.code} Lecture`);
     
     // Check if time periods overlap
     const tutorialStart = TIMES.findIndex(t => t === tutorial.raw.StartTime);
@@ -878,9 +899,10 @@ tutorialEventsForLT.forEach(tutorial => {
     const hasOverlap = !(tutorialEnd < lectureStart || tutorialStart > lectureEnd);
     
     if (hasOverlap) {
-      // Create unique conflict ID including occurrence numbers to distinguish different clashes
+      // Create unique conflict ID including occurrence numbers AND departments
       const sortedCourses = [tutorial.code, lecture.code].sort();
       const sortedYears = sharedYears.sort();
+      const sortedDepts = sharedDepts.sort();
       
       // Include occurrence numbers to make each clash unique
       const tutorialOcc = Array.isArray(tutorial.raw.OccNumber) 
@@ -890,7 +912,7 @@ tutorialEventsForLT.forEach(tutorial => {
         ? lecture.raw.OccNumber.join('-') 
         : lecture.raw.OccNumber || 'unknown';
       
-      const conflictId = `lecture-tutorial-${tutorial.day}-${sortedYears.join('-')}-${tutorial.code}-Occ${tutorialOcc}-${lecture.code}-Occ${lectureOcc}`;
+      const conflictId = `lecture-tutorial-${tutorial.day}-${sortedYears.join('-')}-${sortedDepts.join('-')}-${tutorial.code}-Occ${tutorialOcc}-${lecture.code}-Occ${lectureOcc}`;
       
       if (!lectureTutorialConflicts.has(conflictId)) {
         const overlapStart = Math.max(tutorialStart, lectureStart);
@@ -906,6 +928,7 @@ tutorialEventsForLT.forEach(tutorial => {
           id: conflictId,
           type: 'Lecture-Tutorial Clash',
           yearLevels: sortedYears,
+          departments: sortedDepts, // ✅ ADD THIS
           day: tutorial.day,
           time: fullTimeRange,
           conflictingEvents: [
@@ -915,6 +938,7 @@ tutorialEventsForLT.forEach(tutorial => {
               occType: tutorial.raw.OccType,
               occNumber: tutorial.raw.OccNumber,
               yearLevels: tutorialYears,
+              departments: tutorialDepts, // ✅ ADD THIS
               roomCode: currentRooms.find(r => r._id === tutorial.roomId)?.code || 'Unknown'
             },
             {
@@ -923,13 +947,14 @@ tutorialEventsForLT.forEach(tutorial => {
               occType: lecture.raw.OccType,
               occNumber: lecture.raw.OccNumber,
               yearLevels: lectureYears,
+              departments: lectureDepts, // ✅ ADD THIS
               roomCode: currentRooms.find(r => r._id === lecture.roomId)?.code || 'Unknown'
             }
           ],
-          description: `${tutorial.code} Tutorial clashes with ${lecture.code} Lecture for Year ${sortedYears.join(', ')} students on ${tutorial.day}`
+          description: `${tutorial.code} Tutorial clashes with ${lecture.code} Lecture for Year ${sortedYears.join(', ')} ${sortedDepts.join(', ')} students on ${tutorial.day}`
         });
         
-        console.log(`🎓 Lecture-Tutorial clash: ${tutorial.code} vs ${lecture.code} for Year ${sortedYears.join(', ')} at ${fullTimeRange}`);
+        console.log(`🎓 Lecture-Tutorial clash: ${tutorial.code} vs ${lecture.code} for Year ${sortedYears.join(', ')} ${sortedDepts.join(', ')} at ${fullTimeRange}`);
       }
     }
   });
