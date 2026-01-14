@@ -2041,7 +2041,7 @@ conflicts.push({
       } else if (conflict.type === 'Time Slot Exceeded') {
         alertMessage += `${index + 1}. Time Slot Exceeded: ${conflict.message}\n`;
       } else if (conflict.type === 'Instructor Conflict') {
-        alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.overlapTimeRange}\n`;
+        alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.overlapTimeRange}\n`;
       } else if (conflict.type === 'Department Tutorial Clash') {
         alertMessage += `${index + 1}. Department Tutorial Clash: Department(s) ${conflict.departments.join(', ')} have conflicting tutorials - ${conflict.movedCourse} (Tutorial ${
           moved.raw.OccNumber
@@ -2853,7 +2853,7 @@ conflicts.push({
       } else if (conflict.type === 'Time Slot Exceeded') {
         alertMessage += `${index + 1}. Time Slot Exceeded: ${conflict.message}\n`;
       } else if (conflict.type === 'Instructor Conflict') {
-        alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${targetDay} at ${conflict.overlapTimeRange}\n`;
+        alertMessage += `${index + 1}. Instructor Conflict: ${conflict.instructorName} assigned to both ${conflict.movedCourse} (${conflict.movedCourseType}) (Occ ${conflict.movedCourseOccNumber}) in ${conflict.movedRoomCode} and ${conflict.conflictingCourse} (${conflict.conflictingCourseType}) ${conflict.conflictingFormattedOccNumber} in ${conflict.conflictingRoomCode} on ${selectedDay} at ${conflict.overlapTimeRange}\n`;
       } else if (conflict.type === 'Department Tutorial Clash') {
         alertMessage += `${index + 1}. Department Tutorial Clash: Department(s) ${conflict.departments.join(', ')} have conflicting tutorials - ${conflict.movedCourse} (Tutorial ${
           item.raw.OccNumber
