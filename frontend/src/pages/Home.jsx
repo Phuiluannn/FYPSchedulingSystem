@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import SideBar from './SideBar';
 import ProtectedRoute from './ProtectedRoute';
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { BiExport, BiSearch, BiX } from "react-icons/bi";
 import Papa from "papaparse";
 import html2canvas from "html2canvas";
@@ -2997,19 +2997,12 @@ const handleGenerateTimetable = async () => {
         let selectedInstructor = "";
         let selectedInstructorId = "";
         
+        // Get available instructors for the dropdown (but don't auto-assign)
         const availableInstructors = sch.OriginalInstructors || sch.Instructors || [];
         
-        // If there's exactly one instructor, auto-assign them
-        if (Array.isArray(availableInstructors) && availableInstructors.length === 1) {
-          selectedInstructor = availableInstructors[0];
-          // Look up the instructor ID from the instructors list
-          const foundInstructor = instructors.find(inst => inst.name === selectedInstructor);
-          selectedInstructorId = foundInstructor ? foundInstructor._id : "";
-          
-          console.log(`Auto-assigned single instructor for ${sch.CourseCode}: ${selectedInstructor} (ID: ${selectedInstructorId})`);
-        }
-        // Otherwise, check if InstructorID was already set (from saved timetable)
-        else if (sch.InstructorID) {
+        // ✅ FIXED: Only use InstructorID if it exists (manual assignment)
+        // Do NOT auto-assign based on OriginalInstructors length
+        if (sch.InstructorID) {
           selectedInstructorId = sch.InstructorID;
           const foundInstructor = instructors.find(inst => inst._id === sch.InstructorID);
           selectedInstructor = foundInstructor ? foundInstructor.name : "";
@@ -3300,18 +3293,15 @@ const handleSaveTimetable = async () => {
         slots.forEach((slot, timeIdx) => {
           slot.forEach(item => {
             if (item.raw && !timetableArr.some(s => s._id === item.raw._id)) {
-              // IMPROVED: Better instructor handling in save
+              // ✅ FIXED: Only assign instructor if manually selected
               let instructorsToSave = [];
               let instructorIdToSave = null;
 
               if (item.selectedInstructor && item.selectedInstructor.trim() !== "") {
                 instructorsToSave = [item.selectedInstructor];
                 instructorIdToSave = item.selectedInstructorId || null;
-              } else if (item.instructors && Array.isArray(item.instructors)) {
-                instructorsToSave = item.instructors;
-              } else if (item.raw.OriginalInstructors) {
-                instructorsToSave = item.raw.OriginalInstructors;
               }
+              // Do NOT auto-assign - keep empty if not manually selected
 
               timetableArr.push({
   ...item.raw,
@@ -3322,7 +3312,7 @@ const handleSaveTimetable = async () => {
   Duration: item.raw.Duration || 1,
   Instructors: instructorsToSave,
   InstructorID: instructorIdToSave && instructorIdToSave.length === 24 ? instructorIdToSave : null,
-  OriginalInstructors: item.instructors || item.raw.OriginalInstructors,
+  OriginalInstructors: item.raw.OriginalInstructors || [],
   // ✅ CRITICAL: Ensure these fields are preserved
   EstimatedStudents: item.raw.EstimatedStudents,
   Departments: item.raw.Departments,
@@ -3719,6 +3709,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
               
               let instructorName = "No Instructor Assigned";
               
+              // ✅ FIXED: Only show instructor if manually assigned
               if (item.selectedInstructor && item.selectedInstructor.trim() !== "") {
                 instructorName = item.selectedInstructor;
               } else if (item.selectedInstructorId && item.selectedInstructorId.trim() !== "") {
@@ -3726,11 +3717,8 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
                 if (foundInstructor) {
                   instructorName = foundInstructor.name;
                 }
-              } else if (item.raw.Instructors && Array.isArray(item.raw.Instructors) && item.raw.Instructors.length === 1) {
-                instructorName = item.raw.Instructors[0];
-              } else if (item.raw.OriginalInstructors && Array.isArray(item.raw.OriginalInstructors) && item.raw.OriginalInstructors.length === 1) {
-                instructorName = item.raw.OriginalInstructors[0];
               }
+              // Do NOT show from raw.Instructors or raw.OriginalInstructors - only manual assignments
 
               // ✅ FIX: Properly extract departments
               const departments = item.raw.Departments && Array.isArray(item.raw.Departments) && item.raw.Departments.length > 0
