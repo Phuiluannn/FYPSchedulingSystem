@@ -19,7 +19,7 @@ function ForgotPassword() {
         }
 
         setLoading(true);
-        axios.post('https://atss-backend.onrender.com/forgot-password', { email })
+        axios.post('http://localhost:3001/forgot-password', { email })
             .then(res => {
                 if(res.data.Status === "Success") {
                     alert('Password reset link has been sent to your email. Please check your inbox or spam folder.');

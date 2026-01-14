@@ -153,7 +153,7 @@ const isEventMatchingAllFilters = (item) => {
     const fetchRooms = async () => {
       try {
         const token = localStorage.getItem('token');
-        const response = await axios.get("https://atss-backend.onrender.com/rooms", {
+        const response = await axios.get("http://localhost:3001/rooms", {
           headers: { Authorization: `Bearer ${token}` }
         });
         setRooms(response.data);
@@ -178,7 +178,7 @@ const isEventMatchingAllFilters = (item) => {
       
       // CRITICAL FIX: Ensure publishedOnly=true is properly sent as boolean
       const response = await axios.get(
-        `https://atss-backend.onrender.com/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}&publishedOnly=true`,
+        `http://localhost:3001/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}&publishedOnly=true`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
@@ -301,7 +301,7 @@ const isEventMatchingAllFilters = (item) => {
   const fetchInstructors = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get("https://atss-backend.onrender.com/instructors", {
+      const response = await axios.get("http://localhost:3001/instructors", {
         headers: { Authorization: `Bearer ${token}` }
       });
       setInstructors(response.data);
@@ -320,7 +320,7 @@ useEffect(() => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(
-        `https://atss-backend.onrender.com/courses?year=${selectedYear}&semester=${selectedSemester}`,
+        `http://localhost:3001/courses?year=${selectedYear}&semester=${selectedSemester}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setCourses(response.data);

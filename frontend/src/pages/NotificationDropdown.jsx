@@ -29,7 +29,7 @@ const NotificationDropdown = () => {
     if (!socketRef.current) {
       console.log('🔌 Initializing socket connection...');
       
-      socketRef.current = io('https://atss-backend.onrender.com', {
+      socketRef.current = io('http://localhost:3001', {
         transports: ['websocket'],
         reconnection: true,
         reconnectionDelay: 1000,
@@ -256,7 +256,7 @@ const handleNotificationClick = async (notification) => {
         throw new Error(`Missing credentials: token=${!!token}, userId=${!!userId}, role=${!!role}`);
       }
 
-      const response = await axios.get('https://atss-backend.onrender.com/api/notifications', {
+      const response = await axios.get('http://localhost:3001/api/notifications', {
         headers: { 
           Authorization: `Bearer ${token}`,
           'x-user-id': userId,
@@ -287,7 +287,7 @@ const handleNotificationClick = async (notification) => {
         return;
       }
 
-      const response = await axios.get('https://atss-backend.onrender.com/api/notifications/unread-count', {
+      const response = await axios.get('http://localhost:3001/api/notifications/unread-count', {
         headers: { 
           Authorization: `Bearer ${token}`,
           'x-user-id': userId,
@@ -316,7 +316,7 @@ const handleNotificationClick = async (notification) => {
 
       // FIX: Changed from PUT to PATCH to match backend route
       const response = await axios.patch(
-        `https://atss-backend.onrender.com/api/notifications/${notificationId}/read`,
+        `http://localhost:3001/api/notifications/${notificationId}/read`,
         {},
         {
           headers: { 
@@ -353,7 +353,7 @@ const handleNotificationClick = async (notification) => {
       console.log('🔄 Marking all notifications as read...');
 
       const response = await axios.post(
-        'https://atss-backend.onrender.com/api/notifications/mark-all-read',
+        'http://localhost:3001/api/notifications/mark-all-read',
         {},
         {
           headers: { 
