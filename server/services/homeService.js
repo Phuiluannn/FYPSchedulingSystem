@@ -221,9 +221,10 @@ const hasDepartmentConflict = (schedules, newSchedule, day, startTimeIdx, durati
   return { hasConflict: false };
 };
 
-// NEW FUNCTION: Check for lecture-tutorial clashes based on year level (not department)
+// NEW FUNCTION: Check for lecture-tutorial clashes based on year level AND department
 const checkLectureTutorialClash = (schedules, newSchedule, day, startTimeIdx, duration) => {
   const newYearLevels = newSchedule.YearLevel || [];
+  const newDepartments = newSchedule.Departments || [];
   const newEndTimeIdx = startTimeIdx + duration - 1;
   const newOccType = newSchedule.OccType;
 
@@ -239,12 +240,14 @@ const checkLectureTutorialClash = (schedules, newSchedule, day, startTimeIdx, du
     if (existingSchedule.OccType !== "Lecture") continue;
 
     const existingYearLevels = existingSchedule.YearLevel || [];
+    const existingDepartments = existingSchedule.Departments || [];
     
-    // Check if there's a shared year level
+    // ✅ FIX: Check if there's a shared year level AND shared department
     const hasSharedYearLevel = newYearLevels.some(yl => existingYearLevels.includes(yl));
+    const hasSharedDepartment = newDepartments.some(dept => existingDepartments.includes(dept));
     
-    // If shared year level exists, this could be a clash
-    if (hasSharedYearLevel) {
+    // Only a clash if BOTH year level AND department are shared
+    if (hasSharedYearLevel && hasSharedDepartment) {
       const existingStartTimeIdx = TIMES.findIndex(time => time === existingSchedule.StartTime);
       const existingEndTimeIdx = existingStartTimeIdx + (existingSchedule.Duration || 1) - 1;
 
@@ -252,11 +255,16 @@ const checkLectureTutorialClash = (schedules, newSchedule, day, startTimeIdx, du
       const timeSlotsOverlap = !(newEndTimeIdx < existingStartTimeIdx || startTimeIdx > existingEndTimeIdx);
       
       if (timeSlotsOverlap) {
+        // Get the shared departments and year levels for the conflict description
+        const sharedDepts = newDepartments.filter(dept => existingDepartments.includes(dept));
+        const sharedYears = newYearLevels.filter(yl => existingYearLevels.includes(yl));
+        
         return {
           hasClash: true,
           lectureCoursefCode: existingSchedule.CourseCode,
           tutorialCourseCode: newSchedule.CourseCode,
-          sharedYearLevels: newYearLevels.filter(yl => existingYearLevels.includes(yl)),
+          sharedYearLevels: sharedYears,
+          sharedDepartments: sharedDepts, // ✅ ADD THIS
           timeSlot: existingSchedule.StartTime,
           lectureOccNumber: existingSchedule.OccNumber,
           tutorialOccNumber: newSchedule.OccNumber
