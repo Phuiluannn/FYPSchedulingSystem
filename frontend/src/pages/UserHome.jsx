@@ -237,28 +237,19 @@ const isEventMatchingAllFilters = (item) => {
         if (roomId && timeIdx !== -1 && allTimetables[day]) {
           // Improved instructor name resolution for user side
           let instructorName = "No Instructor Assigned";
-          
-          // Priority 1: Check if InstructorID exists and find name from instructors array
-          if (sch.InstructorID && instructors.length > 0) {
-            const foundInstructor = instructors.find(inst => inst._id === sch.InstructorID);
-            if (foundInstructor) {
-              instructorName = foundInstructor.name;
-              console.log(`Found instructor by ID: ${sch.InstructorID} -> ${instructorName}`);
-            }
-          }
-          // Priority 2: Check if there's exactly one instructor in Instructors array
-          else if (sch.Instructors && Array.isArray(sch.Instructors) && sch.Instructors.length === 1) {
-            instructorName = sch.Instructors[0];
-            console.log(`Using instructor from array: ${instructorName}`);
-          }
-          // Priority 3: Check OriginalInstructors if available and single
-          else if (sch.OriginalInstructors && Array.isArray(sch.OriginalInstructors) && sch.OriginalInstructors.length === 1) {
-            instructorName = sch.OriginalInstructors[0];
-            console.log(`Using instructor from OriginalInstructors: ${instructorName}`);
-          }
-          else {
-            console.log(`No instructor assignment found for ${sch.CourseCode}`);
-          }
+
+// ONLY show instructor if explicitly assigned (InstructorID exists)
+if (sch.InstructorID && instructors.length > 0) {
+  const foundInstructor = instructors.find(inst => inst._id === sch.InstructorID);
+  if (foundInstructor) {
+    instructorName = foundInstructor.name;
+    console.log(`Found instructor by ID: ${sch.InstructorID} -> ${instructorName}`);
+  } else {
+    console.log(`InstructorID exists but instructor not found: ${sch.InstructorID}`);
+  }
+} else {
+  console.log(`No instructor assignment for ${sch.CourseCode} (InstructorID: ${sch.InstructorID})`);
+}
 
           const scheduleItem = {
             id: String(sch._id),
@@ -1382,7 +1373,7 @@ useEffect(() => {
                   onChange={(e) => setSelectedExportFormat(e.target.value)}
                   style={{ width: "100%", padding: "8px", fontSize: "14px" }}
                 >
-                  <option value="csv">CSV</option>
+                  {/* <option value="csv">CSV</option> */}
                   <option value="png">PNG</option>
                   <option value="jpg">JPG</option>
                 </select>
