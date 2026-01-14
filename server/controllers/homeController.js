@@ -66,7 +66,8 @@ export const saveTimetable = async (req, res) => {
       let instructorsToSave = [];
       let instructorIdToSave = null;
 
-      // Priority 1: If instructor was manually assigned (selectedInstructor exists)
+      // ✅ FIXED: ONLY assign instructor if manually selected by user
+      // Do NOT auto-assign even if there's only one instructor in OriginalInstructors
       if (item.selectedInstructor && item.selectedInstructor.trim() !== "") {
         instructorsToSave = [item.selectedInstructor];
         instructorIdToSave = item.selectedInstructorId && 
@@ -75,37 +76,20 @@ export const saveTimetable = async (req, res) => {
           ? new mongoose.Types.ObjectId(item.selectedInstructorId)
           : null;
         
-        // ✅ NEW: If we have a name but no ID, look it up
+        // If we have a name but no ID, look it up
         if (!instructorIdToSave && instructorMap.has(item.selectedInstructor)) {
           instructorIdToSave = instructorMap.get(item.selectedInstructor);
           console.log(`Item ${index}: Mapped instructor name "${item.selectedInstructor}" to ID: ${instructorIdToSave}`);
         }
         
-        console.log(`Item ${index}: Using selected instructor: ${item.selectedInstructor} (ID: ${instructorIdToSave})`);
+        console.log(`Item ${index}: Using manually selected instructor: ${item.selectedInstructor} (ID: ${instructorIdToSave})`);
       }
-      // Priority 2: If Instructors array has exactly one instructor (auto-assigned)
-      else if (item.Instructors && Array.isArray(item.Instructors) && item.Instructors.length === 1) {
-        instructorsToSave = item.Instructors;
-        
-        // ✅ CRITICAL FIX: Always try to get the InstructorID for single-instructor courses
-        if (item.InstructorID && 
-            typeof item.InstructorID === "string" && 
-            item.InstructorID.length === 24) {
-          instructorIdToSave = new mongoose.Types.ObjectId(item.InstructorID);
-        } else if (instructorMap.has(item.Instructors[0])) {
-          // ✅ NEW: Look up instructor ID by name
-          instructorIdToSave = instructorMap.get(item.Instructors[0]);
-          console.log(`Item ${index}: AUTO-ASSIGNED - Mapped instructor name "${item.Instructors[0]}" to ID: ${instructorIdToSave}`);
-        }
-        
-        console.log(`Item ${index}: Using single instructor from array: ${item.Instructors[0]} (ID: ${instructorIdToSave})`);
-      }
-      // Priority 3: Use existing Instructors array or empty array
+      // If no manual selection, keep instructor unassigned (empty array)
       else {
-        instructorsToSave = item.Instructors || [];
+        instructorsToSave = [];
         instructorIdToSave = null;
         
-        console.log(`Item ${index}: No specific instructor assignment, using array: ${JSON.stringify(instructorsToSave)}`);
+        console.log(`Item ${index}: No instructor assigned - manual assignment required`);
       }
 
       const updatedItem = {
@@ -115,7 +99,7 @@ export const saveTimetable = async (req, res) => {
         RoomID: typeof item.RoomID === 'string' ? new mongoose.Types.ObjectId(item.RoomID) : item.RoomID,
         InstructorID: instructorIdToSave,
         Instructors: instructorsToSave,
-        OriginalInstructors: item.OriginalInstructors || item.instructors || instructorsToSave,
+        OriginalInstructors: item.OriginalInstructors || item.instructors || [],
         // CRITICAL: Always save as draft (not published)
         Published: false,
         Year: year,
