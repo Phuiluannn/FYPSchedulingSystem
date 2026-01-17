@@ -942,6 +942,23 @@ const validateLectureTutorialClashConflict = async (conflict, schedules) => {
   
   console.log(`Extracted courses: ${tutorialCourseCode} (Tutorial) vs ${lectureCourseCode} (Lecture)`);
   
+  // Extract occurrence numbers from description
+  const tutorialOccMatch = Description.match(/\(Tutorial Occ ([\d,\s]+)\)/);
+  const lectureOccMatch = Description.match(/\(Lecture Occ ([\d,\s]+)\)/);
+  
+  let tutorialOccNumbers = [];
+  let lectureOccNumbers = [];
+  
+  if (tutorialOccMatch && tutorialOccMatch[1]) {
+    tutorialOccNumbers = tutorialOccMatch[1].split(',').map(n => parseInt(n.trim()));
+    console.log(`Extracted tutorial occurrence numbers: ${tutorialOccNumbers.join(', ')}`);
+  }
+  
+  if (lectureOccMatch && lectureOccMatch[1]) {
+    lectureOccNumbers = lectureOccMatch[1].split(',').map(n => parseInt(n.trim()));
+    console.log(`Extracted lecture occurrence numbers: ${lectureOccNumbers.join(', ')}`);
+  }
+  
   // Extract year levels from description
   const yearMatch = Description.match(/year level\(s\):\s+([\d,\s]+)/i);
   let conflictYearLevels = [];
@@ -956,19 +973,45 @@ const validateLectureTutorialClashConflict = async (conflict, schedules) => {
     return true; // Keep conflict if we can't determine year levels
   }
   
+  // ⭐ KEY FIX: Get the conflict time slot index
+  const conflictTimeIdx = TIMES.indexOf(StartTime);
+  if (conflictTimeIdx === -1) {
+    console.log('⚠️ Invalid conflict StartTime');
+    return true; // Keep conflict if we can't parse the time
+  }
+  console.log(`Conflict time slot index: ${conflictTimeIdx} (${StartTime})`);
+  
   // Find tutorial events for the first course
-  const tutorialEvents = schedules.filter(sch => 
+  let tutorialEvents = schedules.filter(sch => 
     sch.CourseCode === tutorialCourseCode && 
     sch.Day === Day && 
     sch.OccType === 'Tutorial'
   );
   
+  // If we have specific occurrence numbers, filter by them
+  if (tutorialOccNumbers.length > 0) {
+    tutorialEvents = tutorialEvents.filter(sch => {
+      const occNum = Array.isArray(sch.OccNumber) ? sch.OccNumber : [sch.OccNumber];
+      return occNum.some(num => tutorialOccNumbers.includes(num));
+    });
+    console.log(`Filtered to ${tutorialEvents.length} tutorial(s) matching occurrence numbers`);
+  }
+  
   // Find lecture events for the second course
-  const lectureEvents = schedules.filter(sch => 
+  let lectureEvents = schedules.filter(sch => 
     sch.CourseCode === lectureCourseCode && 
     sch.Day === Day && 
     sch.OccType === 'Lecture'
   );
+  
+  // If we have specific occurrence numbers, filter by them
+  if (lectureOccNumbers.length > 0) {
+    lectureEvents = lectureEvents.filter(sch => {
+      const occNum = Array.isArray(sch.OccNumber) ? sch.OccNumber : [sch.OccNumber];
+      return occNum.some(num => lectureOccNumbers.includes(num));
+    });
+    console.log(`Filtered to ${lectureEvents.length} lecture(s) matching occurrence numbers`);
+  }
   
   console.log(`Found ${tutorialEvents.length} tutorial(s) for ${tutorialCourseCode}`);
   console.log(`Found ${lectureEvents.length} lecture(s) for ${lectureCourseCode}`);
@@ -978,26 +1021,30 @@ const validateLectureTutorialClashConflict = async (conflict, schedules) => {
     return false; // One course no longer has the event
   }
   
-  // Check each combination for conflicts
+  // ⭐ KEY FIX: Check if events overlap AT THE SPECIFIC CONFLICT TIME SLOT
   for (const tutorial of tutorialEvents) {
     for (const lecture of lectureEvents) {
       const tutorialYearLevels = tutorial.YearLevel || [];
       const lectureYearLevels = lecture.YearLevel || [];
       
-      console.log(`  Checking: ${tutorialCourseCode} Tutorial (Years: ${tutorialYearLevels.join(',')}) vs ${lectureCourseCode} Lecture (Years: ${lectureYearLevels.join(',')})`);
+      console.log(`  Checking: ${tutorialCourseCode} Tutorial (Years: ${tutorialYearLevels.join(',')}, Time: ${tutorial.StartTime}) vs ${lectureCourseCode} Lecture (Years: ${lectureYearLevels.join(',')}, Time: ${lecture.StartTime})`);
       
-      // Check if they share year levels
-      const hasSharedYearLevel = tutorialYearLevels.some(yl => lectureYearLevels.includes(yl));
+      // Check if they share year levels that match the conflict
+      const hasSharedYearLevel = tutorialYearLevels.some(yl => 
+        lectureYearLevels.includes(yl) && conflictYearLevels.includes(yl.toString())
+      );
       
       if (!hasSharedYearLevel) {
-        console.log(`  ℹ️ No shared year levels - no conflict`);
-        continue; // Different year levels = no conflict
+        console.log(`  ℹ️ No matching year levels - no conflict`);
+        continue;
       }
       
-      const sharedYearLevels = tutorialYearLevels.filter(yl => lectureYearLevels.includes(yl));
-      console.log(`  ✓ Shared year levels: ${sharedYearLevels.join(', ')}`);
+      const sharedYearLevels = tutorialYearLevels.filter(yl => 
+        lectureYearLevels.includes(yl) && conflictYearLevels.includes(yl.toString())
+      );
+      console.log(`  ✓ Shared year levels matching conflict: ${sharedYearLevels.join(', ')}`);
       
-      // Check time overlap
+      // ⭐ THE CRITICAL FIX: Check if BOTH events occupy the conflict time slot
       const tutorialStart = TIMES.indexOf(tutorial.StartTime);
       const tutorialDuration = tutorial.Duration || 1;
       const tutorialEnd = tutorialStart + tutorialDuration - 1;
@@ -1006,18 +1053,21 @@ const validateLectureTutorialClashConflict = async (conflict, schedules) => {
       const lectureDuration = lecture.Duration || 1;
       const lectureEnd = lectureStart + lectureDuration - 1;
       
-      const hasOverlap = !(tutorialEnd < lectureStart || tutorialStart > lectureEnd);
+      // Check if BOTH events occupy the conflict time slot
+      const tutorialOccupiesConflictSlot = tutorialStart <= conflictTimeIdx && conflictTimeIdx <= tutorialEnd;
+      const lectureOccupiesConflictSlot = lectureStart <= conflictTimeIdx && conflictTimeIdx <= lectureEnd;
       
-      console.log(`  Time check: ${tutorial.StartTime} vs ${lecture.StartTime} = ${hasOverlap ? 'OVERLAP' : 'NO OVERLAP'}`);
+      console.log(`  Tutorial occupies conflict slot (${StartTime}): ${tutorialOccupiesConflictSlot}`);
+      console.log(`  Lecture occupies conflict slot (${StartTime}): ${lectureOccupiesConflictSlot}`);
       
-      if (hasOverlap) {
-        console.log(`✅ CONFLICT STILL VALID: ${tutorialCourseCode} tutorial clashes with ${lectureCourseCode} lecture for year ${sharedYearLevels.join(', ')}`);
+      if (tutorialOccupiesConflictSlot && lectureOccupiesConflictSlot) {
+        console.log(`✅ CONFLICT STILL VALID: Both events still occupy the conflict time slot ${StartTime}`);
         return true;
       }
     }
   }
   
-  console.log(`✅ Lecture-Tutorial clash auto-resolved: No overlapping events with shared year levels found`);
+  console.log(`✅ Lecture-Tutorial clash auto-resolved: Events no longer overlap at the conflict time slot ${StartTime}`);
   return false;
 };
 
