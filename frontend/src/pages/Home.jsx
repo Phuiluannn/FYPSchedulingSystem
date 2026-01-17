@@ -1406,7 +1406,8 @@ useEffect(() => {
 
 useEffect(() => {
   const fetchAndCalculateConflicts = async () => {
-    if (!timetable || Object.keys(timetable).length === 0 || !courses.length || !rooms.length) {
+    if (!timetable[selectedDay] || Object.keys(timetable[selectedDay]).length === 0 || 
+        rooms.length === 0 || courses.length === 0) {
       setConflictSummary({
         total: 0,
         roomCapacity: 0,
@@ -1421,65 +1422,10 @@ useEffect(() => {
 
     console.log("Detecting conflicts after timetable change...");
     const conflictResults = detectAllConflicts(timetable, courses, rooms);
-    const { summary: rawSummary, details } = conflictResults;
+    const { summary } = conflictResults;
     
-    // Fetch resolved conflicts from database to exclude them
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(
-        `http://localhost:3001/analytics/conflicts?year=${selectedYear}&semester=${selectedSemester}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      const resolvedConflicts = response.data.conflicts.filter(c => c.Status === 'Resolved');
-      console.log(`Found ${resolvedConflicts.length} resolved conflicts in database`);
-      
-      // Create a Set of resolved conflict IDs for quick lookup
-      const resolvedConflictIds = new Set();
-      resolvedConflicts.forEach(conflict => {
-        const conflictId = generateConflictId(conflict, conflict.Type);
-        resolvedConflictIds.add(conflictId);
-      });
-      
-      // Filter out resolved conflicts from each category
-      const filterResolvedConflicts = (conflictArray, conflictType) => {
-        return conflictArray.filter(conflict => {
-          const conflictId = generateConflictId(conflict, conflictType);
-          return !resolvedConflictIds.has(conflictId);
-        });
-      };
-      
-      const filteredDetails = {
-        roomCapacity: filterResolvedConflicts(details.roomCapacity, 'Room Capacity'),
-        roomDoubleBooking: filterResolvedConflicts(details.roomDoubleBooking, 'Room Double Booking'),
-        instructorConflict: filterResolvedConflicts(details.instructorConflict, 'Instructor Conflict'),
-        timeSlotExceeded: filterResolvedConflicts(details.timeSlotExceeded, 'Time Slot Exceeded'),
-        departmentTutorialClash: filterResolvedConflicts(details.departmentTutorialClash, 'Department Tutorial Clash'),
-        lectureTutorialClash: filterResolvedConflicts(details.lectureTutorialClash, 'Lecture-Tutorial Clash')
-      };
-      
-      const adjustedSummary = {
-        total: filteredDetails.roomCapacity.length + 
-               filteredDetails.roomDoubleBooking.length + 
-               filteredDetails.instructorConflict.length + 
-               filteredDetails.timeSlotExceeded.length +
-               filteredDetails.departmentTutorialClash.length +
-               filteredDetails.lectureTutorialClash.length,
-        roomCapacity: filteredDetails.roomCapacity.length,
-        roomDoubleBooking: filteredDetails.roomDoubleBooking.length,
-        instructorConflict: filteredDetails.instructorConflict.length,
-        timeSlotExceeded: filteredDetails.timeSlotExceeded.length,
-        departmentTutorialClash: filteredDetails.departmentTutorialClash.length,
-        lectureTutorialClash: filteredDetails.lectureTutorialClash.length
-      };
-      
-      console.log(`Adjusted conflict summary (excluding ${resolvedConflicts.length} resolved):`, adjustedSummary);
-      setConflictSummary(adjustedSummary);
-    } catch (error) {
-      console.error("Error fetching resolved conflicts:", error);
-      // Fallback to raw summary if fetch fails
-      setConflictSummary(rawSummary);
-    }
+    // ✅ SIMPLE FIX: Just use the raw summary - don't filter by resolved status
+    setConflictSummary(summary);
   };
   
   fetchAndCalculateConflicts();
