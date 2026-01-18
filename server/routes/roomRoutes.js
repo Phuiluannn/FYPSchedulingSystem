@@ -6,8 +6,12 @@ import {
   updateRoom,
   deleteRoom,
 } from '../controllers/roomController.js';
+import { authenticateToken } from "../middleware/authenticateToken.js";
 
 const router = express.Router();
+
+// Protect all room routes
+router.use(authenticateToken);
 
 router.get("/", getAllRooms);
 router.get("/:id", getRoomById);
