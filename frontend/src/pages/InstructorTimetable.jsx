@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
+import { io } from "socket.io-client";
 import SideBar from './SideBar';
 import ProtectedRoute from './ProtectedRoute';
 import { BiExport, BiCalendar, BiTime, BiMapPin, BiUser, BiBook } from "react-icons/bi";
@@ -24,6 +25,8 @@ const TIMES = [
   "9.00 PM - 10.00 PM"
 ];
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+const socket = io('https://atss-backend.onrender.com', { transports: ['websocket'] });
 
 function InstructorTimetable() {
   const [selectedYear, setSelectedYear] = useState("2025/2026");
@@ -150,85 +153,124 @@ function InstructorTimetable() {
   }, []);
 
   // Fetch instructor's timetable
-  useEffect(() => {
-    if (!instructorInfo) return;
+  const fetchInstructorTimetable = useCallback(async () => {
+    if (!instructorInfo) {
+      console.log('⏸️ Skipping fetch: instructor info not ready');
+      return;
+    }
 
-    const fetchInstructorTimetable = async () => {
-      setLoading(true);
-      try {
-        const token = localStorage.getItem('token');
-        // Fetch published timetables only
-        const response = await axios.get(
-          `https://atss-backend.onrender.com/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}&publishedOnly=true`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        
-        const schedules = response.data.schedules;
-        console.log("All schedules:", schedules);
-        
-        // Filter schedules assigned to this instructor
-        const instructorSchedules = schedules.filter(schedule => {
-  // ONLY show courses where instructor is specifically assigned via InstructorID
-  // Do NOT show courses where instructor is just in the general Instructors array
-  return schedule.InstructorID === instructorInfo.instructorId;
-});
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Fetch rooms fresh to ensure room names display correctly
+      const roomsResponse = await axios.get("https://atss-backend.onrender.com/rooms", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const freshRooms = roomsResponse.data;
+      setRooms(freshRooms); // Update rooms state
+      
+      // Fetch published timetables only
+      const response = await axios.get(
+        `https://atss-backend.onrender.com/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}&publishedOnly=true`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      const schedules = response.data.schedules;
+      console.log("All schedules:", schedules);
+      
+      // Filter schedules assigned to this instructor
+      const instructorSchedules = schedules.filter(schedule => {
+        // ONLY show courses where instructor is specifically assigned via InstructorID
+        return schedule.InstructorID === instructorInfo.instructorId;
+      });
 
-console.log("Filtered instructor schedules (only specifically assigned):", instructorSchedules);
-        
-        if (instructorSchedules.length === 0) {
-          setNoDataMessage(`No timetable assignments found for ${selectedYear} Semester ${selectedSemester}.`);
-          setTimetable({});
-          setHasSchedules(false);
-        } else {
-          // Organize schedules by day and time
-          const organizedTimetable = {};
-          
-          DAYS.forEach(day => {
-            organizedTimetable[day] = [];
-          });
-          
-          instructorSchedules.forEach(schedule => {
-            const day = schedule.Day;
-            const timeIdx = TIMES.findIndex(t => t === schedule.StartTime);
-            const duration = schedule.Duration || 1;
-            
-            if (day && timeIdx !== -1) {
-              organizedTimetable[day].push({
-                id: schedule._id,
-                courseCode: schedule.CourseCode,
-                occType: schedule.OccType,
-                occNumber: schedule.OccNumber,
-                roomId: schedule.RoomID,
-                startTime: schedule.StartTime,
-                endTime: schedule.EndTime,
-                duration: duration,
-                timeIdx: timeIdx,
-                raw: schedule
-              });
-            }
-          });
-          
-          // Sort events by time for each day
-          Object.keys(organizedTimetable).forEach(day => {
-            organizedTimetable[day].sort((a, b) => a.timeIdx - b.timeIdx);
-          });
-          
-          setTimetable(organizedTimetable);
-          setHasSchedules(true);
-          setNoDataMessage("");
-        }
-      } catch (error) {
-        console.error("Error fetching instructor timetable:", error);
-        setNoDataMessage("Failed to load timetable data.");
+      console.log("Filtered instructor schedules (only specifically assigned):", instructorSchedules);
+      
+      if (instructorSchedules.length === 0) {
+        setNoDataMessage(`No timetable assignments found for ${selectedYear} Semester ${selectedSemester}.`);
         setTimetable({});
         setHasSchedules(false);
-      } finally {
-        setLoading(false);
+      } else {
+        // Organize schedules by day and time
+        const organizedTimetable = {};
+        
+        DAYS.forEach(day => {
+          organizedTimetable[day] = [];
+        });
+        
+        instructorSchedules.forEach(schedule => {
+          const day = schedule.Day;
+          const timeIdx = TIMES.findIndex(t => t === schedule.StartTime);
+          const duration = schedule.Duration || 1;
+          
+          if (day && timeIdx !== -1) {
+            organizedTimetable[day].push({
+              id: schedule._id,
+              courseCode: schedule.CourseCode,
+              occType: schedule.OccType,
+              occNumber: schedule.OccNumber,
+              roomId: schedule.RoomID,
+              startTime: schedule.StartTime,
+              endTime: schedule.EndTime,
+              duration: duration,
+              timeIdx: timeIdx,
+              raw: schedule
+            });
+          }
+        });
+        
+        // Sort events by time for each day
+        Object.keys(organizedTimetable).forEach(day => {
+          organizedTimetable[day].sort((a, b) => a.timeIdx - b.timeIdx);
+        });
+        
+        setTimetable(organizedTimetable);
+        setHasSchedules(true);
+        setNoDataMessage("");
       }
-    };
-
-    fetchInstructorTimetable();
+    } catch (error) {
+      console.error("Error fetching instructor timetable:", error);
+      setNoDataMessage("Failed to load timetable data.");
+      setTimetable({});
+      setHasSchedules(false);
+    } finally {
+      setLoading(false);
+    }
   }, [instructorInfo, selectedYear, selectedSemester]);
+
+  // Fetch timetable when dependencies change
+  useEffect(() => {
+    if (!instructorInfo) return;
+    fetchInstructorTimetable();
+  }, [instructorInfo, selectedYear, selectedSemester, fetchInstructorTimetable]);
+
+  useEffect(() => {
+    socket.connect();
+    
+    // Listen for timetable publish events
+    socket.on('timetable:published', ({ year, semester }) => {
+      console.log('🔔 Timetable published notification received:', { year, semester });
+      
+      // Check if the published timetable matches current selection
+      if (year === selectedYear && semester === selectedSemester) {
+        console.log('✅ Published timetable matches current selection, refreshing...');
+        
+        // Show alert to instructor
+        showAlert('A new timetable has been published!', 'success');
+        
+        // Refresh the timetable data
+        fetchInstructorTimetable();
+      } else {
+        console.log('ℹ️ Published timetable is for different year/semester');
+      }
+    });
+    
+    return () => {
+      socket.off('timetable:published');
+      socket.disconnect();
+    };
+  }, [selectedYear, selectedSemester, fetchInstructorTimetable, showAlert]);
 
   // Get room details by ID
   const getRoomDetails = (roomId) => {

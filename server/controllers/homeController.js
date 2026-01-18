@@ -4,6 +4,8 @@ import mongoose from "mongoose";
 // 🔥 ADD THIS IMPORT
 import { createTimetablePublishedNotification } from "../services/notificationService.js";
 import * as analyticsService from "../services/analyticsService.js";
+// 🔥 NEW: Import Socket.IO for real-time timetable updates
+import { io } from "../index.js";
 
 export const generateTimetable = async (req, res) => {
   try {
@@ -271,6 +273,19 @@ export const publishTimetable = async (req, res) => {
       console.log(`✅ Notification created successfully for timetable publication: ${year} Semester ${semester}`);
     } catch (notificationError) {
       console.error("⚠️ Failed to create notification, but timetable was published:", notificationError);
+    }
+
+    // 🔥 NEW: Step 7 - Emit real-time Socket.IO event for instant updates
+    try {
+      io.emit('timetable:published', {
+        year,
+        semester,
+        publishedAt: new Date(),
+        message: `Timetable for ${year} Semester ${semester} has been published`
+      });
+      console.log(`🔔 Socket.IO event emitted: timetable:published for ${year} Semester ${semester}`);
+    } catch (socketError) {
+      console.error("⚠️ Failed to emit Socket.IO event, but timetable was published:", socketError);
     }
 
     res.json({ 
