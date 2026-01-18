@@ -76,3 +76,14 @@ export const autoResolveConflicts = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+// 🔧 NEW: Get manually-resolved conflicts for frontend filtering
+export const getManuallyResolvedConflicts = async (req, res) => {
+  try {
+    const { year, semester } = req.query;
+    const result = await analyticsService.getManuallyResolvedConflicts(year, semester);
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching manually-resolved conflicts:", error);
+    res.status(500).json({ error: error.message });
+  }
+};

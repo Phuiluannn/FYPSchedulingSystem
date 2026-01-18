@@ -70,6 +70,7 @@ function Home() {
 });
 const navigate = useNavigate();
 const { showAlert, showConfirm } = useAlert();
+const [manuallyResolvedConflicts, setManuallyResolvedConflicts] = useState([]);
 
 
 // const isEventMatchingSearch = (item) => {
@@ -116,6 +117,104 @@ const getUniqueCoursesFromTimetable = () => {
   });
   
   return Array.from(uniqueCourses).sort();
+};
+
+// 🔧 NEW: Fetch manually-resolved conflicts to filter from display
+const fetchManuallyResolvedConflicts = async () => {
+  try {
+    const token = localStorage.getItem('token');
+    const response = await axios.get(
+      `https://atss-backend.onrender.com/analytics/manually-resolved-conflicts?year=${selectedYear}&semester=${selectedSemester}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    setManuallyResolvedConflicts(response.data.conflicts || []);
+    console.log(`✅ Loaded ${response.data.conflicts?.length || 0} manually-resolved conflicts to filter from display`);
+  } catch (error) {
+    console.error("Error fetching manually-resolved conflicts:", error);
+    setManuallyResolvedConflicts([]);
+  }
+};
+
+// 🔧 NEW: Check if a conflict is manually resolved
+const isConflictManuallyResolved = (conflict, conflictType) => {
+  // Generate a signature for this conflict to match against manually-resolved ones
+  const createConflictSignature = (conf, type) => {
+    switch (type) {
+      case 'Room Capacity':
+        return {
+          type: 'Room Capacity',
+          courseCode: conf.courseCode || conf.CourseCode,
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime
+        };
+      
+      case 'Room Double Booking':
+        return {
+          type: 'Room Double Booking',
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime,
+          roomCode: conf.roomCode || (rooms.find(r => r._id === conf.RoomID)?.code)
+        };
+      
+      case 'Instructor Conflict':
+        return {
+          type: 'Instructor Conflict',
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime,
+          instructorId: conf.instructorId || conf.InstructorID
+        };
+      
+      case 'Department Tutorial Clash':
+        return {
+          type: 'Department Tutorial Clash',
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime,
+          departments: (conf.departments || []).sort().join(',')
+        };
+      
+      case 'Lecture-Tutorial Clash':
+        return {
+          type: 'Lecture-Tutorial Clash',
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime,
+          yearLevels: (conf.yearLevels || []).sort().join(',')
+        };
+      
+      default:
+        return null;
+    }
+  };
+
+  const currentSignature = createConflictSignature(conflict, conflictType);
+  if (!currentSignature) return false;
+
+  // Check if this matches any manually-resolved conflict
+  return manuallyResolvedConflicts.some(resolved => {
+    if (resolved.Type !== currentSignature.type) return false;
+    if (resolved.Day !== currentSignature.day) return false;
+    if (resolved.StartTime !== currentSignature.startTime) return false;
+
+    // Type-specific matching
+    switch (currentSignature.type) {
+      case 'Room Capacity':
+        return resolved.CourseCode === currentSignature.courseCode;
+      
+      case 'Room Double Booking':
+        const resolvedRoom = rooms.find(r => r._id === resolved.RoomID)?.code;
+        return resolvedRoom === currentSignature.roomCode;
+      
+      case 'Instructor Conflict':
+        return resolved.InstructorID === currentSignature.instructorId;
+      
+      case 'Department Tutorial Clash':
+      case 'Lecture-Tutorial Clash':
+        // For these, we rely on Description matching which is already handled by recordConflict
+        return true;
+      
+      default:
+        return false;
+    }
+  });
 };
 
 const checkInstructorConflicts = (timetable, movedEvent, targetDay, targetTimeIdx, targetDuration, sourceDay = null, sourceRoomId = null, sourceTimeIdx = null) => {
@@ -507,8 +606,9 @@ const handlePublish = async () => {
 //   return null; // No violation
 // };
 
-const detectAllConflicts = (currentTimetable, currentCourses, currentRooms) => {
+const detectAllConflicts = (currentTimetable, currentCourses, currentRooms, currentManuallyResolvedConflicts = []) => {
   console.log("=== DETECTING ALL CONFLICTS ===");
+  console.log(`Using ${currentManuallyResolvedConflicts.length} manually-resolved conflicts for filtering`);
   
   const conflicts = {
     roomCapacity: [],
@@ -963,27 +1063,131 @@ tutorialEventsForLT.forEach(tutorial => {
 conflicts.lectureTutorialClash = Array.from(lectureTutorialConflicts.values());
 console.log(`Lecture-tutorial clashes found: ${conflicts.lectureTutorialClash.length}`);
 
-const summary = {
-  total: conflicts.roomCapacity.length + 
-         conflicts.roomDoubleBooking.length + 
-         conflicts.instructorConflict.length + 
-         conflicts.timeSlotExceeded.length +
-         conflicts.departmentTutorialClash.length +
-         conflicts.lectureTutorialClash.length,
-  roomCapacity: conflicts.roomCapacity.length,
-  roomDoubleBooking: conflicts.roomDoubleBooking.length,
-  instructorConflict: conflicts.instructorConflict.length,
-  timeSlotExceeded: conflicts.timeSlotExceeded.length,
-  departmentTutorialClash: conflicts.departmentTutorialClash.length,
-  lectureTutorialClash: conflicts.lectureTutorialClash.length
+// Calculate original totals
+const totalConflicts = 
+  conflicts.roomCapacity.length +
+  conflicts.roomDoubleBooking.length +
+  conflicts.instructorConflict.length +
+  conflicts.timeSlotExceeded.length +
+  conflicts.departmentTutorialClash.length +
+  conflicts.lectureTutorialClash.length;
+
+console.log(`Total conflicts detected: ${totalConflicts}`);
+
+// 🔧 Local function to check if conflict is manually resolved using the current list
+const isLocalConflictManuallyResolved = (conflict, conflictType) => {
+  const createConflictSignature = (conf, type) => {
+    switch (type) {
+      case 'Room Capacity':
+        return {
+          type: 'Room Capacity',
+          courseCode: conf.courseCode || conf.CourseCode,
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime
+        };
+      
+      case 'Room Double Booking':
+        return {
+          type: 'Room Double Booking',
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime,
+          roomCode: conf.roomCode || (currentRooms.find(r => r._id === conf.RoomID)?.code)
+        };
+      
+      case 'Instructor Conflict':
+        return {
+          type: 'Instructor Conflict',
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime,
+          instructorId: conf.instructorId || conf.InstructorID
+        };
+      
+      case 'Department Tutorial Clash':
+        return {
+          type: 'Department Tutorial Clash',
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime,
+          departments: (conf.departments || []).sort().join(',')
+        };
+      
+      case 'Lecture-Tutorial Clash':
+        return {
+          type: 'Lecture-Tutorial Clash',
+          day: conf.day || conf.Day,
+          startTime: conf.time || conf.StartTime,
+          yearLevels: (conf.yearLevels || []).sort().join(',')
+        };
+      
+      default:
+        return null;
+    }
+  };
+
+  const currentSignature = createConflictSignature(conflict, conflictType);
+  if (!currentSignature) return false;
+
+  return currentManuallyResolvedConflicts.some(resolved => {
+    if (resolved.Type !== currentSignature.type) return false;
+    if (resolved.Day !== currentSignature.day) return false;
+    if (resolved.StartTime !== currentSignature.startTime) return false;
+
+    switch (currentSignature.type) {
+      case 'Room Capacity':
+        return resolved.CourseCode === currentSignature.courseCode;
+      
+      case 'Room Double Booking':
+        const resolvedRoom = currentRooms.find(r => r._id === resolved.RoomID)?.code;
+        return resolvedRoom === currentSignature.roomCode;
+      
+      case 'Instructor Conflict':
+        return resolved.InstructorID === currentSignature.instructorId;
+      
+      case 'Department Tutorial Clash':
+      case 'Lecture-Tutorial Clash':
+        return true;
+      
+      default:
+        return false;
+    }
+  });
 };
 
-console.log("Conflict Summary:", summary);
-console.log("Room double booking conflicts found:", conflicts.roomDoubleBooking.length);
-console.log("Room conflicts detail:", conflicts.roomDoubleBooking);
-console.log("Department tutorial clashes found:", conflicts.departmentTutorialClash.length);  // ADD THIS
+// 🔧 NEW: Filter out manually-resolved conflicts from display
+const filteredConflicts = {
+  roomCapacity: conflicts.roomCapacity.filter(c => !isLocalConflictManuallyResolved(c, 'Room Capacity')),
+  roomDoubleBooking: conflicts.roomDoubleBooking.filter(c => !isLocalConflictManuallyResolved(c, 'Room Double Booking')),
+  instructorConflict: conflicts.instructorConflict.filter(c => !isLocalConflictManuallyResolved(c, 'Instructor Conflict')),
+  timeSlotExceeded: conflicts.timeSlotExceeded, // These can't be manually resolved
+  departmentTutorialClash: conflicts.departmentTutorialClash.filter(c => !isLocalConflictManuallyResolved(c, 'Department Tutorial Clash')),
+  lectureTutorialClash: conflicts.lectureTutorialClash.filter(c => !isLocalConflictManuallyResolved(c, 'Lecture-Tutorial Clash'))
+};
+
+const filteredTotal = 
+  filteredConflicts.roomCapacity.length +
+  filteredConflicts.roomDoubleBooking.length +
+  filteredConflicts.instructorConflict.length +
+  filteredConflicts.timeSlotExceeded.length +
+  filteredConflicts.departmentTutorialClash.length +
+  filteredConflicts.lectureTutorialClash.length;
+
+console.log(`🔧 Filtered out ${totalConflicts - filteredTotal} manually-resolved conflicts from display`);
+
+const summary = {
+  total: filteredTotal,
+  roomCapacity: filteredConflicts.roomCapacity.length,
+  roomDoubleBooking: filteredConflicts.roomDoubleBooking.length,
+  instructorConflict: filteredConflicts.instructorConflict.length,
+  timeSlotExceeded: filteredConflicts.timeSlotExceeded.length,
+  departmentTutorialClash: filteredConflicts.departmentTutorialClash.length,
+  lectureTutorialClash: filteredConflicts.lectureTutorialClash.length
+};
+
+console.log("Conflict Summary (after filtering):", summary);
+console.log("Room double booking conflicts found:", filteredConflicts.roomDoubleBooking.length);
+console.log("Room conflicts detail:", filteredConflicts.roomDoubleBooking);
+console.log("Department tutorial clashes found:", filteredConflicts.departmentTutorialClash.length);
   
-  return { summary, details: conflicts };
+  return { summary, details: filteredConflicts }; // 🔧 Return filtered conflicts
 };
 
 const recordFrontendConflicts = async (conflictDetails) => {
@@ -1191,6 +1395,7 @@ useEffect(() => {
   
   if (selectedYear && selectedSemester) {
     fetchCourses();
+    fetchManuallyResolvedConflicts(); // 🔧 NEW: Also fetch manually-resolved conflicts
   }
 }, [selectedYear, selectedSemester]);
 
@@ -1421,7 +1626,7 @@ useEffect(() => {
     }
 
     console.log("Detecting conflicts after timetable change...");
-    const conflictResults = detectAllConflicts(timetable, courses, rooms);
+    const conflictResults = detectAllConflicts(timetable, courses, rooms, manuallyResolvedConflicts);
     const { summary } = conflictResults;
     
     // ✅ SIMPLE FIX: Just use the raw summary - don't filter by resolved status
@@ -1429,7 +1634,7 @@ useEffect(() => {
   };
   
   fetchAndCalculateConflicts();
-}, [timetable, courses, rooms, selectedYear, selectedSemester]);
+}, [timetable, courses, rooms, selectedYear, selectedSemester, manuallyResolvedConflicts]);
 
   const handleContextMenu = (e, item, roomId, timeIdx, index) => {
   e.preventDefault();
@@ -2988,9 +3193,14 @@ const handleGenerateTimetable = async () => {
       console.warn("Could not clear existing conflicts after generation:", clearError.message);
     }
 
+    // 🔧 CRITICAL: Refetch manually-resolved conflicts after generation
+    // This ensures we have the latest list after backend auto-resolution
+    await fetchManuallyResolvedConflicts();
+    console.log("✅ Refreshed manually-resolved conflicts list after generation");
+
     // DETECT AND RECORD FRONTEND CONFLICTS RIGHT AFTER GENERATION
     console.log("Detecting conflicts after timetable generation...");
-    const conflictResults = detectAllConflicts(newTimetable, courses, rooms);
+    const conflictResults = detectAllConflicts(newTimetable, courses, rooms, manuallyResolvedConflicts);
     const { summary } = conflictResults;
     
     // Update conflict summary in state
@@ -3380,7 +3590,7 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
 
     // STEP 2: Detect current conflicts
     console.log("Detecting current conflicts...");
-    const conflictResults = detectAllConflicts(timetable, courses, rooms);
+    const conflictResults = detectAllConflicts(timetable, courses, rooms, manuallyResolvedConflicts);
     
     console.log("=== SAVE: CONFLICT RESULTS ===");
     console.log("Conflict Summary:", conflictResults.summary);
@@ -3590,6 +3800,12 @@ console.log(`Generated ${existingActiveConflictIds.size} existing active conflic
       { year: selectedYear, semester: selectedSemester, timetable: timetableArr },
       { headers: { Authorization: `Bearer ${token}` } }
     );
+    
+    // 🔧 CRITICAL: Refetch manually-resolved conflicts after save
+    // The backend's saveTimetable runs auto-resolution, so we need the updated list
+    console.log("Fetching latest manually-resolved conflicts after save...");
+    await fetchManuallyResolvedConflicts();
+    console.log("✅ Refreshed manually-resolved conflicts list after save");
     
     // STEP 8: Show appropriate message based on conflicts
     if (conflictResults.summary.total > 0) {
