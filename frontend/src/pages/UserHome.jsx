@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import SideBar from './SideBar';
 import ProtectedRoute from './ProtectedRoute';
@@ -7,6 +7,7 @@ import Papa from "papaparse";
 import html2canvas from "html2canvas";
 import { useAlert } from './AlertContext';
 import { useSearchParams, useLocation } from 'react-router-dom';
+import { io } from 'socket.io-client';
 
 const TIMES = [
   "8.00 AM - 9.00 AM",
@@ -25,6 +26,7 @@ const TIMES = [
   "9.00 PM - 10.00 PM"
 ];
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const socket = io('http://localhost:3001', { transports: ['websocket'] });
 
 function UserHome() {
   const [rooms, setRooms] = useState([]);
@@ -168,10 +170,8 @@ const isEventMatchingAllFilters = (item) => {
   }, []);
 
   // Fetch published timetable
-  useEffect(() => {
-  if (!roomsReady || instructors.length === 0) return;
+  const fetchPublishedTimetable = useCallback(async () => {
 
-  const fetchPublishedTimetable = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
@@ -198,7 +198,6 @@ const isEventMatchingAllFilters = (item) => {
           courseCode: s.CourseCode,
           published: s.Published
         })));
-        // You might want to filter these out or show an error
       }
       
       if (schedules.length === 0) {
@@ -211,11 +210,35 @@ const isEventMatchingAllFilters = (item) => {
 
       setIsPublished(true);
       
+      // Fetch rooms fresh to ensure we have the latest data
+      const roomsResponse = await axios.get("http://localhost:3001/rooms", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const freshRooms = roomsResponse.data;
+      
+      if (!freshRooms || freshRooms.length === 0) {
+        console.error('❌ Cannot initialize timetable: no rooms available');
+        setIsPublished(false);
+        setTimetable({});
+        setLoading(false);
+        return;
+      }
+      
+      console.log(`📦 Initializing timetable with ${freshRooms.length} rooms`);
+
+      // Also fetch instructors fresh to ensure instructor names display correctly
+      const instructorsResponse = await axios.get("http://localhost:3001/instructors", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const freshInstructors = instructorsResponse.data;
+
+      console.log(`👥 Fetched ${freshInstructors.length} instructors for display`);
+      
       const allTimetables = {};
       
       DAYS.forEach(day => {
         allTimetables[day] = {};
-        rooms.forEach(room => {
+        freshRooms.forEach(room => {
           allTimetables[day][room._id] = TIMES.map(() => []);
         });
       });
@@ -235,12 +258,11 @@ const isEventMatchingAllFilters = (item) => {
         const duration = sch.Duration || 1;
         
         if (roomId && timeIdx !== -1 && allTimetables[day]) {
-          // Improved instructor name resolution for user side
           let instructorName = "No Instructor Assigned";
 
-// ONLY show instructor if explicitly assigned (InstructorID exists)
-if (sch.InstructorID && instructors.length > 0) {
-  const foundInstructor = instructors.find(inst => inst._id === sch.InstructorID);
+          // ONLY show instructor if explicitly assigned (InstructorID exists)
+if (sch.InstructorID && freshInstructors.length > 0) {
+  const foundInstructor = freshInstructors.find(inst => inst._id === sch.InstructorID);
   if (foundInstructor) {
     instructorName = foundInstructor.name;
     console.log(`Found instructor by ID: ${sch.InstructorID} -> ${instructorName}`);
@@ -263,8 +285,12 @@ if (sch.InstructorID && instructors.length > 0) {
 
           console.log(`Created schedule item for ${sch.CourseCode}: instructor = ${instructorName}, published = ${sch.Published}`);
 
-          // Only place the item in the starting time slot
-          allTimetables[day][roomId][timeIdx].push(scheduleItem);
+          if (allTimetables[day] && allTimetables[day][roomId] && allTimetables[day][roomId][timeIdx]) {
+            allTimetables[day][roomId][timeIdx].push(scheduleItem);
+          } else {
+            console.warn(`⚠️ Skipping schedule item: day=${day}, roomId=${roomId}, timeIdx=${timeIdx} - path doesn't exist in allTimetables`);
+            console.warn(`Available rooms in allTimetables[${day}]:`, Object.keys(allTimetables[day] || {}));
+          }
         }
       });
       
@@ -283,10 +309,40 @@ if (sch.InstructorID && instructors.length > 0) {
       setTimetable(initial);
     }
     setLoading(false);
-  };
+  }, [roomsReady, rooms, selectedYear, selectedSemester, instructors, courses]);
 
-  fetchPublishedTimetable();
-}, [roomsReady, rooms, selectedYear, selectedSemester, instructors, courses]);
+  // Fetch published timetable when dependencies change
+  useEffect(() => {
+    if (!roomsReady || instructors.length === 0) return;
+    fetchPublishedTimetable();
+  }, [roomsReady, rooms, selectedYear, selectedSemester, instructors, courses, fetchPublishedTimetable]);
+
+useEffect(() => {
+  socket.connect();
+  
+  // Listen for timetable publish events
+  socket.on('timetable:published', ({ year, semester }) => {
+    console.log('🔔 Timetable published notification received:', { year, semester });
+    
+    // Check if the published timetable matches current selection
+    if (year === selectedYear && semester === selectedSemester) {
+      console.log('✅ Published timetable matches current selection, refreshing...');
+      
+      // Show alert to user
+      showAlert('A new timetable has been published!', 'success');
+      
+      // Refresh the timetable data
+      fetchPublishedTimetable();
+    } else {
+      console.log('ℹ️ Published timetable is for different year/semester');
+    }
+  });
+  
+  return () => {
+    socket.off('timetable:published');
+    socket.disconnect();
+  };
+}, [selectedYear, selectedSemester]);
 
   useEffect(() => {
   const fetchInstructors = async () => {
