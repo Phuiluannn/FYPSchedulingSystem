@@ -7,8 +7,12 @@ import {
   deleteCourse,
   copyCourses
 } from '../controllers/courseController.js';
+import { authenticateToken } from "../middleware/authenticateToken.js";
 
 const router = express.Router();
+
+// Protect all course routes
+router.use(authenticateToken);
 
 router.get("/", getAllCourses);
 router.get("/:id", getCourseById);
