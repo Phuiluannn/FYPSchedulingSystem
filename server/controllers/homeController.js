@@ -13,7 +13,7 @@ export const generateTimetable = async (req, res) => {
     try {
       const { year, semester } = req.body;
       console.log("Running auto-resolution after timetable generation...");
-      // const autoResolveResult = await analyticsService.autoResolveObsoleteConflicts(year, semester);
+      const autoResolveResult = await analyticsService.autoResolveObsoleteConflicts(year, semester);
       console.log(`Auto-resolved ${autoResolveResult.resolved} conflicts after generation`);
       
       // Add auto-resolution info to response

@@ -115,11 +115,32 @@ export const recordConflict = async (conflictData) => {
   });
 
   if (existingConflict) {
-    console.log("⚠️ DUPLICATE CONFLICT DETECTED - Skipping:", {
+    console.log("⚠️ DUPLICATE PENDING CONFLICT DETECTED - Skipping:", {
       type: existingConflict.Type,
       description: existingConflict.Description
     });
     return existingConflict; // Return existing instead of creating duplicate
+  }
+
+  // 🔧 NEW: Check if this conflict was manually resolved by admin
+  const manuallyResolvedConflict = await Conflict.findOne({
+    Year: conflictData.Year,
+    Semester: conflictData.Semester,
+    Type: conflictData.Type,
+    Description: conflictData.Description,
+    Day: conflictData.Day,
+    StartTime: conflictData.StartTime,
+    Status: 'Resolved',
+    ResolutionType: 'Manual' // Admin manually resolved this
+  });
+
+  if (manuallyResolvedConflict) {
+    console.log("🚫 MANUALLY RESOLVED CONFLICT - DO NOT RE-RECORD:", {
+      type: manuallyResolvedConflict.Type,
+      description: manuallyResolvedConflict.Description,
+      resolvedAt: manuallyResolvedConflict.ResolvedAt
+    });
+    return null; // Do not re-record manually resolved conflicts
   }
 
   // Ensure RoomID is properly formatted for MongoDB
@@ -428,12 +449,16 @@ console.log(`Department tutorial clashes found: ${departmentTutorialConflicts.si
 
 // New function to resolve conflicts
 export const resolveConflict = async (conflictId) => {
-  console.log("=== RESOLVING CONFLICT ===");
+  console.log("=== RESOLVING CONFLICT (MANUAL) ===");
   console.log(`Conflict ID: ${conflictId}`);
 
   const updatedConflict = await Conflict.findByIdAndUpdate(
     conflictId,
-    { Status: 'Resolved' },
+    { 
+      Status: 'Resolved',
+      ResolutionType: 'Manual', // Mark as manually resolved by admin
+      ResolvedAt: new Date()
+    },
     { new: true }
   );
 
@@ -441,7 +466,11 @@ export const resolveConflict = async (conflictId) => {
     throw new Error('Conflict not found');
   }
 
-  console.log("Conflict resolved:", updatedConflict);
+  console.log("✅ Conflict manually resolved:", {
+    type: updatedConflict.Type,
+    description: updatedConflict.Description,
+    resolvedAt: updatedConflict.ResolvedAt
+  });
   return updatedConflict;
 };
 
@@ -469,6 +498,32 @@ export const getConflictStats = async (year, semester) => {
     resolved: resolvedConflicts,
     byType: conflictsByType,
     byPriority: conflictsByPriority
+  };
+};
+
+// 🔧 NEW: Get manually-resolved conflicts for filtering in frontend
+export const getManuallyResolvedConflicts = async (year, semester) => {
+  console.log("=== FETCHING MANUALLY-RESOLVED CONFLICTS ===");
+  console.log(`Year: ${year}, Semester: ${semester}`);
+
+  const conflicts = await Conflict.find({
+    Year: year,
+    Semester: semester,
+    Status: 'Resolved',
+    ResolutionType: 'Manual' // Only get manually-resolved conflicts
+  })
+    .select('Type Description Day StartTime CourseCode RoomID InstructorID ResolvedAt')
+    .lean();
+
+  console.log(`Found ${conflicts.length} manually-resolved conflicts`);
+
+  return {
+    conflicts: conflicts.map(c => ({
+      ...c,
+      _id: c._id?.toString?.() ?? c._id,
+      RoomID: c.RoomID?.toString?.() ?? c.RoomID,
+      InstructorID: c.InstructorID?.toString?.() ?? c.InstructorID
+    }))
   };
 };
 
@@ -521,14 +576,13 @@ export const autoResolveObsoleteConflicts = async (year, semester) => {
           conflict._id,
           { 
             Status: 'Resolved',
-            ResolvedAt: new Date(),
-            ResolvedBy: 'System Auto-Resolution',
-            ResolutionNote: 'Conflict no longer exists in current timetable'
+            ResolutionType: 'Auto', // Mark as auto-resolved (not manual)
+            ResolvedAt: new Date()
           }
         );
         
         resolvedConflicts.push(conflict);
-        console.log(`Auto-resolved conflict: ${conflict.Type} for ${conflict.CourseCode}`);
+        console.log(`✅ Auto-resolved conflict: ${conflict.Type} for ${conflict.CourseCode}`);
       }
     }
 
