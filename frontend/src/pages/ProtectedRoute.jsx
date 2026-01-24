@@ -32,7 +32,6 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
           alertedRef.current = true;
           alert(err.message);
           localStorage.removeItem('token');
-          // window.location.href = '/login';
           navigate('/login');
         } else if (!alertedRef.current) {
           alertedRef.current = true;
@@ -44,7 +43,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
   if (isLoading) return <div>Loading...</div>;
   if (!isAuthenticated || (allowedRoles && !allowedRoles.includes(userRole))) {
-    return <div>Unauthorized</div>; // or redirect
+    return <div>Unauthorized</div>;
   }
 
   return children;

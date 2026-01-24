@@ -81,7 +81,7 @@ function InstructorTimetable() {
         console.log("✅ Instructors response:", instructorsResponse.data);
         console.log("🔍 Looking for instructor with name:", userName);
         
-        // Match instructor by name (case-insensitive and trimmed)
+        // Match instructor by name
         const userNameClean = userName.toLowerCase().trim();
         const matchingInstructor = instructorsResponse.data.find(
           instructor => {
@@ -107,8 +107,8 @@ function InstructorTimetable() {
             name: userName,
             role: userRole,
             ...matchingInstructor,
-            instructorId: matchingInstructor._id, // Store the instructor ObjectId
-            department: matchingInstructor.department // Ensure we have department info
+            instructorId: matchingInstructor._id, 
+            department: matchingInstructor.department
           };
           
           console.log("✅ Combined instructor info:", combinedInfo);
@@ -297,11 +297,10 @@ function InstructorTimetable() {
   const modalHeight = 120;
   const padding = 10;
   
-  // Position below the button, aligned to the right edge
-  let x = buttonRect.right + scrollX - modalWidth; // Align right edge of modal with right edge of button
-  let y = buttonRect.bottom + scrollY + 8; // 8px gap below button
+
+  let x = buttonRect.right + scrollX - modalWidth; 
+  let y = buttonRect.bottom + scrollY + 8; 
   
-  // Ensure modal stays within viewport bounds
   x = Math.max(padding, Math.min(x, window.innerWidth - modalWidth - padding));
   y = Math.max(padding, Math.min(y, window.innerHeight - modalHeight - padding));
   
@@ -313,7 +312,6 @@ function InstructorTimetable() {
   e.preventDefault();
   e.stopPropagation();
   
-  // Use the working position calculation
   const position = calculateModalPosition();
   console.log("Modal position:", position);
   
@@ -353,8 +351,8 @@ function InstructorTimetable() {
             occText,
             roomDetails.code,
             roomDetails.building,
-            departments,  // Add this
-            event.raw.EstimatedStudents || "N/A"  // Add this if you want
+            departments, 
+            event.raw.EstimatedStudents || "N/A" 
           ]);
         });
       });
@@ -442,8 +440,6 @@ function InstructorTimetable() {
     );
   }
 
-  // Replace the noDataMessage return section with this:
-
 if (noDataMessage) {
   return (
     <ProtectedRoute>
@@ -524,14 +520,14 @@ if (noDataMessage) {
     gap: 8,
     padding: "8px 24px",
     borderRadius: 8,
-    background: "#ccc", // ✅ Always disabled when no data
+    background: "#ccc", 
     fontWeight: 500,
     fontSize: 16,
     color: "#fff",
-    cursor: "not-allowed", // ✅ Not-allowed cursor
+    cursor: "not-allowed",
     border: "none"
   }}
-  disabled={true} // ✅ Always disabled when no data
+  disabled={true}
 >
   <BiExport style={{ fontSize: 20}} />
   Export
@@ -665,15 +661,15 @@ if (noDataMessage) {
     gap: 8,
     padding: "8px 24px",
     borderRadius: 8,
-    background: hasSchedules ? "#015551" : "#ccc", // ✅ Conditional styling
+    background: hasSchedules ? "#015551" : "#ccc", 
     fontWeight: 500,
     fontSize: 16,
     color: "#fff",
-    cursor: hasSchedules ? "pointer" : "not-allowed", // ✅ Conditional cursor
+    cursor: hasSchedules ? "pointer" : "not-allowed",
     border: "none"
   }}
-  onClick={hasSchedules ? handleExportClick : undefined} // ✅ Conditional onClick
-  disabled={!hasSchedules} // ✅ Disabled state
+  onClick={hasSchedules ? handleExportClick : undefined}
+  disabled={!hasSchedules} 
 >
   <BiExport style={{ fontSize: 20}} />
   Export

@@ -61,7 +61,7 @@ function LogIn() {
                     // Try to get userId from response first
                     let userId = result.data.userId || result.data.id || result.data.user?.id || result.data.user?._id;
                     
-                    // If not in response, decode from token (your JWT has 'id' field)
+                    // If not in response, decode from token
                     if (!userId && token) {
                         const decodedUserId = decodeToken(token);
                         userId = decodedUserId;
@@ -85,7 +85,6 @@ function LogIn() {
                         console.log('Using email as userId fallback:', email);
                     }
                     
-                    // Debug: Show what's stored
                     console.log('Final localStorage contents:', {
                         token: !!localStorage.getItem('token'),
                         userId: localStorage.getItem('userId'),

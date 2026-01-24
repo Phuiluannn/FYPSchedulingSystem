@@ -75,7 +75,6 @@ function Rooms() {
     } else {
       document.body.style.overflow = "";
     }
-    // Clean up on unmount
     return () => {
       document.body.style.overflow = "";
     };
@@ -242,11 +241,11 @@ function Rooms() {
                 style={{ backgroundColor: "#015551", color: "#fff", fontWeight: 500,
                 borderRadius: 8,
                 minWidth: 130,
-                display: "flex",           // For centering content
-                justifyContent: "center",  // Center horizontally
-                alignItems: "center",      // Center vertically
-                gap: 6,                    // Space between "+" and text
-                padding: "7px 12px",       // Reduce padding to decrease height (originally larger due to btn class)
+                display: "flex",           
+                justifyContent: "center",  
+                alignItems: "center",      
+                gap: 6,                    
+                padding: "7px 12px",      
                 fontSize: 16, }}
                 onClick={() => openModal()}
               >
@@ -257,12 +256,10 @@ function Rooms() {
 
           <div
             className="bg-white rounded-3 shadow-sm mt-3 p-4"
-            // style={{ height: "450px", display: "flex", flexDirection: "column" }}
           >
             <h5 className="fw-bold mb-3">Room List</h5>
             <div
               className="table-responsive"
-              // style={{ flex: 1, overflowY: "auto" }}
             >
               <table
                 className="table align-middle text-center"

@@ -59,15 +59,12 @@ function UserHome() {
   const containerRef = useRef(null);
   
   useEffect(() => {
-    // Check navigation state first (from notification click)
     const stateYear = location.state?.year;
     const stateSemester = location.state?.semester;
     
-    // Then check URL params (for direct links)
     const yearFromUrl = searchParams.get('year');
     const semesterFromUrl = searchParams.get('semester');
     
-    // Prioritize state over URL params
     const targetYear = stateYear || yearFromUrl;
     const targetSemester = stateSemester || semesterFromUrl;
     
@@ -81,7 +78,6 @@ function UserHome() {
       setSelectedSemester(targetSemester);
     }
     
-    // Clear state after using it
     if (location.state) {
       window.history.replaceState({}, document.title);
     }
@@ -135,7 +131,6 @@ const isEventMatchingAllFilters = (item) => {
     return Array.from(uniqueCourses).sort();
   };
 
-  // Update filtered courses when search query changes
   useEffect(() => {
     if (searchQuery.trim()) {
       const availableCourses = getUniqueCoursesFromTimetable();
@@ -176,7 +171,6 @@ const isEventMatchingAllFilters = (item) => {
     try {
       const token = localStorage.getItem('token');
       
-      // CRITICAL FIX: Ensure publishedOnly=true is properly sent as boolean
       const response = await axios.get(
         `http://localhost:3001/home/get-timetable?year=${selectedYear}&semester=${selectedSemester}&publishedOnly=true`,
         { headers: { Authorization: `Bearer ${token}` } }
@@ -190,7 +184,6 @@ const isEventMatchingAllFilters = (item) => {
         console.log(`Schedule ${index}: CourseCode=${sch.CourseCode}, Published=${sch.Published}`);
       });
       
-      // CRITICAL FIX: Double-check that all received schedules are actually published
       const unpublishedSchedules = schedules.filter(sch => !sch.Published);
       if (unpublishedSchedules.length > 0) {
         console.error("❌ ERROR: Received unpublished schedules from backend!");
@@ -394,11 +387,9 @@ useEffect(() => {
   const modalHeight = 120;
   const padding = 10;
   
-  // Position to the right of button, but ensure it stays in viewport
-  let x = buttonRect.right + scrollX - modalWidth; // Align right edge of modal with right edge of button
+  let x = buttonRect.right + scrollX - modalWidth;
   let y = buttonRect.bottom + scrollY + 8;
   
-  // Ensure modal stays within viewport bounds
   x = Math.max(padding, Math.min(x, window.innerWidth - modalWidth - padding));
   y = Math.max(padding, Math.min(y, window.innerHeight - modalHeight - padding));
   
@@ -419,13 +410,11 @@ const handleExportClick = (e) => {
   const buttonRect = e.currentTarget.getBoundingClientRect();
   const containerRect = containerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
   
-  // Calculate modal position relative to the container (not the viewport)
   const modalWidth = 250;
   const modalHeight = 120;
   
-  // Position relative to container, not viewport
   let x = buttonRect.left - containerRect.left;
-  let y = buttonRect.bottom - containerRect.top + 8; // 8px gap below button
+  let y = buttonRect.bottom - containerRect.top + 8;
   
   // Adjust if modal would go off the right edge of the container
   const containerWidth = containerRef.current?.offsetWidth || window.innerWidth;
@@ -441,7 +430,7 @@ const handleExportClick = (e) => {
   // Adjust if modal would go off the bottom edge of the container
   const containerHeight = containerRef.current?.offsetHeight || window.innerHeight;
   if (y + modalHeight > containerHeight) {
-    y = buttonRect.top - containerRect.top - modalHeight - 8; // Position above button instead
+    y = buttonRect.top - containerRect.top - modalHeight - 8;
     if (y < 15) {
       y = 15;
     }

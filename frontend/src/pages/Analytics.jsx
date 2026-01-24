@@ -62,7 +62,6 @@ function Analytics() {
     
     // Fetch data immediately if URL params were provided
     if (shouldFetch) {
-      // Use a timeout to ensure state has been updated
       setTimeout(() => {
         fetchAnalyticsData();
       }, 100);
@@ -250,7 +249,7 @@ const exportConflictData = () => {
   const header = ["Type", "Description", "Status", "Priority", "Course Code", "Instructor", "Room", "Day", "Start Time"];
   const rows = conflictData.map(item => [
     item.Type || "",
-    `"${(item.Description || "").replace(/"/g, '""')}"`, // escape quotes
+    `"${(item.Description || "").replace(/"/g, '""')}"`,
     item.Status || "",
     item.Priority || "",
     item.CourseCode || "",

@@ -54,12 +54,12 @@ function Courses() {
     hasTutorial: "",
     lectureHour: "",
     lectureOccurrence: "",
-    tutorialOcc: "", // New field for tutorial occurrences
+    tutorialOcc: "",
     year: [],
     department: [],
-      departmentStudents: {},      // Map of department -> student count
-  lectureGroupings: [],         // Array of lecture grouping objects
-  tutorialGroupings: []         // Array of tutorial grouping objects
+    departmentStudents: {},
+    lectureGroupings: [],         // Array of lecture grouping objects
+    tutorialGroupings: []         // Array of tutorial grouping objects
   });
   const [courses, setCourses] = useState([]);
   const [error, setError] = useState(null);
@@ -173,7 +173,7 @@ const [selectedCourseForStudents, setSelectedCourseForStudents] = useState(null)
   // Auto-calculate targetStudent based on year, courseType, and department
   useEffect(() => {
     if (!form.academicYear || !form.semester || form.year.length === 0 || !form.courseType) {
-      return; // Don't calculate if required fields are missing
+      return;
     }
 
     const calculateTargetStudent = () => {
@@ -202,8 +202,6 @@ const [selectedCourseForStudents, setSelectedCourseForStudents] = useState(null)
         }
       });
 
-      // Update targetStudent if calculated value is different
-      // Clear field when total is 0 (all departments unchecked)
       if (total !== Number(form.targetStudent)) {
         setForm((prev) => ({ ...prev, targetStudent: total > 0 ? String(total) : "" }));
       }
@@ -239,7 +237,7 @@ const handleChange = async (e) => {
     newForm[name] = value;
   }
   
-  // NEW: Recalculate department students and groupings when relevant fields change
+  // Recalculate department students and groupings when relevant fields change
   if (name === "year" || name === "department" || name === "courseType" || 
       name === "academicYear" || name === "semester" || name === "lectureOccurrence") {
     await recalculateDepartmentData(newForm);
@@ -410,7 +408,6 @@ const handleChange = async (e) => {
     }
   };
 
-  // Toggle Course Type filter
   const toggleCourseType = (courseType) => {
     const newSelectedCourseTypes = new Set(selectedCourseTypes);
     if (newSelectedCourseTypes.has(courseType)) {
@@ -421,7 +418,6 @@ const handleChange = async (e) => {
     setSelectedCourseTypes(newSelectedCourseTypes);
   };
 
-  // Toggle expanded state for a row and column
   const toggleExpand = (rowIdx, column) => {
     setExpandedRows((prev) => ({
       ...prev,
@@ -429,7 +425,6 @@ const handleChange = async (e) => {
     }));
   };
 
-  // Get condensed content (e.g., first 2 items)
   const getCondensedContent = (items, maxItems = 2) => {
     if (!items || items.length === 0) return "N/A";
     if (items.length <= maxItems) return items.join(", ");
@@ -758,13 +753,13 @@ const handleChange = async (e) => {
                           style={{
                             position: "absolute",
                             top: "100%",
-                            left: "0",  // Changed from hardcoded left: 20
-                            right: "0", // This ensures it spans the column width
-                            minWidth: "160px", // Minimum width for readability
+                            left: "0",  
+                            right: "0",
+                            minWidth: "160px",
                             maxHeight: "200px",
                             overflowY: "auto",
                             padding: "5px",
-                            zIndex: 1050 // Ensure it appears above other elements
+                            zIndex: 1050
                           }}
                         >
                           <div className="form-check d-flex align-items-center mb-1">

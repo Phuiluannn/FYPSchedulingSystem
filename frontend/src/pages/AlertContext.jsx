@@ -37,7 +37,6 @@ export const AlertProvider = ({ children }) => {
     showCancel: true
   });
 
-  // ✅ ADD THIS - Store scroll position when dialog opens
   const [scrollPosition, setScrollPosition] = useState({ x: 0, y: 0 });
 
   const showAlert = (message, severity = 'info', autoHideDuration = 6000) => {
@@ -50,7 +49,6 @@ export const AlertProvider = ({ children }) => {
   };
 
   const showConfirm = (message, title = 'Confirm') => {
-    // ✅ SAVE SCROLL POSITION BEFORE OPENING DIALOG
     const currentScrollPosition = {
       x: window.pageXOffset || document.documentElement.scrollLeft,
       y: window.pageYOffset || document.documentElement.scrollTop
@@ -64,7 +62,6 @@ export const AlertProvider = ({ children }) => {
         message,
         onConfirm: () => {
           setDialog(prev => ({ ...prev, open: false }));
-          // ✅ RESTORE SCROLL POSITION AFTER CLOSING
           setTimeout(() => {
             window.scrollTo(currentScrollPosition.x, currentScrollPosition.y);
           }, 0);
@@ -72,7 +69,6 @@ export const AlertProvider = ({ children }) => {
         },
         onCancel: () => {
           setDialog(prev => ({ ...prev, open: false }));
-          // ✅ RESTORE SCROLL POSITION AFTER CLOSING
           setTimeout(() => {
             window.scrollTo(currentScrollPosition.x, currentScrollPosition.y);
           }, 0);
@@ -89,7 +85,6 @@ export const AlertProvider = ({ children }) => {
 
   const closeDialog = () => {
     setDialog(prev => ({ ...prev, open: false }));
-    // ✅ RESTORE SCROLL POSITION WHEN CLOSING
     setTimeout(() => {
       window.scrollTo(scrollPosition.x, scrollPosition.y);
     }, 0);
@@ -128,7 +123,6 @@ export const AlertProvider = ({ children }) => {
         onClose={dialog.onCancel}
         maxWidth="sm"
         fullWidth
-        // ✅ ADD THESE PROPS TO PREVENT SCROLL BEHAVIOR
         disableScrollLock={true}
         disableRestoreFocus={true}
         disableEnforceFocus={true}

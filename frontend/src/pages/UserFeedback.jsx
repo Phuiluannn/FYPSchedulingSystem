@@ -27,7 +27,7 @@ function UserFeedback() {
   const [sortOrder, setSortOrder] = useState("desc");
   const RequiredMark = () => <span style={{ color: 'red', marginLeft: 2 }}>*</span>;
 
-  // Handle navigation from notification - ONLY highlight if shouldHighlight is true
+  // Handle navigation from notification
   useEffect(() => {
   if (location.state?.feedbackId) {
     const { feedbackId, shouldHighlight } = location.state;
@@ -36,7 +36,6 @@ function UserFeedback() {
       console.log('🎨 Highlighting feedback from notification:', feedbackId);
       setHighlightedFeedbackId(feedbackId);
       
-      // Remove highlight after 5 seconds
       setTimeout(() => {
         setHighlightedFeedbackId(null);
       }, 5000);
@@ -52,8 +51,6 @@ function UserFeedback() {
       }
     }, 300);
 
-    // Clear the state to prevent re-triggering
-    // Note: We use a slight delay to ensure the effect completes first
     setTimeout(() => {
       window.history.replaceState({}, document.title);
     }, 500);
@@ -147,7 +144,7 @@ function UserFeedback() {
       priority = "Medium";
     }
 
-    await axios.post(  // Remove the 'const response =' since we won't use it
+    await axios.post( 
       "http://localhost:3001/user/feedback",
       {
         title: form.title,
@@ -157,9 +154,6 @@ function UserFeedback() {
       },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-
-    // Remove this line:
-    // setFeedbackList([response.data, ...feedbackList]);
     
     setShowModal(false);
     setForm({ title: "", type: "", feedback: "" });

@@ -58,12 +58,10 @@ function Students() {
     return () => (document.body.style.overflow = "");
   }, [showModal]);
 
-  // compute total automatically from counts if provided
   useEffect(() => {
     const c = form.counts;
     const sum = Object.values(c).reduce((acc, v) => acc + (Number(v) || 0), 0);
     if (sum > 0) setForm(prev => ({ ...prev, totalStudents: String(sum) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.counts]);
 
   const openModal = (student = null) => {
@@ -167,7 +165,6 @@ function Students() {
     return matchYear && matchSemester && matchSearch;
   });
 
-  // ensure rows are always ordered by year 1..4
   const sorted = [...filtered].sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0));
 
   return (

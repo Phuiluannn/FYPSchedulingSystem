@@ -15,7 +15,7 @@ const NotificationDropdown = () => {
   const navigate = useNavigate();
   const socketRef = useRef(null);
 
-  // Initialize socket only once
+  // Initialize socket
   useEffect(() => {
     const token = localStorage.getItem('token');
     const role = localStorage.getItem('role');
@@ -133,17 +133,15 @@ const handleNotificationClick = async (notification) => {
       const isOnFeedbackPage = window.location.pathname === '/user/feedback';
       
       if (isOnFeedbackPage) {
-        // ✅ FIX: Navigate without reload, let React handle the state change
         navigate('/user/feedback', { 
-          replace: false, // Use replace: false to trigger a re-render
+          replace: false,
           state: { 
             feedbackId: notification.feedbackId,
             shouldHighlight: wasUnread,
-            timestamp: Date.now() // Add timestamp to force state change detection
+            timestamp: Date.now()
           } 
         });
       } else {
-        // Navigate to feedback page with feedbackId to highlight
         navigate('/user/feedback', {
           state: { 
             feedbackId: notification.feedbackId,
@@ -156,13 +154,12 @@ const handleNotificationClick = async (notification) => {
       const isOnAdminFeedbackPage = window.location.pathname === '/feedback';
       
       if (isOnAdminFeedbackPage) {
-        // ✅ FIX: Navigate without reload, let React handle the state change
         navigate('/feedback', { 
-          replace: false, // Use replace: false to trigger a re-render
+          replace: false, 
           state: { 
             feedbackId: notification.feedbackId,
             shouldHighlight: wasUnread,
-            timestamp: Date.now() // Add timestamp to force state change detection
+            timestamp: Date.now()
           } 
         });
       } else {
@@ -314,7 +311,6 @@ const handleNotificationClick = async (notification) => {
 
       console.log('🔄 Sending mark as read request for notification:', notificationId);
 
-      // FIX: Changed from PUT to PATCH to match backend route
       const response = await axios.patch(
         `http://localhost:3001/api/notifications/${notificationId}/read`,
         {},

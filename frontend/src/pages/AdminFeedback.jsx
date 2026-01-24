@@ -40,7 +40,7 @@ function AdminFeedback() {
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [sortOrder, setSortOrder] = useState("asc");
 
-  // Handle navigation from notification - ONLY highlight if shouldHighlight is true
+  // Handle navigation from notification - only highlight if shouldHighlight is true
   useEffect(() => {
     if (location.state?.feedbackId) {
       const { feedbackId, shouldHighlight } = location.state;
@@ -65,8 +65,6 @@ function AdminFeedback() {
         }
       }, 300);
 
-      // Clear the state to prevent re-triggering
-      // Use a slight delay to ensure the effect completes first
       setTimeout(() => {
         window.history.replaceState({}, document.title);
       }, 500);

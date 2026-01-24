@@ -23,7 +23,7 @@ import { BsPersonVcard } from "react-icons/bs";
 const SideBar = ({ children, role = "admin", feedbackBadge }) => {
   const location = useLocation();
   const [username, setUsername] = useState(localStorage.getItem('name') || 'User');
-  const [sidebarExpanded, setSidebarExpanded] = useState(false); // Changed: now controls expansion
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
   useEffect(() => {
     const handleStorage = (event) => {
@@ -229,7 +229,7 @@ const SideBar = ({ children, role = "admin", feedbackBadge }) => {
           className="main-content"
           style={{
             flex: 1,
-            marginLeft: '70px', // Always 70px since sidebar is collapsed by default
+            marginLeft: '70px',
             padding: '1.5rem',
             backgroundColor: '#f8f9fa',
             minHeight: 'calc(100vh - 70px)',
